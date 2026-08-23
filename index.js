@@ -1,364 +1,166 @@
-const { 
-    default: makeWASocket, 
-    useMultiFileAuthState, 
-    DisconnectReason, 
-    downloadMediaMessage 
-} = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, downloadMediaMessage } = require('@whiskeysockets/baileys');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const qrcodeTerminal = require('qrcode-terminal');
-const QRCode = require('qrcode');
 const express = require('express');
 const pino = require('pino');
-const fs = require('fs');
-const path = require('path');
-const ffmpeg = require('fluent-ffmpeg');
-const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
+const QRCode = require('qrcode');
 
-ffmpeg.setFfmpegPath(ffmpegPath);
-
-// 👑 ADMIN / BATCH REP IDENTIFICATION
-const ADMIN_PHONE_NUMBER = "94762513957"; 
-const ADMIN_LID = "17848192627279"; 
-
-// 📢 GROUP IDs (ANNOUNCEMENT & GENERAL)
-const ANNOUNCEMENT_GROUP_ID = "120363425513397101@g.us"; 
-const GENERAL_GROUP_ID = "120363409747625255@g.us";
-
-// Express Web Server Setup
+// 🌐 Railway Web Server for Keeping App Alive & QR Scanning
 const app = express();
 const PORT = process.env.PORT || 3000;
 let latestQR = "";
 
 app.get('/', async (req, res) => {
-    if (!latestQR) {
-        return res.send(`
-            <html>
-                <head><meta http-equiv="refresh" content="3"></head>
-                <body style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#0d1117;color:white;">
-                    <h2>QR Code එක Loading... නැත්නම් Bot Online!</h2>
-                </body>
-            </html>
-        `);
-    }
-    try {
-        const qrImage = await QRCode.toDataURL(latestQR);
-        res.send(`
-            <html>
-                <head><title>WhatsApp Bot QR Code</title></head>
-                <body style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#0d1117;color:white;">
-                    <h2>Scan this QR Code with WhatsApp</h2>
-                    <img src="${qrImage}" style="border:10px solid white;border-radius:10px;width:300px;height:300px;"/>
-                </body>
-            </html>
-        `);
-    } catch (err) {
-        res.status(500).send('Error generating QR code');
-    }
+    if (!latestQR) return res.send("<body style='background:#0d1117;color:white;font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;'><h2>🚀 HansanaBot is Active & Ready!</h2></body>");
+    const qrImage = await QRCode.toDataURL(latestQR);
+    res.send(`<body style="display:flex;flex-direction:column;justify-content:center;align-items:center;height:100vh;background:#0d1117;color:white;font-family:sans-serif;">
+        <h2>Scan QR Code to Connect HansanaBot</h2>
+        <img src="${qrImage}" style="width:280px;border:8px solid white;border-radius:10px;"/>
+    </body>`);
 });
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-app.listen(PORT, () => {
-    console.log(`Web server running on port ${PORT}`);
-});
-
-// Gemini API Setup
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+// 🤖 Gemini Setup (Using fast and lightweight official Gemini model)
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 const systemInstruction = `
-You are HansanaBot, an intelligent Gemini AI assistant working for the SLIIT IT Batch Representative (Monal Hansana).
+You are HansanaBot, an intelligent and friendly Gemini AI Assistant created for SLIIT IT Students.
+You represent and assist the SLIIT IT Batch Representative: Monal Hansana.
 
-YOUR IDENTITY & RESPONSIBILITIES:
-- Your Name: HansanaBot
-- You assist the Batch Rep, Monal (Hansana), by helping SLIIT students with their academic queries.
-- Answer student questions naturally in Singlish, Sinhala, or English based on the user's language.
-- Assist students with Timetable info, Calendar link, Issue forms, LMS links, Course Outlines, and LIC contacts.
-- Read images, voice notes, and PDFs provided by users accurately and explain them.
+YOUR CORE ROLE & RESPONSIBILITIES:
+- Answer student questions about SLIIT Y1S2 modules, timetables, LMS links, LIC emails, forms, and general academic guidelines.
+- Reply naturally in polite Singlish, English, or Sinhala depending on how the student texts.
+- Keep replies short, clean, structured, and easy to read.
 
-BATCH REPRESENTATIVE (MONAL HANSANA) CONTACT DETAILS:
-- When students ask for Batch Rep's contact details, phone number, email, or how to contact Monal, provide the following details cleanly:
-  * Name: Monal Hansana (SLIIT IT Batch Representative)
-  * Contact Number: +94 76 251 3957 (076 251 3957)
-  * Official SLIIT Email: it26100930@my.sliit.lk
+BATCH REPRESENTATIVE DETAILS:
+- Batch Rep Name: Monal Hansana
+- Contact Number: +94 76 251 3957 (076 251 3957)
+- Official SLIIT Email: it26100930@my.sliit.lk
+- Role: SLIIT IT Batch Representative (Matara / General Cohort)
 
-Y1S2 MODULE DETAILS & LIC INFORMATION:
-1. IT1170 - Data Structures and Algorithms (DSA)
-   - LIC: Prof. Nathali Silva (nathali.s@sliit.lk)
-   - Focus: Time/space complexity (Big-O analysis), RAM model, arrays, linked lists, stacks, queues, trees, graphs, sorting and searching algorithms.
+SLIIT ACADEMIC & LIC INFORMATION (Y1S2):
+1. IT1170 - Data Structures and Algorithms (DSA) | LIC: Prof. Nathali Silva (nathali.s@sliit.lk)
+2. IT1160 - Discrete Mathematics | LIC: Ms. Nipuni Maleesha (nipuni.m@sliit.lk)
+3. SE1020 - Object Oriented Programming (OOP) | LIC: Ms. Thilini Jayalath (thilini.j@sliit.lk)
+4. IT1150 - Technical Writing | LIC: Ms. Dinushika Jayathissa (dinushika.j@sliit.lk)
+5. IE1011 - Information Systems | LIC: Ms. Chathurangika Kahandawarachchi (chathurangika.k@sliit.lk)
 
-2. IT1160 - Discrete Mathematics
-   - LIC: Ms. Nipuni Maleesha (nipuni.m@sliit.lk)
-   - Focus: Logic, sets, functions, relations, proof techniques, graph theory, combinatorics, and mathematical structures for computer science.
+IMPORTANT SLIIT LINKS:
+- Timetable / Google Calendar: https://calendar.google.com/calendar/u/0?cid=Y2EwYjM4ZDE3MjcyOTIzMTY1N2FiZmMzNGYxYzdmZGJmOGVhMzMwNTBmZTZmNDYyM2Y1ZmFiODhjMGQzNDYzM0Bncm91cC5jYWxlbmRhci5nb29nbGUuY29t
+- LMS (Courseweb): https://courseweb.sliit.lk/
+- Eduscope (Recordings): https://eduscope.sliit.lk/
+- Student Issue Reporting Form: https://docs.google.com/forms/d/e/1FAIpQLSfOUJnkMp8Tdig0C187WDOgU5AZmtPh3ayBZ-_z9xd23K3Zgw/viewform?usp=publish-editor
+- Helpdesk: https://ask.sliit.lk/
 
-3. SE1020 - Object Oriented Programming (OOP)
-   - LIC: Ms. Thilini Jayalath (thilini.j@sliit.lk)
-   - Focus: OOP concepts (Abstraction, Encapsulation, Inheritance, Polymorphism), Java/C++ implementations, design principles.
-
-4. IT1150 - Technical Writing
-   - LIC: Ms. Dinushika Jayathissa (dinushika.j@sliit.lk)
-   - Focus: Professional communication, writing technical documentation, research reports, email etiquette, presentation skills.
-
-5. IE1011 - Information Systems
-   - LIC: Ms. Chathurangika Kahandawarachchi (chathurangika.k@sliit.lk)
-   - Focus: Business information systems, enterprise resource planning (ERP), system architecture, database concepts in business contexts.
-
-ACADEMIC & UNIVERSITY RULES:
-- Attendance: Minimum 80% attendance is strictly required for labs and lectures to sit for final exams.
-- Assessments: Grade is based on Continuous Assessments (Quizzes, Mid-Exam, Lab Tests, Assignments) + Final Exam.
-- Lab Group Switching: Changing Lab groups (G1/G2/etc.) requires prior LIC approval or valid medical reason.
-
-IMPORTANT LINKS & PORTALS:
-1. Timetable / Calendar: https://calendar.google.com/calendar/u/0?cid=Y2EwYjM4ZDE3MjcyOTIzMTY1N2FiZmMzNGYxYzdmZGJmOGVhMzMwNTBmZTZmNDYyM2Y1ZmFiODhjMGQzNDYzM0Bncm91cC5jYWxlbmRhci5nb29nbGUuY29t
-2. Courseweb (LMS): https://courseweb.sliit.lk/
-3. Eduscope (Lecture Recordings): https://eduscope.sliit.lk/
-4. Issue Reporting Form: https://docs.google.com/forms/d/e/1FAIpQLSfOUJnkMp8Tdig0C187WDOgU5AZmtPh3ayBZ-_z9xd23K3Zgw/viewform?usp=publish-editor
-5. SLIIT Support Desk: https://ask.sliit.lk/
+IMPORTANT RULES:
+- Minimum 80% attendance is required for labs and lectures to qualify for final exams.
+- Do NOT perform any administrative tasks like posting messages to groups. If asked, inform that announcements are handled solely by the Batch Rep.
 `;
 
 const model = genAI.getGenerativeModel({ 
-    model: "gemini-3.1-flash-lite",
+    model: "gemini-3.5-flash-lite",
     systemInstruction: systemInstruction 
 });
 
-function convertAudioToWav(inputBuffer) {
-    return new Promise((resolve, reject) => {
-        const tempIn = path.join(__dirname, `temp_${Date.now()}.ogg`);
-        const tempOut = path.join(__dirname, `temp_${Date.now()}.mp3`);
+// 🛡️ Rate Limiting Mechanism (Spam & Multi-User Traffic Control)
+const userCooldowns = new Map();
+const COOLDOWN_TIME_MS = 3000; // 3 Seconds delay per user
 
-        fs.writeFileSync(tempIn, inputBuffer);
-
-        ffmpeg(tempIn)
-            .toFormat('mp3')
-            .on('end', () => {
-                try {
-                    const outputBuffer = fs.readFileSync(tempOut);
-                    if (fs.existsSync(tempIn)) fs.unlinkSync(tempIn);
-                    if (fs.existsSync(tempOut)) fs.unlinkSync(tempOut);
-                    resolve(outputBuffer);
-                } catch (e) {
-                    reject(e);
-                }
-            })
-            .on('error', (err) => {
-                if (fs.existsSync(tempIn)) fs.unlinkSync(tempIn);
-                if (fs.existsSync(tempOut)) fs.unlinkSync(tempOut);
-                reject(err);
-            })
-            .save(tempOut);
-    });
-}
-
-async function connectToWhatsApp() {
+async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
-
+    
     const sock = makeWASocket({
         auth: state,
-        printQRInTerminal: false,
         logger: pino({ level: 'silent' }),
-        syncFullHistory: false,
-        markOnlineOnConnect: true,
-        generateHighQualityLinkPreview: true,
-        badSessionDeleteHistory: true,
-        keepAliveIntervalMs: 20000,
-        retryRequestDelayMs: 2000
+        printQRInTerminal: false,
+        keepAliveIntervalMs: 20000
     });
 
     sock.ev.on('creds.update', saveCreds);
 
     sock.ev.on('connection.update', (update) => {
-        const { connection, lastDisconnect, qr } = update;
-
+        const { connection, qr, lastDisconnect } = update;
         if (qr) {
             latestQR = qr;
-            qrcodeTerminal.generate(qr, { small: true });
-            console.log("👉 New QR Code Ready! Open your Railway App URL to Scan.");
+            console.log("👉 New QR Code available on Railway URL!");
         }
-
+        if (connection === 'open') {
+            latestQR = "";
+            console.log('🚀 ✅ HansanaBot is ONLINE & READY!');
+        }
         if (connection === 'close') {
-            const statusCode = (lastDisconnect?.error)?.output?.statusCode;
-            console.log(`⚠️ Connection closed. Status Code: ${statusCode}`);
-            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
-            
+            const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
             if (shouldReconnect) {
                 console.log("🔄 Reconnecting...");
-                setTimeout(() => connectToWhatsApp(), 3000);
+                setTimeout(() => startBot(), 3000);
             } else {
-                console.log('❌ Session invalidated. Restarting clean...');
-                if (fs.existsSync('auth_info_baileys')) {
-                    fs.rmSync('auth_info_baileys', { recursive: true, force: true });
-                }
-                process.exit(1);
+                console.log("❌ Logged out. Resetting...");
             }
-        } else if (connection === 'open') {
-            latestQR = "";
-            console.log('🚀 ✅ WhatsApp AI Bot is READY, CONNECTED & ONLINE!');
         }
     });
 
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
         if (type !== 'notify') return;
-
+        
         for (const msg of messages) {
             try {
-                if (!msg.message) continue;
+                // Ignore empty messages, status updates, or own messages
+                if (!msg.message || msg.key.fromMe) continue;
 
-                const sender = msg.key.remoteJid;
-                const isGroup = sender.endsWith('@g.us');
+                const jid = msg.key.remoteJid;
+                const isGroup = jid.endsWith('@g.us');
 
-                if (isGroup && sender !== ANNOUNCEMENT_GROUP_ID && sender !== GENERAL_GROUP_ID) continue;
+                // 🛑 Groups අතහැර Direct Private Messages (PM) වලට විතරක් Reply කරමු
+                if (isGroup) continue;
 
-                await sock.readMessages([msg.key]);
-
-                const imgMsg = msg.message.imageMessage || 
-                               msg.message.viewOnceMessage?.message?.imageMessage ||
-                               msg.message.viewOnceMessageV2?.message?.imageMessage ||
-                               msg.message.ephemeralMessage?.message?.imageMessage;
-
-                const audioMsg = msg.message.audioMessage ||
-                                 msg.message.viewOnceMessage?.message?.audioMessage ||
-                                 msg.message.ephemeralMessage?.message?.audioMessage;
-
-                const docMsg = msg.message.documentMessage || 
-                               msg.message.documentWithCaptionMessage?.message?.documentMessage ||
-                               msg.message.ephemeralMessage?.message?.documentMessage;
-
-                const firstMsgType = Object.keys(msg.message)[0];
-                const contextInfo = msg.message[firstMsgType]?.contextInfo || msg.message.extendedTextMessage?.contextInfo;
-                const quotedMsgObj = contextInfo?.quotedMessage;
-                
-                const quotedText = quotedMsgObj?.conversation ||
-                                  quotedMsgObj?.extendedTextMessage?.text ||
-                                  quotedMsgObj?.imageMessage?.caption || "";
-
-                const rawMessageText = msg.message.conversation || 
-                                       msg.message.extendedTextMessage?.text || 
-                                       imgMsg?.caption || 
-                                       docMsg?.caption || "";
-
-                console.log(`📩 [RECEIVED] From ${sender}: "${rawMessageText}"`);
-
-                let fullUserPrompt = rawMessageText;
-                if (quotedText) {
-                    fullUserPrompt = `[Quoted/Referenced Text: "${quotedText}"]\nUser Action Requested: "${rawMessageText}"`;
-                }
-
-                // 🎙️ AUDIO / VOICE MESSAGE
-                if (audioMsg) {
-                    await sock.sendPresenceUpdate('composing', sender);
-                    await sock.sendMessage(sender, { text: "🎙️ **Voice Note එක Process වෙමින් පවතියි...**" }, { quoted: msg });
-
-                    const oggBuffer = await downloadMediaMessage(msg, 'buffer', {});
-                    const mp3Buffer = await convertAudioToWav(oggBuffer);
-                    const base64Audio = mp3Buffer.toString('base64');
-
-                    const audioPart = { inlineData: { data: base64Audio, mimeType: 'audio/mp3' } };
-                    const prompt = "Listen carefully to this audio message. Reply clearly in friendly Singlish or Sinhala/English.";
-                    const result = await model.generateContent([prompt, audioPart]);
-                    const reply = result.response.text();
-
-                    await sock.sendMessage(sender, { text: reply }, { quoted: msg });
-                    return;
-                }
-
-                // 📄 DOCUMENT / PDF
-                if (docMsg) {
-                    const mimeType = docMsg?.mimetype || '';
-
-                    if (mimeType === 'application/pdf') {
-                        await sock.sendPresenceUpdate('composing', sender);
-                        await sock.sendMessage(sender, { text: "📄 **PDF Document එක Read කරමින් පවතියි...** පොඩ්ඩක් ඉන්න!" }, { quoted: msg });
-
-                        const buffer = await downloadMediaMessage(msg, 'buffer', {});
-                        const base64Pdf = buffer.toString('base64');
-
-                        const pdfPart = { inlineData: { data: base64Pdf, mimeType: 'application/pdf' } };
-                        const captionPrompt = rawMessageText ? ` User instructions: "${rawMessageText}"` : "";
-                        
-                        const prompt = "Read this PDF document carefully and fulfill the user request in clear Singlish or simple English." + captionPrompt;
-                        const result = await model.generateContent([prompt, pdfPart]);
-                        const reply = result.response.text();
-
-                        await sock.sendMessage(sender, { text: reply }, { quoted: msg });
-                        return;
+                // 🛡️ Rate Limiting Check (ලමයි ගොඩක් එකපාර Message එවද්දී Control කරන්න)
+                const now = Date.now();
+                if (userCooldowns.has(jid)) {
+                    const lastMsgTime = userCooldowns.get(jid);
+                    if (now - lastMsgTime < COOLDOWN_TIME_MS) {
+                        continue; // Skip rapid spam messages from the same user
                     }
                 }
+                userCooldowns.set(jid, now);
 
-                // 📸 IMAGE
+                const text = msg.message.conversation || 
+                             msg.message.extendedTextMessage?.text || 
+                             msg.message.imageMessage?.caption || "";
+                
+                const imgMsg = msg.message.imageMessage;
+
+                if (!text && !imgMsg) continue;
+
+                console.log(`📩 Received Message from ${jid}: "${text}"`);
+
+                await sock.sendPresenceUpdate('composing', jid);
+
+                let replyText = "";
+
+                // 📸 Image එක්ක ප්‍රශ්නයක් ඇහුවොත් (e.g. Schedule/Question Screenshot)
                 if (imgMsg) {
-                    await sock.sendPresenceUpdate('composing', sender);
-                    await sock.sendMessage(sender, { text: "⏳ **Image එක Processing...**" }, { quoted: msg });
-
                     const buffer = await downloadMediaMessage(msg, 'buffer', {});
-                    const base64Image = buffer.toString('base64');
-                    const mimeType = imgMsg.mimetype || 'image/jpeg';
-
-                    const imagePart = { inlineData: { data: base64Image, mimeType: mimeType } };
-                    const captionPrompt = rawMessageText ? ` User instructions: "${rawMessageText}"` : "";
-
-                    const prompt = "Read all details in this screenshot/image. If requested, generate a clean and formatted announcement notice or answer the user's question clearly in simple English or Singlish." + captionPrompt;
+                    const imagePart = { inlineData: { data: buffer.toString('base64'), mimeType: imgMsg.mimetype || 'image/jpeg' } };
+                    const prompt = text ? text : "Explain or solve this academic image for the student.";
+                    
                     const result = await model.generateContent([prompt, imagePart]);
-                    const reply = result.response.text();
-
-                    await sock.sendMessage(sender, { text: reply }, { quoted: msg });
-                    return;
+                    replyText = result.response.text();
+                } 
+                // 💬 Normal Text Message
+                else {
+                    const result = await model.generateContent(text);
+                    replyText = result.response.text();
                 }
 
-                // 💬 DIRECT CHAT & BROADCAST
-                if (!isGroup) {
-                    const textLower = rawMessageText.toLowerCase().trim();
-                    
-                    const postKeywords = [
-                        "send this message to group", "send to group", "post to group",
-                        "yawanna group එකට", "යවන්න group", "group එකට දාන්න", "group එකට දාපන්", "group එකට යවන්න"
-                    ];
-                    
-                    const isPostRequest = postKeywords.some(keyword => textLower.includes(keyword));
-
-                    if (isPostRequest) {
-                        const isAdmin = sender.includes(ADMIN_PHONE_NUMBER) || (ADMIN_LID && sender.includes(ADMIN_LID));
-
-                        if (!isAdmin) {
-                            await sock.sendMessage(sender, { text: "❌ මචං, Group එකට Announcements දාන්න පුළුවන් Batch Rep (Monal) ට විතරයි!" }, { quoted: msg });
-                            return;
-                        }
-                        
-                        let textToPost = quotedText || rawMessageText;
-
-                        if (!textToPost || (textToPost === rawMessageText && isPostRequest && !quotedText)) {
-                            await sock.sendMessage(sender, { text: "⚠️ මචං, Group එකට දාන්න ඕන Message එකට Reply (Quote) කරලා 'Send to group' කියලා එවන්න!" }, { quoted: msg });
-                            return;
-                        }
-
-                        let targetGroupId = ANNOUNCEMENT_GROUP_ID; 
-                        let groupName = "Announcement Group";
-
-                        if (textLower.includes("general") || textLower.includes("chat")) {
-                            targetGroupId = GENERAL_GROUP_ID;
-                            groupName = "General Group";
-                        }
-
-                        const finalMsg = `📢 *ANNOUNCEMENT*\n\n${textToPost}`;
-
-                        await sock.sendMessage(targetGroupId, { text: finalMsg });
-                        await sock.sendMessage(sender, { text: `✅ හරි මචං, මම ඒ Notice එක කෙලින්ම *${groupName}* එකට දැම්මා! 🚀` }, { quoted: msg });
-                        return;
-                    }
-                
-                    if (rawMessageText) {
-                        await sock.sendPresenceUpdate('composing', sender);
-                        console.log(`🤖 Generating Gemini response for prompt: "${fullUserPrompt}"...`);
-                        
-                        const result = await model.generateContent(fullUserPrompt);
-                        const replyText = result.response.text();
-                        
-                        console.log(`✅ Sending reply back...`);
-                        await sock.sendMessage(sender, { text: replyText }, { quoted: msg });
-                    }
+                if (replyText) {
+                    await sock.sendMessage(jid, { text: replyText }, { quoted: msg });
+                    console.log(`✅ Replied to ${jid}`);
                 }
-            } catch (msgError) {
-                console.error("❌ Error processing individual message:", msgError);
+
+            } catch (err) {
+                console.error("❌ Error handling message:", err);
             }
         }
     });
 }
 
-connectToWhatsApp();
+startBot();
