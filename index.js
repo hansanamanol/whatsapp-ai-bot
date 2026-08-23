@@ -310,7 +310,6 @@ async function connectToWhatsApp() {
                     return;
                 }
             }
-
 // 💬 DIRECT MESSAGE BROADCAST COMMAND (DM Only)
             if (!isGroup) {
                 const textLower = rawMessageText.toLowerCase().trim();
@@ -328,19 +327,26 @@ async function connectToWhatsApp() {
                         let textToPost = quotedText || rawMessageText;
 
                         // Post කරන්න කිසිම Content එකක් නැත්නම්
-                        if (!textToPost || textToPost === rawMessageText && isPostRequest) {
-                            if (!quotedText) {
-                                await sock.sendMessage(sender, { text: "⚠️ මචං, Group එකට දාන්න ඕන Message එකට Reply (Quote) කරලා 'Send to group' කියලා එවන්න!" }, { quoted: msg });
-                                return;
-                            }
+                        if (!textToPost || (textToPost === rawMessageText && isPostRequest && !quotedText)) {
+                            await sock.sendMessage(sender, { text: "⚠️ මචං, Group එකට දාන්න ඕන Message එකට Reply (Quote) කරලා 'Send to group' කියලා එවන්න!" }, { quoted: msg });
+                            return;
                         }
 
-                        // 2. Clear Notice Format එක සාදා ගැනීම (Gemini call නොකර direct යැවීම absolute safety සඳහා)
+                        // 2. Target Group එක Select කරගැනීම (General ද Announcement ද කියලා)
+                        let targetGroupId = ANNOUNCEMENT_GROUP_ID; // Default targeting
+                        let groupName = "Announcement Group";
+
+                        if (textLower.includes("general") || textLower.includes("chat")) {
+                            targetGroupId = GENERAL_GROUP_ID;
+                            groupName = "General Group";
+                        }
+
+                        // 3. Notice Format එක
                         const finalMsg = `📢 *ANNOUNCEMENT*\n\n${textToPost}`;
 
-                        // 3. Batch Group එකට Post කිරීම
-                        await sock.sendMessage(BATCH_GROUP_ID, { text: finalMsg });
-                        await sock.sendMessage(sender, { text: "✅ හරි මචං, මම ඒ Notice එක කෙලින්ම Batch Group එකට දැම්මා! 🚀" }, { quoted: msg });
+                        // 4. Selected Group එකට Post කිරීම
+                        await sock.sendMessage(targetGroupId, { text: finalMsg });
+                        await sock.sendMessage(sender, { text: `✅ හරි මචං, මම ඒ Notice එක කෙලින්ම *${groupName}* එකට දැම්මා! 🚀` }, { quoted: msg });
                         return;
 
                     } catch (err) {
