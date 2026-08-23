@@ -1,23 +1,29 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, downloadMediaMessage } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const express = require('express');
 const pino = require('pino');
 const QRCode = require('qrcode');
 
+// 🌐 Express Web Server for Railway Health Check & QR Code Display
 const app = express();
 const PORT = process.env.PORT || 3000;
 let latestQR = "";
 
 app.get('/', async (req, res) => {
-    if (!latestQR) return res.send("<body style='background:#0d1117;color:white;font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;'><h2>🚀 HansanaBot is Active & Ready!</h2></body>");
+    if (!latestQR) {
+        return res.send("<body style='background:#0d1117;color:white;font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;'><h2>🚀 HansanaBot is Active & Connected!</h2></body>");
+    }
     const qrImage = await QRCode.toDataURL(latestQR);
     res.send(`<body style="display:flex;flex-direction:column;justify-content:center;align-items:center;height:100vh;background:#0d1117;color:white;font-family:sans-serif;">
         <h2>Scan QR Code to Connect HansanaBot</h2>
         <img src="${qrImage}" style="width:280px;border:8px solid white;border-radius:10px;"/>
+        <p style="margin-top:15px;color:#8b949e;">Scan using your dedicated Bot WhatsApp Account</p>
     </body>`);
 });
+
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
+// 🤖 Official Gemini AI Setup
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 const systemInstruction = `
@@ -51,7 +57,7 @@ IMPORTANT SLIIT LINKS:
 
 IMPORTANT RULES:
 - Minimum 80% attendance is required for labs and lectures to qualify for final exams.
-- Do NOT perform any administrative tasks like posting messages to groups.
+- Do NOT perform any administrative tasks like posting messages to groups. If asked, inform that announcements are handled solely by the Batch Rep.
 `;
 
 const model = genAI.getGenerativeModel({ 
@@ -59,8 +65,9 @@ const model = genAI.getGenerativeModel({
     systemInstruction: systemInstruction 
 });
 
+// 🛡️ Rate Limiter (Cooldown of 3 seconds per user)
 const userCooldowns = new Map();
-const COOLDOWN_TIME_MS = 3000; 
+const COOLDOWN_TIME_MS = 3000;
 
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
@@ -70,8 +77,7 @@ async function startBot() {
         logger: pino({ level: 'silent' }),
         printQRInTerminal: false,
         keepAliveIntervalMs: 20000,
-        // 🚀 Enable LID mapping in Baileys
-        getMesssage: async () => { return { conversation: 'Hi' } }
+        syncFullHistory: false
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -80,7 +86,7 @@ async function startBot() {
         const { connection, qr, lastDisconnect } = update;
         if (qr) {
             latestQR = qr;
-            console.log("👉 New QR Code available on Railway URL!");
+            console.log("👉 New QR Code available on Web URL!");
         }
         if (connection === 'open') {
             latestQR = "";
@@ -91,6 +97,8 @@ async function startBot() {
             if (shouldReconnect) {
                 console.log("🔄 Reconnecting...");
                 setTimeout(() => startBot(), 3000);
+            } else {
+                console.log("❌ Connection Logged Out. Please restart container to re-scan QR.");
             }
         }
     });
@@ -100,13 +108,15 @@ async function startBot() {
         
         for (const msg of messages) {
             try {
+                // Ignore empty messages, status updates, or messages sent by the bot itself
                 if (!msg.message || msg.key.fromMe) continue;
 
                 const remoteJid = msg.key.remoteJid;
-                const isGroup = remoteJid.endsWith('@g.us');
+                
+                // 🛑 Block Group Messages (Only allow DM support)
+                if (remoteJid.endsWith('@g.us')) continue;
 
-                if (isGroup) continue;
-
+                // Rate limiting check
                 const now = Date.now();
                 if (userCooldowns.has(remoteJid)) {
                     if (now - userCooldowns.get(remoteJid) < COOLDOWN_TIME_MS) continue;
@@ -116,33 +126,23 @@ async function startBot() {
                 const text = msg.message.conversation || 
                              msg.message.extendedTextMessage?.text || 
                              msg.message.imageMessage?.caption || "";
-                
-                const imgMsg = msg.message.imageMessage;
-                if (!text && !imgMsg) continue;
 
-                console.log(`📩 Processing message from ${remoteJid}: "${text}"`);
+                if (!text) continue;
 
-                let replyText = "";
+                console.log(`📩 New DM from ${remoteJid}: "${text}"`);
+                await sock.sendPresenceUpdate('composing', remoteJid);
 
-                if (imgMsg) {
-                    const buffer = await downloadMediaMessage(msg, 'buffer', {});
-                    const imagePart = { inlineData: { data: buffer.toString('base64'), mimeType: imgMsg.mimetype || 'image/jpeg' } };
-                    const prompt = text ? text : "Explain or solve this academic image for the student.";
-                    const result = await model.generateContent([prompt, imagePart]);
-                    replyText = result.response.text();
-                } else {
-                    const result = await model.generateContent(text);
-                    replyText = result.response.text();
-                }
+                // Generate Response using Gemini API
+                const result = await model.generateContent(text);
+                const replyText = result.response.text();
 
                 if (replyText) {
-                    // 🚀 CRITICAL FIX: Send reply using msg.key so Baileys auto-resolves LID/PN context
-                    await sock.sendMessage(remoteJid, { text: replyText }, { quoted: msg });
-                    console.log(`✅ Sent reply to ${remoteJid}`);
+                    await sock.sendMessage(remoteJid, { text: replyText });
+                    console.log(`✅ Replied successfully to ${remoteJid}`);
                 }
 
             } catch (err) {
-                console.error("❌ Error handling message:", err);
+                console.error("❌ Message Error:", err);
             }
         }
     });
