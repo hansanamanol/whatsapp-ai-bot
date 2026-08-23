@@ -1,6 +1,6 @@
 FROM node:20-slim
 
-# Install latest chrome dev package and fonts to support major charsets
+# Install Chromium and dependencies
 RUN apt-get update && apt-get install -y \
     wget \
     gnupg \
@@ -16,9 +16,10 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
 
 WORKDIR /usr/src/app
 
-COPY package*.json ./
-RUN npm install
-
+# project files ඔක්කොම මුලින්ම Copy කරන්න
 COPY . .
+
+# production modules ඇතුළුව සියලුම packages clean install කරන්න
+RUN npm ci || npm install
 
 CMD [ "node", "index.js" ]
