@@ -16,7 +16,7 @@ const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
-// 🚦 Simple Message Queue System (Session corruption & rate-limit වැළැක්වීමට)
+// 🚦 Message Queue System (Concurrency & Session corruption වැළැක්වීමට)
 const messageQueue = [];
 let isProcessingQueue = false;
 
@@ -31,7 +31,6 @@ async function processQueue() {
     } catch (err) {
         console.error("❌ Queue Processing Error:", err);
     } finally {
-        // WhatsApp anti-spam filter අහුවෙන්නේ නැති වෙන්න තත්පර 1ක Delay එකක් තැබීම
         setTimeout(() => {
             isProcessingQueue = false;
             processQueue();
@@ -48,7 +47,7 @@ function addToQueue(taskFunction) {
 const ADMIN_PHONE_NUMBER = "94762513957"; 
 const ADMIN_LID = "17848192627279"; 
 
-// 📢 GROUP IDs (ANNOUNCEMENT & GENERAL)
+// 📢 GROUP IDs
 const ANNOUNCEMENT_GROUP_ID = "120363425513397101@g.us"; 
 const GENERAL_GROUP_ID = "120363409747625255@g.us";
 
@@ -57,13 +56,15 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 let latestQR = "";
 
+app.get('/health', (req, res) => res.status(200).send('OK'));
+
 app.get('/', async (req, res) => {
     if (!latestQR) {
         return res.send(`
             <html>
                 <head><meta http-equiv="refresh" content="3"></head>
                 <body style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#0d1117;color:white;">
-                    <h2>QR Code එක Loading... තත්පර 3න් Auto Refresh වෙයි...</h2>
+                    <h2>WhatsApp AI Bot Active & Running! 🚀</h2>
                 </body>
             </html>
         `);
@@ -84,7 +85,8 @@ app.get('/', async (req, res) => {
     }
 });
 
-app.listen(PORT, () => {
+// Railway Binding Fix (0.0.0.0)
+app.listen(PORT, '0.0.0.0', () => {
     console.log(`Web server running on port ${PORT}`);
 });
 
@@ -140,17 +142,10 @@ IMPORTANT LINKS & PORTALS:
 3. Eduscope (Lecture Recordings): https://eduscope.sliit.lk/
 4. Issue Reporting Form: https://docs.google.com/forms/d/e/1FAIpQLSfOUJnkMp8Tdig0C187WDOgU5AZmtPh3ayBZ-_z9xd23K3Zgw/viewform?usp=publish-editor
 5. SLIIT Support Desk: https://ask.sliit.lk/
-
-CRITICAL CODE & TUTORIAL ANALYSIS RULES:
-- When analyzing code snippets or tutorials:
-  1. Pay EXTREME attention to variable scope and re-initialization (e.g., whether 'j = 1' is initialized OUTSIDE or INSIDE an outer loop).
-  2. Distinguish clearly between Sequential/Consecutive loops and Nested loops. Do not multiply iterations unless one loop is strictly nested inside another.
-  3. Keep track of accurate question labeling (a, b, c, d, e) without swapping their code contents.
 `;
 
-// ✅ Fixed to stable 100% working model
 const model = genAI.getGenerativeModel({ 
-    model: "gemini-1.5-flash",
+    model: "gemini-3.5-flash",
     systemInstruction: systemInstruction 
 });
 
@@ -226,7 +221,6 @@ async function connectToWhatsApp() {
         for (const msg of messages) {
             if (!msg.message || msg.key.fromMe) continue;
 
-            // 🚦 Queue එක ඇතුළට Message Task එක එකතු කිරීම
             addToQueue(async () => {
                 try {
                     let sender = msg.key.remoteJid;
@@ -267,14 +261,14 @@ async function connectToWhatsApp() {
                                            imgMsg?.caption || 
                                            docMsg?.caption || "";
 
-                    console.log(`📩 [Queued Process] From ${chatJid} (Sender: ${sender}): "${rawMessageText}"`);
+                    console.log(`📩 [Queued Process] From ${chatJid}: "${rawMessageText}"`);
 
                     let fullUserPrompt = rawMessageText;
                     if (quotedText) {
                         fullUserPrompt = `[Quoted/Referenced Text: "${quotedText}"]\nUser Action Requested: "${rawMessageText}"`;
                     }
 
-                    // 🎙️ AUDIO PROCESSING
+                    // 🎙️ AUDIO
                     if (audioMsg) {
                         await sock.sendPresenceUpdate('composing', chatJid);
                         await sock.sendMessage(chatJid, { text: "🎙️ **Voice Note එක Process වෙමින් පවතියි...**" }, { quoted: msg });
@@ -292,13 +286,13 @@ async function connectToWhatsApp() {
                         return;
                     }
 
-                    // 📄 DOCUMENT / PDF PROCESSING
+                    // 📄 DOCUMENT / PDF
                     if (docMsg) {
                         const mimeType = docMsg?.mimetype || '';
 
                         if (mimeType === 'application/pdf') {
                             await sock.sendPresenceUpdate('composing', chatJid);
-                            await sock.sendMessage(chatJid, { text: "📄 **PDF Document එක Read කරමින් පවතියි...** පොඩ්ඩක් ඉන්න!" }, { quoted: msg });
+                            await sock.sendMessage(chatJid, { text: "📄 **PDF Document එක Read කරමින් පවතියි...** పొඩ්ඩක් ඉන්න!" }, { quoted: msg });
 
                             const buffer = await downloadMediaMessage(msg, 'buffer', {});
                             const base64Pdf = buffer.toString('base64');
@@ -315,7 +309,7 @@ async function connectToWhatsApp() {
                         }
                     }
 
-                    // 📸 IMAGE PROCESSING
+                    // 📸 IMAGE
                     if (imgMsg) {
                         await sock.sendPresenceUpdate('composing', chatJid);
                         await sock.sendMessage(chatJid, { text: "⏳ **Image එක Processing...**" }, { quoted: msg });
@@ -335,7 +329,7 @@ async function connectToWhatsApp() {
                         return;
                     }
 
-                    // 💬 DIRECT MESSAGES & BROADCAST
+                    // 💬 DM & BROADCAST
                     if (!isGroup) {
                         const textLower = rawMessageText.toLowerCase().trim();
                         
@@ -376,15 +370,12 @@ async function connectToWhatsApp() {
                             return;
                         }
                     
-                        // Normal DM Chat Response (Gemini AI)
                         if (rawMessageText) {
                             await sock.sendPresenceUpdate('composing', chatJid);
-                            console.log(`🤖 Generating Gemini response for prompt: "${fullUserPrompt}"...`);
                             
                             const result = await model.generateContent(fullUserPrompt);
                             const replyText = result.response.text();
                             
-                            console.log(`✅ [Queued Reply Sent] to ${chatJid}: "${replyText.substring(0, 30)}..."`);
                             await sock.sendMessage(chatJid, { text: replyText }, { quoted: msg });
                         }
                     }
