@@ -120,9 +120,9 @@ CRITICAL CODE & TUTORIAL ANALYSIS RULES:
   3. Keep track of accurate question labeling (a, b, c, d, e) without swapping their code contents.
 `;
 
-// ✅ Fixed Model Name to valid API model
+// ✅ Using gemini-1.5-flash which is standard and universally supported
 const model = genAI.getGenerativeModel({ 
-    model: "gemini-3.5-flash-lite",
+    model: "gemini-1.5-flash",
     systemInstruction: systemInstruction 
 });
 
@@ -196,53 +196,55 @@ async function connectToWhatsApp() {
         if (type !== 'notify') return;
 
         for (const msg of messages) {
-            if (!msg.message || msg.key.fromMe) continue;
+            try {
+                if (!msg.message || msg.key.fromMe) continue;
 
-            const sender = msg.key.remoteJid;
-            const isGroup = sender.endsWith('@g.us');
+                const sender = msg.key.remoteJid;
+                const isGroup = sender.endsWith('@g.us');
 
-            // 🛑 Groups දෙක හැර වෙනත් Groups Skip කිරීම
-            if (isGroup && sender !== ANNOUNCEMENT_GROUP_ID && sender !== GENERAL_GROUP_ID) continue;
+                // 🛑 Groups දෙක හැර වෙනත් Groups Skip කිරීම
+                if (isGroup && sender !== ANNOUNCEMENT_GROUP_ID && sender !== GENERAL_GROUP_ID) continue;
 
-            await sock.readMessages([msg.key]);
-            await sock.sendPresenceUpdate('composing', sender);
+                await sock.readMessages([msg.key]);
 
-            // Extract Media Objects
-            const imgMsg = msg.message.imageMessage || 
-                           msg.message.viewOnceMessage?.message?.imageMessage ||
-                           msg.message.viewOnceMessageV2?.message?.imageMessage ||
-                           msg.message.ephemeralMessage?.message?.imageMessage;
+                // Extract Media Objects
+                const imgMsg = msg.message.imageMessage || 
+                               msg.message.viewOnceMessage?.message?.imageMessage ||
+                               msg.message.viewOnceMessageV2?.message?.imageMessage ||
+                               msg.message.ephemeralMessage?.message?.imageMessage;
 
-            const audioMsg = msg.message.audioMessage ||
-                             msg.message.viewOnceMessage?.message?.audioMessage ||
-                             msg.message.ephemeralMessage?.message?.audioMessage;
+                const audioMsg = msg.message.audioMessage ||
+                                 msg.message.viewOnceMessage?.message?.audioMessage ||
+                                 msg.message.ephemeralMessage?.message?.audioMessage;
 
-            const docMsg = msg.message.documentMessage || 
-                           msg.message.documentWithCaptionMessage?.message?.documentMessage ||
-                           msg.message.ephemeralMessage?.message?.documentMessage;
+                const docMsg = msg.message.documentMessage || 
+                               msg.message.documentWithCaptionMessage?.message?.documentMessage ||
+                               msg.message.ephemeralMessage?.message?.documentMessage;
 
-            // Extract Context/Quoted Message
-            const firstMsgType = Object.keys(msg.message)[0];
-            const contextInfo = msg.message[firstMsgType]?.contextInfo || msg.message.extendedTextMessage?.contextInfo;
-            const quotedMsgObj = contextInfo?.quotedMessage;
-            
-            const quotedText = quotedMsgObj?.conversation ||
-                              quotedMsgObj?.extendedTextMessage?.text ||
-                              quotedMsgObj?.imageMessage?.caption || "";
+                // Extract Context/Quoted Message
+                const firstMsgType = Object.keys(msg.message)[0];
+                const contextInfo = msg.message[firstMsgType]?.contextInfo || msg.message.extendedTextMessage?.contextInfo;
+                const quotedMsgObj = contextInfo?.quotedMessage;
+                
+                const quotedText = quotedMsgObj?.conversation ||
+                                  quotedMsgObj?.extendedTextMessage?.text ||
+                                  quotedMsgObj?.imageMessage?.caption || "";
 
-            const rawMessageText = msg.message.conversation || 
-                                   msg.message.extendedTextMessage?.text || 
-                                   imgMsg?.caption || 
-                                   docMsg?.caption || "";
+                const rawMessageText = msg.message.conversation || 
+                                       msg.message.extendedTextMessage?.text || 
+                                       imgMsg?.caption || 
+                                       docMsg?.caption || "";
 
-            let fullUserPrompt = rawMessageText;
-            if (quotedText) {
-                fullUserPrompt = `[Quoted/Referenced Text: "${quotedText}"]\nUser Action Requested: "${rawMessageText}"`;
-            }
+                console.log(`📩 Incoming message from ${sender}: "${rawMessageText}"`);
 
-            // 🎙️ AUDIO / VOICE MESSAGE PROCESSING
-            if (audioMsg) {
-                try {
+                let fullUserPrompt = rawMessageText;
+                if (quotedText) {
+                    fullUserPrompt = `[Quoted/Referenced Text: "${quotedText}"]\nUser Action Requested: "${rawMessageText}"`;
+                }
+
+                // 🎙️ AUDIO / VOICE MESSAGE PROCESSING
+                if (audioMsg) {
+                    await sock.sendPresenceUpdate('composing', sender);
                     await sock.sendMessage(sender, { text: "🎙️ **Voice Note එක Process වෙමින් පවතියි...**" }, { quoted: msg });
 
                     const oggBuffer = await downloadMediaMessage(msg, 'buffer', {});
@@ -256,19 +258,14 @@ async function connectToWhatsApp() {
 
                     await sock.sendMessage(sender, { text: reply }, { quoted: msg });
                     return;
-                } catch (err) {
-                    console.error('Error processing Audio:', err);
-                    await sock.sendMessage(sender, { text: "❌ Voice Message එක තේරුම් ගන්න බැරි වුණා." }, { quoted: msg });
-                    return;
                 }
-            }
 
-            // 📄 DOCUMENT / PDF MESSAGE PROCESSING
-            if (docMsg) {
-                try {
+                // 📄 DOCUMENT / PDF MESSAGE PROCESSING
+                if (docMsg) {
                     const mimeType = docMsg?.mimetype || '';
 
                     if (mimeType === 'application/pdf') {
+                        await sock.sendPresenceUpdate('composing', sender);
                         await sock.sendMessage(sender, { text: "📄 **PDF Document එක Read කරමින් පවතියි...** පොඩ්ඩක් ඉන්න!" }, { quoted: msg });
 
                         const buffer = await downloadMediaMessage(msg, 'buffer', {});
@@ -284,16 +281,11 @@ async function connectToWhatsApp() {
                         await sock.sendMessage(sender, { text: reply }, { quoted: msg });
                         return;
                     }
-                } catch (err) {
-                    console.error('Error processing PDF Document:', err);
-                    await sock.sendMessage(sender, { text: "❌ PDF එක Read කරගන්න බැරි වුණා." }, { quoted: msg });
-                    return;
                 }
-            }
 
-            // 📸 IMAGE MESSAGE PROCESSING
-            if (imgMsg) {
-                try {
+                // 📸 IMAGE MESSAGE PROCESSING
+                if (imgMsg) {
+                    await sock.sendPresenceUpdate('composing', sender);
                     await sock.sendMessage(sender, { text: "⏳ **Image එක Processing...**" }, { quoted: msg });
 
                     const buffer = await downloadMediaMessage(msg, 'buffer', {});
@@ -309,33 +301,27 @@ async function connectToWhatsApp() {
 
                     await sock.sendMessage(sender, { text: reply }, { quoted: msg });
                     return;
-                } catch (err) {
-                    console.error('Error processing Image:', err);
-                    await sock.sendMessage(sender, { text: "❌ Image එක කියවගන්න බැරි වුණා. කරුණාකර නැවත එවා බලන්න." }, { quoted: msg });
-                    return;
                 }
-            }
 
-            // 💬 DIRECT MESSAGE BROADCAST & DM CHAT (DM Only)
-            if (!isGroup) {
-                const textLower = rawMessageText.toLowerCase().trim();
-                
-                const postKeywords = [
-                    "send this message to group", "send to group", "post to group",
-                    "yawanna group එකට", "යවන්න group", "group එකට දාන්න", "group එකට දාපන්", "group එකට යවන්න"
-                ];
-                
-                const isPostRequest = postKeywords.some(keyword => textLower.includes(keyword));
+                // 💬 DIRECT MESSAGE BROADCAST & DM CHAT
+                if (!isGroup) {
+                    const textLower = rawMessageText.toLowerCase().trim();
+                    
+                    const postKeywords = [
+                        "send this message to group", "send to group", "post to group",
+                        "yawanna group එකට", "යවන්න group", "group එකට දාන්න", "group එකට දාපන්", "group එකට යවන්න"
+                    ];
+                    
+                    const isPostRequest = postKeywords.some(keyword => textLower.includes(keyword));
 
-                if (isPostRequest) {
-                    // 🔒 SECURITY CHECK: Admin (Monal) විතරද කියලා බලනවා
-                    const isAdmin = sender.includes(ADMIN_PHONE_NUMBER) || (ADMIN_LID && sender.includes(ADMIN_LID));
+                    if (isPostRequest) {
+                        const isAdmin = sender.includes(ADMIN_PHONE_NUMBER) || (ADMIN_LID && sender.includes(ADMIN_LID));
 
-                    if (!isAdmin) {
-                        await sock.sendMessage(sender, { text: "❌ මචං, Group එකට Announcements දාන්න පුළුවන් Batch Rep (Monal) ට විතරයි!" }, { quoted: msg });
-                        return;
-                    }
-                    try {
+                        if (!isAdmin) {
+                            await sock.sendMessage(sender, { text: "❌ මචං, Group එකට Announcements දාන්න පුළුවන් Batch Rep (Monal) ට විතරයි!" }, { quoted: msg });
+                            return;
+                        }
+                        
                         let textToPost = quotedText || rawMessageText;
 
                         if (!textToPost || (textToPost === rawMessageText && isPostRequest && !quotedText)) {
@@ -356,25 +342,23 @@ async function connectToWhatsApp() {
                         await sock.sendMessage(targetGroupId, { text: finalMsg });
                         await sock.sendMessage(sender, { text: `✅ හරි මචං, මම ඒ Notice එක කෙලින්ම *${groupName}* එකට දැම්මා! 🚀` }, { quoted: msg });
                         return;
-
-                    } catch (err) {
-                        console.error('Error broadcasting admin message:', err);
-                        await sock.sendMessage(sender, { text: "❌ Group එකට Post කිරීමේදී Error එකක් ආවා." }, { quoted: msg });
-                        return;
                     }
-                }
-            
-                // Normal DM Chat Response (Gemini AI)
-                if (rawMessageText) {
-                    try {
+                
+                    // Normal DM Chat Response (Gemini AI)
+                    if (rawMessageText) {
+                        await sock.sendPresenceUpdate('composing', sender);
+                        console.log(`🤖 Generating Gemini response for prompt: "${fullUserPrompt}"...`);
+                        
                         const result = await model.generateContent(fullUserPrompt);
                         const replyText = result.response.text();
+                        
+                        console.log(`✅ Sending reply: "${replyText.substring(0, 30)}..."`);
                         await sock.sendMessage(sender, { text: replyText }, { quoted: msg });
-                    } catch (error) {
-                        console.error('Error generating AI response:', error);
                     }
                 }
-            }      
+            } catch (msgError) {
+                console.error("❌ Error processing individual message:", msgError);
+            }
         }
     });
 }
