@@ -112,9 +112,15 @@ async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
 
     const sock = makeWASocket({
-        auth: state,
+       auth: state,
         printQRInTerminal: false,
-        logger: pino({ level: 'silent' })
+        logger: pino({ level: 'silent' }),
+        // 🛠️ Session Corrupt/Closed වීම වැළැක්වීමට මේවා එකතු කරන්න:
+        syncFullHistory: false,
+        markOnlineOnConnect: true,
+        generateHighQualityLinkPreview: true,
+        badSessionDeleteHistory: true,
+        retryRequestDelayMs: 2000
     });
 
     sock.ev.on('creds.update', saveCreds);
