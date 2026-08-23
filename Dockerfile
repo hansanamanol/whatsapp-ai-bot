@@ -16,10 +16,12 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
 
 WORKDIR /usr/src/app
 
-# project files ඔක්කොම මුලින්ම Copy කරන්න
-COPY . .
+COPY package*.json ./
 
-# production modules ඇතුළුව සියලුම packages clean install කරන්න
-RUN npm ci || npm install
+# Force install all packages directly
+RUN npm install
+RUN npm install @google/generative-ai express puppeteer qrcode qrcode-terminal whatsapp-web.js
+
+COPY . .
 
 CMD [ "node", "index.js" ]
