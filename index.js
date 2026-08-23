@@ -9,6 +9,9 @@ const qrcodeTerminal = require('qrcode-terminal');
 const QRCode = require('qrcode');
 const express = require('express');
 const pino = require('pino');
+const gTTS = require('gtts');
+const fs = require('fs');
+const path = require('path');
 
 // Express Web Server Setup
 const app = express();
@@ -19,9 +22,7 @@ app.get('/', async (req, res) => {
     if (!latestQR) {
         return res.send(`
             <html>
-                <head>
-                    <meta http-equiv="refresh" content="3">
-                </head>
+                <head><meta http-equiv="refresh" content="3"></head>
                 <body style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#0d1117;color:white;">
                     <h2>QR Code එක Loading... තත්පර 3න් Auto Refresh වෙයි...</h2>
                 </body>
@@ -32,9 +33,7 @@ app.get('/', async (req, res) => {
         const qrImage = await QRCode.toDataURL(latestQR);
         res.send(`
             <html>
-                <head>
-                    <title>WhatsApp Bot QR Code</title>
-                </head>
+                <head><title>WhatsApp Bot QR Code</title></head>
                 <body style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#0d1117;color:white;">
                     <h2>Scan this QR Code with WhatsApp</h2>
                     <img src="${qrImage}" style="border:10px solid white;border-radius:10px;width:300px;height:300px;"/>
@@ -50,6 +49,44 @@ app.listen(PORT, () => {
     console.log(`Web server running on port ${PORT}`);
 });
 
+// Helper Function: Text to Speech (TTS)
+function sendVoiceResponse(sock, sender, text, quotedMsg) {
+    return new Promise((resolve, reject) => {
+        try {
+            // Shorten text if too long for clean voice generation
+            const cleanText = text.replace(/[*_~`#]/g, '').slice(0, 400);
+            const gtts = new gTTS(cleanText, 'en'); 
+            const filePath = path.join(__dirname, `reply_${Date.now()}.mp3`);
+
+            gtts.save(filePath, async function (err, result) {
+                if (err) {
+                    console.error('gTTS Error:', err);
+                    return resolve();
+                }
+                try {
+                    const audioBuffer = fs.readFileSync(filePath);
+                    await sock.sendMessage(sender, { 
+                        audio: audioBuffer, 
+                        mimetype: 'audio/mp4', 
+                        ptt: true // Sends as a Voice Note (PTT)
+                    }, { quoted: quotedMsg });
+
+                    // Clean up temp file
+                    fs.unlinkSync(filePath);
+                    resolve();
+                } catch (sendErr) {
+                    console.error('Error sending audio message:', sendErr);
+                    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+                    resolve();
+                }
+            });
+        } catch (e) {
+            console.error('TTS Exception:', e);
+            resolve();
+        }
+    });
+}
+
 // Gemini API Setup
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
@@ -61,9 +98,10 @@ You behave like a natural conversational AI (just like the official Gemini app).
 YOUR RESPONSIBILITIES:
 1. Helping Students:
    - Answer student questions naturally, friendly, and accurately in Singlish, Sinhala, or English based on the user's language.
+   - You can listen to Audio/Voice messages sent in Sinhala, English, or Singlish and respond accurately.
+   - Keep voice responses concise, clear, and easy to speak out loud.
    - Assist them with Timetable info, Calendar link, Issue forms, and LIC contacts.
    - Read images/notices sent by students and explain or summarize them clearly.
-   - Always pay close attention to quoted/replied context if provided in the prompt.
 
 2. Assisting the Batch Rep (Admin):
    - When the Batch Rep asks you to post or announce something, translate and rephrase it into clear, simple, professional English formatted as an official student notice.
@@ -81,7 +119,7 @@ Important Links & Info:
 `;
 
 const model = genAI.getGenerativeModel({ 
-    model: "gemini-3.1-flash-lite",
+    model: "gemini-3.6-flash",
     systemInstruction: systemInstruction 
 });
 
@@ -136,11 +174,11 @@ async function connectToWhatsApp() {
 
             if (isGroup && sender !== BATCH_GROUP_ID) continue; 
 
-            // 1. Blue Tick (Seen) & Typing status
+            // Blue Tick (Seen) & Typing status
             await sock.readMessages([msg.key]);
             await sock.sendPresenceUpdate('composing', sender);
 
-            // Extract Quoted Message Context (කලින් Reply කරපු Message එකේ Text එක)
+            // Extract Quoted Message Context
             const contextInfo = msg.message[messageType]?.contextInfo;
             const quotedText = contextInfo?.quotedMessage?.conversation ||
                               contextInfo?.quotedMessage?.extendedTextMessage?.text ||
@@ -150,17 +188,62 @@ async function connectToWhatsApp() {
                                    msg.message.extendedTextMessage?.text || 
                                    msg.message.imageMessage?.caption || "";
 
-            // Quoted message එකක් තිබුණොත් ඒක Prompt එකට Context එකක් විදිහට එකතු කරනවා
             let fullUserPrompt = rawMessageText;
             if (quotedText) {
                 fullUserPrompt = `[Context / Previous Message Being Replied To: "${quotedText}"]\nUser Current Response: "${rawMessageText}"`;
             }
 
-            // 📸 IMAGE MESSAGE PROCESSING (Both Admin & Students)
+            // 🎙️ VOICE / AUDIO MESSAGE PROCESSING
+            if (messageType === 'audioMessage') {
+                try {
+                    await sock.sendMessage(sender, { 
+                        text: "🎙️ **Voice message එක අහන ගමන්...**" 
+                    }, { quoted: msg });
+
+                    const buffer = await downloadMediaMessage(msg, 'buffer', {});
+                    const base64Audio = buffer.toString('base64');
+                    const mimeType = msg.message.audioMessage.mimetype || 'audio/ogg';
+
+                    const audioPart = {
+                        inlineData: { data: base64Audio, mimeType: mimeType.split(';')[0] }
+                    };
+
+                    if (sender === ADMIN_NUMBER) {
+                        const prompt = "Listen to this voice message from the Batch Rep. If it is an announcement to post, write a clean SIMPLE ENGLISH notice. Otherwise, reply naturally. Context: " + (quotedText ? `"${quotedText}"` : "None");
+                        const result = await model.generateContent([prompt, audioPart]);
+                        const responseText = result.response.text();
+
+                        if (responseText.toLowerCase().includes("announcement") || responseText.toLowerCase().includes("notice")) {
+                            const finalMsg = `📢 *ANNOUNCEMENT*\n\n${responseText}`;
+                            await sock.sendMessage(BATCH_GROUP_ID, { text: finalMsg });
+                            await sock.sendMessage(sender, { text: "හරි මචං, ඔයා Voice Note එකෙන් කියපු එක Announcement එකක් කරලා Group එකට දැම්මා! 👍" }, { quoted: msg });
+                        } else {
+                            await sock.sendMessage(sender, { text: responseText }, { quoted: msg });
+                            await sendVoiceResponse(sock, sender, responseText, msg);
+                        }
+                    } else {
+                        const prompt = "Listen to this student voice message. Answer clearly and helpfully. Context: " + (quotedText ? `"${quotedText}"` : "None");
+                        const result = await model.generateContent([prompt, audioPart]);
+                        const reply = result.response.text();
+
+                        // Send Text Reply AND Voice Note Reply
+                        await sock.sendMessage(sender, { text: reply }, { quoted: msg });
+                        await sendVoiceResponse(sock, sender, reply, msg);
+                    }
+                    return;
+
+                } catch (err) {
+                    console.error('Error processing Voice Message:', err);
+                    await sock.sendMessage(sender, { text: "❌ අයියෝ Voice Note එක පැහැදිලි නැහැ, ආයේ දාලා බලන්න." }, { quoted: msg });
+                    return;
+                }
+            }
+
+            // 📸 IMAGE MESSAGE PROCESSING
             if (messageType === 'imageMessage') {
                 try {
                     await sock.sendMessage(sender, { 
-                        text: "⏳ **Image එක Processing...** පොඩ්ඩක් ඉන්න, මම මේක බලලා ඉක්මනින්ම විස්තර කරන්නම්!" 
+                        text: "⏳ **Image එක Processing...**" 
                     }, { quoted: msg });
 
                     const buffer = await downloadMediaMessage(msg, 'buffer', {});
@@ -171,19 +254,19 @@ async function connectToWhatsApp() {
                         inlineData: { data: base64Image, mimeType: mimeType }
                     };
 
-                    const captionPrompt = rawMessageText ? ` User prompt/caption: "${rawMessageText}"` : "";
+                    const captionPrompt = rawMessageText ? ` User prompt: "${rawMessageText}"` : "";
                     
                     if (sender === ADMIN_NUMBER) {
-                        const prompt = "Read this image notice and write a clear, attractive student announcement in SIMPLE ENGLISH. Use bold text for key dates, times, and instructions. Output ONLY the notice text without intro/outro." + captionPrompt;
+                        const prompt = "Read this image notice and write a clear student announcement in SIMPLE ENGLISH." + captionPrompt;
                         const result = await model.generateContent([prompt, imagePart]);
                         const announcement = result.response.text();
 
                         const finalMsg = `📢 *ANNOUNCEMENT*\n\n${announcement}`;
 
                         await sock.sendMessage(BATCH_GROUP_ID, { image: buffer, caption: finalMsg });
-                        await sock.sendMessage(sender, { text: "✅ Image එකයි Simple English Notice එකයි Group එකට දැම්මා!" }, { quoted: msg });
+                        await sock.sendMessage(sender, { text: "✅ Image එකයි Notice එකයි Group එකට දැම්මා!" }, { quoted: msg });
                     } else {
-                        const prompt = "Read this image notice/document. Explain its details clearly to the student in friendly Singlish or simple English based on what they asked." + captionPrompt;
+                        const prompt = "Read this image notice/document and explain it clearly to the student." + captionPrompt;
                         const result = await model.generateContent([prompt, imagePart]);
                         const reply = result.response.text();
 
@@ -203,10 +286,7 @@ async function connectToWhatsApp() {
                 const text = rawMessageText.toLowerCase();
                 if (text.includes("කියපන්") || text.includes("කියන්න") || text.includes("දාපන්") || text.includes("දාන්න") || text.includes("inform") || text.includes("tell") || text.includes("post") || text.includes("announce")) {
                     try {
-                        const prompt = `The Batch Rep sent this message: "${fullUserPrompt}".
-Translate and convert this message into a well-formatted, clean, and SIMPLE ENGLISH announcement notice for university students. 
-Use clear structure, bold headings/key details, and appropriate emojis. 
-CRITICAL: Output ONLY the final simple English notice text.`;
+                        const prompt = `The Batch Rep sent this message: "${fullUserPrompt}". Translate and convert this message into a simple English announcement notice for students. Output ONLY the notice text.`;
 
                         const result = await model.generateContent(prompt);
                         const announcement = result.response.text();
@@ -223,7 +303,7 @@ CRITICAL: Output ONLY the final simple English notice text.`;
             }
 
             // Normal AI Text Response for Students & Admin
-            if (isGroup) return; // Don't reply to random group text messages
+            if (isGroup) return;
 
             if (rawMessageText) {
                 try {
