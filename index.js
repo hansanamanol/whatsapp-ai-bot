@@ -68,7 +68,7 @@ SPECIAL INSTRUCTION FOR ADMIN (MONAL / BATCH REP):
 - The user you are serving is Monal, the SLIIT IT Y1S2 Batch Representative.
 - Recognize him as "Monal" or "SLIIT IT Y1S2 Batch Rep".
 - When he chats with you or asks "මම කවුද?" / "Who am I?", acknowledge him clearly as Monal, the SLIIT IT Y1S2 Batch Representative.
-- If Monal tells you to send, post, share, or broadcast any message/notice to the group (e.g., "මේක group එකට දාන්න", "group එකට යවන්න", "post this to group"), process and broadcast it directly to the batch group without asking which group.
+- NEVER lie to Monal saying you posted/shared something to the group unless it was actually broadcasted.
 
 YOUR RESPONSIBILITIES FOR STUDENTS:
 1. Helping Students:
@@ -76,6 +76,12 @@ YOUR RESPONSIBILITIES FOR STUDENTS:
    - Assist them with Timetable info, Calendar link, Issue forms, and LIC contacts for Year 1 Semester 2.
    - Listen to voice notes (audio) sent by students/admin and reply appropriately in text.
    - Always pay close attention to quoted/replied context if provided in the prompt.
+2. Direct Contact for Personal Issues / AI Limitations:
+   - If a student asks a personal issue, complex query you cannot solve, or explicitly requests to speak to the Batch Rep / Monal, provide Monal's contact info nicely.
+   - Monal (Batch Rep) Contact Details:
+     * Name: Monal (SLIIT IT Y1S2 Batch Rep)
+     * WhatsApp / Mobile: +94 76 251 3957
+     * Direct Chat Link: https://wa.me/94762513957
 
 Important Links & Info:
 1. Timetable / Calendar: https://calendar.google.com/calendar/u/0?cid=Y2EwYjM4ZDE3MjcyOTIzMTY1N2FiZmMzNGYxYzdmZGJmOGVhMzMwNTBmZTZmNDYyM2Y1ZmFiODhjMGQzNDYzM0Bncm91cC5jYWxlbmRhci5nb29nbGUuY29t
@@ -259,22 +265,21 @@ async function connectToWhatsApp() {
                 }
             }
 
-            // 💬 TEXT MESSAGE PROCESSING (ADMIN BROADCAST DETECTOR)
-            if (isAdmin) {
+            // 💬 TEXT MESSAGE PROCESSING (DIRECT BROADCAST DETECTOR FOR ADMIN)
+            if (isAdmin && !isGroup) {
                 const text = rawMessageText.toLowerCase();
-                const broadcastKeywords = [
-                    "කියපන්", "කියන්න", "දාපන්", "දාන්න", "යවන්න", "යවපන්", 
-                    "inform", "tell", "post", "announce", "send", "broadcast", "group"
-                ];
 
-                const isBroadcastRequest = broadcastKeywords.some(kw => text.includes(kw));
+                const isShareCommand = text.includes("group") || text.includes("දාන්න") || text.includes("දාපන්") || 
+                                       text.includes("යවන්න") || text.includes("යවපන්") || text.includes("share") || 
+                                       text.includes("post") || text.includes("announce") || text.includes("inform");
 
-                if (isBroadcastRequest) {
+                if (isShareCommand) {
                     try {
-                        const prompt = `The Batch Rep (Monal) sent this message: "${fullUserPrompt}".
-Translate and convert this message into a well-formatted, clean, and SIMPLE ENGLISH announcement notice for university students. 
-Use clear structure, bold headings/key details, and appropriate emojis. 
-CRITICAL: Output ONLY the final simple English notice text. Do not include intro or outro words.`;
+                        const prompt = `The Batch Rep (Monal) wants to send an announcement notice to the batch group.
+Message / Context: "${fullUserPrompt}".
+Reformat and convert this message into a well-structured, clean, professional, and SIMPLE ENGLISH announcement notice for university students. 
+Use clear headings, bold details, and emojis.
+CRITICAL: Output ONLY the notice text itself. Do not include intro/outro greetings like "Here is your notice".`;
 
                         const result = await model.generateContent(prompt);
                         const announcement = result.response.text();
@@ -282,16 +287,19 @@ CRITICAL: Output ONLY the final simple English notice text. Do not include intro
                         const finalMsg = `📢 *ANNOUNCEMENT*\n\n${announcement}`;
 
                         await sock.sendMessage(BATCH_GROUP_ID, { text: finalMsg });
-                        await sock.sendMessage(sender, { text: "හරි Monal, මම ඒක Simple English වලින් Translate කරලා Group එකට දැම්මා! 👍" }, { quoted: msg });
+                        await sock.sendMessage(sender, { text: "✅ හරි Monal, මම ඒ Notice එක Simple English වලින් සකස් කරලා SLIIT IT Y1S2 Batch Group එකට දැන්ම දැම්මා! 👍" }, { quoted: msg });
                         return;
                     } catch (err) {
                         console.error('Error broadcasting admin message:', err);
+                        await sock.sendMessage(sender, { text: "❌ Group එකට Message එක යවද්දී දෝෂයක් ආවා, පොඩ්ඩක් බලන්න." }, { quoted: msg });
+                        return;
                     }
                 }
             }
 
             if (isGroup) return;
 
+            // General AI Response for DM Chat
             if (rawMessageText) {
                 try {
                     const result = await model.generateContent(fullUserPrompt);
