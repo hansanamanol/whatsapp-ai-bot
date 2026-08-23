@@ -311,58 +311,38 @@ async function connectToWhatsApp() {
                 }
             }
 
-// 💬 DIRECT MESSAGE BROADCAST COMMAND (Admin Only)
+// 💬 DIRECT MESSAGE BROADCAST COMMAND (DM Only)
             if (!isGroup) {
                 const textLower = rawMessageText.toLowerCase().trim();
-
-                // 1. Admin ID Check (Phone Number OR LID)
-                const senderDigitsOnly = sender.replace(/\D/g, ''); 
-                const isAdmin = senderDigitsOnly.includes(ADMIN_PHONE_NUMBER) || sender.includes(ADMIN_LID);
-
-                // 2. Broad Keywords Matching
                 const postKeywords = [
-                    "send", "post", "yawanna", "යවන්න", "this", "it",
-                    "group", "දාන්න", "දාපන්", "කියන්න", "කියපන්", 
-                    "announce", "broadcast", "msg", "message"
+                    "send this message to group", "send to group", "post to group",
+                    "this one", "yawanna", "යවන්න", "send", "post", 
+                    "announce", "inform", "tell", "දාන්න", "දාපන්", "කියන්න"
                 ];
-
+                
                 const isPostRequest = postKeywords.some(keyword => textLower.includes(keyword));
 
-                // 🚨 If Admin AND (Trigger Keyword OR Quoted Message Present)
-                if (isAdmin && (isPostRequest || quotedText)) {
+                if (isPostRequest) {
                     try {
-                        const contentToFormat = quotedText || rawMessageText;
+                        // 1. Quoted Message එකක් තියෙනවා නම් ඒක ගන්න, නැත්නම් Raw Message එක ගන්න
+                        let textToPost = quotedText || rawMessageText;
 
-                        // Target Group එක තීරණය කිරීම (General ද Announcement ද)
-                        let targetGroupId = ANNOUNCEMENT_GROUP_ID;
-                        let targetGroupName = "Announcement Group";
-
-                        if (textLower.includes("general") || textLower.includes("chat") || textLower.includes("ජෙනරල්")) {
-                            targetGroupId = GENERAL_GROUP_ID;
-                            targetGroupName = "General Chat Group";
+                        // Post කරන්න කිසිම Content එකක් නැත්නම්
+                        if (!textToPost || textToPost === rawMessageText && isPostRequest) {
+                            if (!quotedText) {
+                                await sock.sendMessage(sender, { text: "⚠️ මචං, Group එකට දාන්න ඕන Message එකට Reply (Quote) කරලා 'Send to group' කියලා එවන්න!" }, { quoted: msg });
+                                return;
+                            }
                         }
 
-                        // Admin ට Status Message එක යැවීම
-                        await sock.sendMessage(sender, { text: `⏳ **Notice එක ${targetGroupName} එකට Format කරමින් පවතියි...**` }, { quoted: msg });
+                        // 2. Clear Notice Format එක සාදා ගැනීම (Gemini call නොකර direct යැවීම absolute safety සඳහා)
+                        const finalMsg = `📢 *ANNOUNCEMENT*\n\n${textToPost}`;
 
-                        const prompt = `The user wants to broadcast the following text/notice to the university student WhatsApp group:
-"${contentToFormat}"
+                        // 3. Batch Group එකට Post කිරීම
+                        await sock.sendMessage(BATCH_GROUP_ID, { text: finalMsg });
+                        await sock.sendMessage(sender, { text: "✅ හරි මචං, මම ඒ Notice එක කෙලින්ම Batch Group එකට දැම්මා! 🚀" }, { quoted: msg });
+                        return;
 
-Reformat and optimize this into a clean, highly readable, professional, and friendly student announcement in Simple English. Use relevant emojis and bold text for key points.
-CRITICAL INSTRUCTION: Output ONLY the final announcement text to be sent directly to students. Do not add any conversational intros, explanations, or meta-comments like "Here is your notice:".`;
-
-                        const result = await model.generateContent(prompt);
-                        const finalContentToPost = result.response.text().trim();
-
-                        const finalMsg = `📢 *ANNOUNCEMENT*\n\n${finalContentToPost}`;
-
-                        // Targeted Group එකට යැවීම
-                        await sock.sendMessage(targetGroupId, { text: finalMsg });
-                        
-                        // Admin ට Confirmation එක යැවීම
-                        await sock.sendMessage(sender, { text: `✅ හරි මචං, මම ඒ Notice එක කෙලින්ම *${targetGroupName}* එකට දැම්මා! 🚀` }, { quoted: msg });
-                        
-                        return; // 🛑 Gemini AI එකේ Normal Response එකට යෑම නතර කිරීම
                     } catch (err) {
                         console.error('Error broadcasting admin message:', err);
                         await sock.sendMessage(sender, { text: "❌ Group එකට Post කිරීමේදී Error එකක් ආවා." }, { quoted: msg });
