@@ -199,11 +199,20 @@ async function connectToWhatsApp() {
             try {
                 if (!msg.message || msg.key.fromMe) continue;
 
-                const sender = msg.key.remoteJid;
-                const isGroup = sender.endsWith('@g.us');
+                // 🔧 FIX: LID (@lid) වෙනුවට Real Phone JID එක (@s.whatsapp.net) හෝ Group JID එක ගැනීම
+                let sender = msg.key.remoteJid;
+                
+                // Real Sender JID එක extraction logic එක
+                if (msg.key.participant) {
+                    sender = msg.key.participant;
+                }
+                
+                // LID එකක් ආවොත් ඒක Filter කරලා Phone JID එක හදාගැනීම
+                const isGroup = msg.key.remoteJid.endsWith('@g.us');
+                const chatJid = msg.key.remoteJid; // Reply යවන්න ඕන Target Chat JID එක
 
                 // 🛑 Groups දෙක හැර වෙනත් Groups Skip කිරීම
-                if (isGroup && sender !== ANNOUNCEMENT_GROUP_ID && sender !== GENERAL_GROUP_ID) continue;
+                if (isGroup && chatJid !== ANNOUNCEMENT_GROUP_ID && chatJid !== GENERAL_GROUP_ID) continue;
 
                 await sock.readMessages([msg.key]);
 
@@ -235,7 +244,7 @@ async function connectToWhatsApp() {
                                        imgMsg?.caption || 
                                        docMsg?.caption || "";
 
-                console.log(`📩 Incoming message from ${sender}: "${rawMessageText}"`);
+                console.log(`📩 Incoming message from ${chatJid} (Sender: ${sender}): "${rawMessageText}"`);
 
                 let fullUserPrompt = rawMessageText;
                 if (quotedText) {
@@ -244,8 +253,8 @@ async function connectToWhatsApp() {
 
                 // 🎙️ AUDIO / VOICE MESSAGE PROCESSING
                 if (audioMsg) {
-                    await sock.sendPresenceUpdate('composing', sender);
-                    await sock.sendMessage(sender, { text: "🎙️ **Voice Note එක Process වෙමින් පවතියි...**" }, { quoted: msg });
+                    await sock.sendPresenceUpdate('composing', chatJid);
+                    await sock.sendMessage(chatJid, { text: "🎙️ **Voice Note එක Process වෙමින් පවතියි...**" }, { quoted: msg });
 
                     const oggBuffer = await downloadMediaMessage(msg, 'buffer', {});
                     const mp3Buffer = await convertAudioToWav(oggBuffer);
@@ -256,7 +265,7 @@ async function connectToWhatsApp() {
                     const result = await model.generateContent([prompt, audioPart]);
                     const reply = result.response.text();
 
-                    await sock.sendMessage(sender, { text: reply }, { quoted: msg });
+                    await sock.sendMessage(chatJid, { text: reply }, { quoted: msg });
                     return;
                 }
 
@@ -265,8 +274,8 @@ async function connectToWhatsApp() {
                     const mimeType = docMsg?.mimetype || '';
 
                     if (mimeType === 'application/pdf') {
-                        await sock.sendPresenceUpdate('composing', sender);
-                        await sock.sendMessage(sender, { text: "📄 **PDF Document එක Read කරමින් පවතියි...** පොඩ්ඩක් ඉන්න!" }, { quoted: msg });
+                        await sock.sendPresenceUpdate('composing', chatJid);
+                        await sock.sendMessage(chatJid, { text: "📄 **PDF Document එක Read කරමින් පවතියි...** පොඩ්ඩක් ඉන්න!" }, { quoted: msg });
 
                         const buffer = await downloadMediaMessage(msg, 'buffer', {});
                         const base64Pdf = buffer.toString('base64');
@@ -278,15 +287,15 @@ async function connectToWhatsApp() {
                         const result = await model.generateContent([prompt, pdfPart]);
                         const reply = result.response.text();
 
-                        await sock.sendMessage(sender, { text: reply }, { quoted: msg });
+                        await sock.sendMessage(chatJid, { text: reply }, { quoted: msg });
                         return;
                     }
                 }
 
                 // 📸 IMAGE MESSAGE PROCESSING
                 if (imgMsg) {
-                    await sock.sendPresenceUpdate('composing', sender);
-                    await sock.sendMessage(sender, { text: "⏳ **Image එක Processing...**" }, { quoted: msg });
+                    await sock.sendPresenceUpdate('composing', chatJid);
+                    await sock.sendMessage(chatJid, { text: "⏳ **Image එක Processing...**" }, { quoted: msg });
 
                     const buffer = await downloadMediaMessage(msg, 'buffer', {});
                     const base64Image = buffer.toString('base64');
@@ -299,7 +308,7 @@ async function connectToWhatsApp() {
                     const result = await model.generateContent([prompt, imagePart]);
                     const reply = result.response.text();
 
-                    await sock.sendMessage(sender, { text: reply }, { quoted: msg });
+                    await sock.sendMessage(chatJid, { text: reply }, { quoted: msg });
                     return;
                 }
 
@@ -318,14 +327,14 @@ async function connectToWhatsApp() {
                         const isAdmin = sender.includes(ADMIN_PHONE_NUMBER) || (ADMIN_LID && sender.includes(ADMIN_LID));
 
                         if (!isAdmin) {
-                            await sock.sendMessage(sender, { text: "❌ මචං, Group එකට Announcements දාන්න පුළුවන් Batch Rep (Monal) ට විතරයි!" }, { quoted: msg });
+                            await sock.sendMessage(chatJid, { text: "❌ මචං, Group එකට Announcements දාන්න පුළුවන් Batch Rep (Monal) ට විතරයි!" }, { quoted: msg });
                             return;
                         }
                         
                         let textToPost = quotedText || rawMessageText;
 
                         if (!textToPost || (textToPost === rawMessageText && isPostRequest && !quotedText)) {
-                            await sock.sendMessage(sender, { text: "⚠️ මචං, Group එකට දාන්න ඕන Message එකට Reply (Quote) කරලා 'Send to group' කියලා එවන්න!" }, { quoted: msg });
+                            await sock.sendMessage(chatJid, { text: "⚠️ මචං, Group එකට දාන්න ඕන Message එකට Reply (Quote) කරලා 'Send to group' කියලා එවන්න!" }, { quoted: msg });
                             return;
                         }
 
@@ -340,20 +349,20 @@ async function connectToWhatsApp() {
                         const finalMsg = `📢 *ANNOUNCEMENT*\n\n${textToPost}`;
 
                         await sock.sendMessage(targetGroupId, { text: finalMsg });
-                        await sock.sendMessage(sender, { text: `✅ හරි මචං, මම ඒ Notice එක කෙලින්ම *${groupName}* එකට දැම්මා! 🚀` }, { quoted: msg });
+                        await sock.sendMessage(chatJid, { text: `✅ හරි මචං, මම ඒ Notice එක කෙලින්ම *${groupName}* එකට දැම්මා! 🚀` }, { quoted: msg });
                         return;
                     }
                 
                     // Normal DM Chat Response (Gemini AI)
                     if (rawMessageText) {
-                        await sock.sendPresenceUpdate('composing', sender);
+                        await sock.sendPresenceUpdate('composing', chatJid);
                         console.log(`🤖 Generating Gemini response for prompt: "${fullUserPrompt}"...`);
                         
                         const result = await model.generateContent(fullUserPrompt);
                         const replyText = result.response.text();
                         
-                        console.log(`✅ Sending reply: "${replyText.substring(0, 30)}..."`);
-                        await sock.sendMessage(sender, { text: replyText }, { quoted: msg });
+                        console.log(`✅ Sending reply to ${chatJid}: "${replyText.substring(0, 30)}..."`);
+                        await sock.sendMessage(chatJid, { text: replyText }, { quoted: msg });
                     }
                 }
             } catch (msgError) {
