@@ -149,16 +149,21 @@ async function connectToWhatsApp() {
     });
 
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
-        if (type !== 'notify') return;
+    if (type !== 'notify') return;
 
-        for (const msg of messages) {
-            if (!msg.message || msg.key.fromMe) continue;
+    for (const msg of messages) {
+        if (!msg.message || msg.key.fromMe) continue;
 
-            const sender = msg.key.remoteJid;
-            const messageType = Object.keys(msg.message)[0];
-            const isGroup = sender.endsWith('@g.us');
+        const sender = msg.key.remoteJid;
+        const messageType = Object.keys(msg.message)[0];
+        const isGroup = sender.endsWith('@g.us');
 
-            if (isGroup && sender !== BATCH_GROUP_ID) continue; 
+        // 👈 මෙන්න මෙතනට අර පේලිය එකතු කරන්න:
+        if (isGroup) {
+            console.log("📌 REAL GROUP ID IS:", sender);
+        }
+
+        if (isGroup && sender !== BATCH_GROUP_ID) continue;
 
             await sock.readMessages([msg.key]);
             await sock.sendPresenceUpdate('composing', sender);
