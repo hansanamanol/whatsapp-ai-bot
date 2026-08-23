@@ -310,24 +310,31 @@ async function connectToWhatsApp() {
                 }
             }
 
-            // 💬 DIRECT MESSAGE BROADCAST COMMAND (Admin Only)
+       // 💬 DIRECT MESSAGE BROADCAST COMMAND (Admin Only)
             if (!isGroup) {
                 const textLower = rawMessageText.toLowerCase().trim();
-                
-                const postKeywords = [
-                    "send", "post", "yawanna", "යවන්න", "this one", 
-                    "group", "දාන්න", "දාපන්", "කියන්න", "කියපන්", 
-                    "announce", "broadcast"
-                ];
-                
-                const isPostRequest = postKeywords.some(keyword => textLower.includes(keyword));
-                const isAdmin = sender.includes(ADMIN_PHONE_NUMBER);
 
-                if (isPostRequest && isAdmin) {
+                // 1. Check if the sender is Admin (Sanitizing sender ID to digits only)
+                const senderDigitsOnly = sender.replace(/\D/g, ''); // Extract only digits from sender JID
+                const isAdmin = senderDigitsOnly.includes(ADMIN_PHONE_NUMBER);
+
+                // 2. Broad Keywords Matching
+                const postKeywords = [
+                    "send", "post", "yawanna", "යවන්න", "this", 
+                    "group", "දාන්න", "දාපන්", "කියන්න", "කියපන්", 
+                    "announce", "broadcast", "msg", "message"
+                ];
+
+                const isPostRequest = postKeywords.some(keyword => textLower.includes(keyword));
+
+                // 🚨 DEBUG LOG: ඔයා එවද්දී Terminal එකේ වැටෙන දේ බලන්න
+                console.log(`[DEBUG ADMIN CHECK] Sender: ${sender} | IsAdmin: ${isAdmin} | IsPostRequest: ${isPostRequest}`);
+
+                if (isAdmin && (isPostRequest || quotedText)) {
                     try {
                         const contentToFormat = quotedText || rawMessageText;
 
-                        // Target Group තීරණය කිරීම
+                        // Target Group එක තීරණය කිරීම (General ද Announcement ද)
                         let targetGroupId = ANNOUNCEMENT_GROUP_ID;
                         let targetGroupName = "Announcement Group";
 
@@ -335,6 +342,9 @@ async function connectToWhatsApp() {
                             targetGroupId = GENERAL_GROUP_ID;
                             targetGroupName = "General Chat Group";
                         }
+
+                        // Broadcast Processing Status Message
+                        await sock.sendMessage(sender, { text: `⏳ **Notice එක ${targetGroupName} එකට Format කරමින් පවතියි...**` }, { quoted: msg });
 
                         const prompt = `The user wants to broadcast the following text/notice to the university student WhatsApp group:
 "${contentToFormat}"
@@ -347,9 +357,11 @@ CRITICAL INSTRUCTION: Output ONLY the final announcement text to be sent directl
 
                         const finalMsg = `📢 *ANNOUNCEMENT*\n\n${finalContentToPost}`;
 
+                        // Send to the targeted Group
                         await sock.sendMessage(targetGroupId, { text: finalMsg });
+                        // Confirm to Admin
                         await sock.sendMessage(sender, { text: `✅ හරි මචං, මම ඒ Notice එක කෙලින්ම *${targetGroupName}* එකට දැම්මා! 🚀` }, { quoted: msg });
-                        return;
+                        return; // Stop further processing by Gemini AI
                     } catch (err) {
                         console.error('Error broadcasting admin message:', err);
                         await sock.sendMessage(sender, { text: "❌ Group එකට Post කිරීමේදී Error එකක් ආවා." }, { quoted: msg });
