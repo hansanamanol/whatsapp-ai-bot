@@ -16,6 +16,10 @@ const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
+// 👑 ADMIN / BATCH REP IDENTIFICATION
+// ⚠️ මෙතන 947XXXXXX වෙනුවට ඔයාගේ WhatsApp Phone Number එක දාන්න! (උදා: "94712345678@s.whatsapp.net")
+const ADMIN_NUMBER = "94762513957@s.whatsapp.net"; 
+
 // Express Web Server Setup
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -112,10 +116,9 @@ async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
 
     const sock = makeWASocket({
-       auth: state,
+        auth: state,
         printQRInTerminal: false,
         logger: pino({ level: 'silent' }),
-        // 🛠️ Session Corrupt/Closed වීම වැළැක්වීමට මේවා එකතු කරන්න:
         syncFullHistory: false,
         markOnlineOnConnect: true,
         generateHighQualityLinkPreview: true,
@@ -161,7 +164,7 @@ async function connectToWhatsApp() {
             await sock.readMessages([msg.key]);
             await sock.sendPresenceUpdate('composing', sender);
 
-            // Extract Image Object dynamically (Handles Normal, ViewOnce, and Ephemeral Messages)
+            // Extract Image Object dynamically
             const imgMsg = msg.message.imageMessage || 
                            msg.message.viewOnceMessage?.message?.imageMessage ||
                            msg.message.viewOnceMessageV2?.message?.imageMessage ||
@@ -269,14 +272,15 @@ async function connectToWhatsApp() {
                 }
             }
 
-            // 💬 DIRECT MESSAGE BROADCAST COMMAND (DM Only)
+            // 💬 DIRECT MESSAGE BROADCAST COMMAND (Admin / Batch Rep Only)
             if (!isGroup) {
                 const textLower = rawMessageText.toLowerCase();
                 const postKeywords = ["this one", "yawanna", "යවන්න", "send this", "post this", "send to group", "post to group", "දාන්න", "දාපන්", "කියන්න", "කියපන්"];
                 
                 const isPostRequest = postKeywords.some(keyword => textLower.includes(keyword));
 
-                if (isPostRequest) {
+                // 🛑 CHECK: ළමයෙක් "send to group" කිව්වට යවන්නෙ නෑ, ඔයා (ADMIN) කිව්වොත් විතරයි යවන්නේ
+                if (isPostRequest && sender === ADMIN_NUMBER) {
                     try {
                         let finalContentToPost = "";
 
@@ -308,7 +312,7 @@ Output ONLY the final announcement text without intro/outro text!`;
 
             if (isGroup) return;
 
-            // Normal DM Chat Response
+            // Normal DM Chat Response (For all students, including admin)
             if (rawMessageText) {
                 try {
                     const result = await model.generateContent(fullUserPrompt);
