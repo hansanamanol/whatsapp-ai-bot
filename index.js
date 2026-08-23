@@ -80,7 +80,7 @@ Important Links & Info:
 `;
 
 const model = genAI.getGenerativeModel({ 
-    model: "gemini-3.6-flash",
+    model: "gemini-3.1-flash-lite",
     systemInstruction: systemInstruction 
 });
 
