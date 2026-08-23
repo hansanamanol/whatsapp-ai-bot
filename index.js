@@ -122,7 +122,7 @@ CRITICAL CODE & TUTORIAL ANALYSIS RULES:
 
 // ✅ Fixed Model Name to valid API model
 const model = genAI.getGenerativeModel({ 
-    model: "gemini-2.5-flash",
+    model: "gemini-3.5-flash-lite",
     systemInstruction: systemInstruction 
 });
 
