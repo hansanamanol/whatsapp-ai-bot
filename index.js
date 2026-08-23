@@ -57,15 +57,25 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 const systemInstruction = `
-You are an intelligent Gemini AI assistant working for the SLIIT IT Batch Representative (Monal). 
-You behave like a natural conversational AI.
+You are an intelligent Gemini AI assistant working for the SLIIT IT Y1S2 Batch Representative (Monal). 
+You behave like a natural, friendly conversational AI assistant.
 
-YOUR RESPONSIBILITIES:
+CRITICAL CONTEXT ABOUT THE WhatsApp GROUP:
+- You are strictly operating for ONLY ONE WhatsApp Group, which is the official "SLIIT IT Y1S2 Batch Group".
+- NEVER ask Monal which group to send messages to. There is ONLY ONE group, and you already know it.
+
+SPECIAL INSTRUCTION FOR ADMIN (MONAL / BATCH REP):
+- The user you are serving is Monal, the SLIIT IT Y1S2 Batch Representative.
+- Recognize him as "Monal" or "SLIIT IT Y1S2 Batch Rep".
+- When he chats with you or asks "මම කවුද?" / "Who am I?", acknowledge him clearly as Monal, the SLIIT IT Y1S2 Batch Representative.
+- If Monal tells you to send, post, share, or broadcast any message/notice to the group (e.g., "මේක group එකට දාන්න", "group එකට යවන්න", "post this to group"), process and broadcast it directly to the batch group without asking which group.
+
+YOUR RESPONSIBILITIES FOR STUDENTS:
 1. Helping Students:
-   - Answer student questions naturally in Singlish, Sinhala, or English based on the user's language.
-   - Assist them with Timetable info, Calendar link, Issue forms, and LIC contacts.
-   - Listen to voice notes (audio) sent by students/admin and reply appropriately in text or help them with their query.
-   - Always pay close attention to quoted/replied context if provided.
+   - Answer student questions naturally in Singlish, Sinhala, or English based on their language.
+   - Assist them with Timetable info, Calendar link, Issue forms, and LIC contacts for Year 1 Semester 2.
+   - Listen to voice notes (audio) sent by students/admin and reply appropriately in text.
+   - Always pay close attention to quoted/replied context if provided in the prompt.
 
 Important Links & Info:
 1. Timetable / Calendar: https://calendar.google.com/calendar/u/0?cid=Y2EwYjM4ZDE3MjcyOTIzMTY1N2FiZmMzNGYxYzdmZGJmOGVhMzMwNTBmZTZmNDYyM2Y1ZmFiODhjMGQzNDYzM0Bncm91cC5jYWxlbmRhci5nb29nbGUuY29t
@@ -99,8 +109,8 @@ function convertAudioToWav(inputBuffer) {
             .toFormat('mp3')
             .on('end', () => {
                 const outputBuffer = fs.readFileSync(tempOut);
-                fs.unlinkSync(tempIn);
-                fs.unlinkSync(tempOut);
+                if (fs.existsSync(tempIn)) fs.unlinkSync(tempIn);
+                if (fs.existsSync(tempOut)) fs.unlinkSync(tempOut);
                 resolve(outputBuffer);
             })
             .on('error', (err) => {
@@ -154,6 +164,10 @@ async function connectToWhatsApp() {
             const sender = msg.key.remoteJid;
             const messageType = Object.keys(msg.message)[0];
             const isGroup = sender.endsWith('@g.us');
+
+            // Admin Identification Check
+            const cleanSender = sender.split('@')[0];
+            const isAdmin = cleanSender.includes("94762513957") || sender === ADMIN_NUMBER;
 
             if (isGroup && sender !== BATCH_GROUP_ID) continue; 
 
@@ -220,7 +234,7 @@ async function connectToWhatsApp() {
 
                     const captionPrompt = rawMessageText ? ` User prompt/caption: "${rawMessageText}"` : "";
 
-                    if (sender === ADMIN_NUMBER) {
+                    if (isAdmin) {
                         const prompt = "Read this image notice and write a clear, attractive student announcement in SIMPLE ENGLISH. Use bold text for key dates, times, and instructions. Output ONLY the notice text without intro/outro." + captionPrompt;
                         const result = await model.generateContent([prompt, imagePart]);
                         const announcement = result.response.text();
@@ -228,7 +242,7 @@ async function connectToWhatsApp() {
                         const finalMsg = `📢 *ANNOUNCEMENT*\n\n${announcement}`;
 
                         await sock.sendMessage(BATCH_GROUP_ID, { image: buffer, caption: finalMsg });
-                        await sock.sendMessage(sender, { text: "✅ Image එකයි Simple English Notice එකයි Group එකට දැම්මා!" }, { quoted: msg });
+                        await sock.sendMessage(sender, { text: "✅ Image එකයි Simple English Notice එකයි Group එකට දැම්මා Monal!" }, { quoted: msg });
                     } else {
                         const prompt = "Read this image notice/document. Explain its details clearly to the student in friendly Singlish or simple English based on what they asked." + captionPrompt;
                         const result = await model.generateContent([prompt, imagePart]);
@@ -245,15 +259,22 @@ async function connectToWhatsApp() {
                 }
             }
 
-            // 💬 TEXT MESSAGE PROCESSING
-            if (sender === ADMIN_NUMBER) {
+            // 💬 TEXT MESSAGE PROCESSING (ADMIN BROADCAST DETECTOR)
+            if (isAdmin) {
                 const text = rawMessageText.toLowerCase();
-                if (text.includes("කියපන්") || text.includes("කියන්න") || text.includes("දාපන්") || text.includes("දාන්න") || text.includes("inform") || text.includes("tell") || text.includes("post") || text.includes("announce")) {
+                const broadcastKeywords = [
+                    "කියපන්", "කියන්න", "දාපන්", "දාන්න", "යවන්න", "යවපන්", 
+                    "inform", "tell", "post", "announce", "send", "broadcast", "group"
+                ];
+
+                const isBroadcastRequest = broadcastKeywords.some(kw => text.includes(kw));
+
+                if (isBroadcastRequest) {
                     try {
-                        const prompt = `The Batch Rep sent this message: "${fullUserPrompt}".
+                        const prompt = `The Batch Rep (Monal) sent this message: "${fullUserPrompt}".
 Translate and convert this message into a well-formatted, clean, and SIMPLE ENGLISH announcement notice for university students. 
 Use clear structure, bold headings/key details, and appropriate emojis. 
-CRITICAL: Output ONLY the final simple English notice text.`;
+CRITICAL: Output ONLY the final simple English notice text. Do not include intro or outro words.`;
 
                         const result = await model.generateContent(prompt);
                         const announcement = result.response.text();
@@ -261,7 +282,7 @@ CRITICAL: Output ONLY the final simple English notice text.`;
                         const finalMsg = `📢 *ANNOUNCEMENT*\n\n${announcement}`;
 
                         await sock.sendMessage(BATCH_GROUP_ID, { text: finalMsg });
-                        await sock.sendMessage(sender, { text: "හරි මචං, මම ඒක Simple English වලින් Translate කරලා Group එකට දැම්මා! 👍" }, { quoted: msg });
+                        await sock.sendMessage(sender, { text: "හරි Monal, මම ඒක Simple English වලින් Translate කරලා Group එකට දැම්මා! 👍" }, { quoted: msg });
                         return;
                     } catch (err) {
                         console.error('Error broadcasting admin message:', err);
