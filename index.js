@@ -362,9 +362,7 @@ async function connectToWhatsApp() {
                         return;
                     }
                 }
-            }
-            if (isGroup) return;
-
+            
             // Normal DM Chat Response
             if (rawMessageText) {
                 try {
@@ -373,8 +371,9 @@ async function connectToWhatsApp() {
                     await sock.sendMessage(sender, { text: replyText }, { quoted: msg });
                 } catch (error) {
                     console.error('Error generating AI response:', error);
+                    }
                 }
-            }
+            }      
         }
     });
 }
