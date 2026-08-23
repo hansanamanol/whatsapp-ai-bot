@@ -1,74 +1,16 @@
-const express = require('express');
-const QRCode = require('qrcode');
-const { Client, LocalAuth } = require('whatsapp-web.js');
-
-const app = express();
-const port = process.env.PORT || 3000;
-let latestQR = '';
-
-// Web page එකට QR එක පෙන්වීම
-app.get('/', (req, res) => {
-    if (!latestQR) {
-        return res.send('<h2>Bot is starting or already connected! Check again in a few seconds...</h2>');
-    }
-    QRCode.toDataURL(latestQR, (err, url) => {
-        if (err) return res.send('Error generating QR code');
-        res.send(`
-            <html>
-                <body style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; font-family:sans-serif; background-color:#111; color:#fff;">
-                    <h2>Scan this QR Code using WhatsApp</h2>
-                    <img src="${url}" style="width:300px; height:300px; border:10px solid white; border-radius:10px;" />
-                </body>
-            </html>
-        `);
-    });
-});
-
-app.listen(port, () => {
-    console.log(`Server running on port ${port}`);
-});
-
-// Client setup
-const client = new Client({
-    authStrategy: new LocalAuth(),
-    puppeteer: {
-        headless: true,
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--no-zygote',
-            '--single-process',
-            '--disable-gpu'
-        ],
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium'
-    }
-});
-
-client.on('qr', (qr) => {
-    latestQR = qr; // Save latest QR
-    console.log('New QR code generated! Open your Railway Domain URL to scan.');
-});
-
-client.on('ready', () => {
-    latestQR = ''; // Clear QR on connect
-    console.log('Client is ready!');
-});
-const { Client, LocalAuth } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
+const { 
+    default: makeWASocket, 
+    useMultiFileAuthState, 
+    DisconnectReason, 
+    downloadMediaMessage 
+} = require('@whiskeysockets/baileys');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
+const qrcode = require('qrcode-terminal');
+const pino = require('pino');
 
-// ⚠️ 1. ඔයාගේ Gemini API Key එක
+// ⚠️ 1. Gemini API Key & Model Setup (gemini-2.5-flash)
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
-
-// ⚠️ 2. ඔයාගේ Personal WhatsApp Number එක (947XXXXXXXX@c.us)
-const ADMIN_NUMBER = "94762513957@c.us"; 
-
-// ⚠️ 3. Batch WhatsApp Group ID එක
-const BATCH_GROUP_ID = "120363425513397101@g.us"; 
 
 const systemInstruction = `
 You are an intelligent Gemini AI assistant working for the SLIIT IT Batch Representative (Monal). 
@@ -99,122 +41,154 @@ Important Links & Info:
 `;
 
 const model = genAI.getGenerativeModel({ 
-    model: "gemini-3.5-flash-lite",
+    model: "gemini-2.5-flash",
     systemInstruction: systemInstruction 
 });
 
-const client = new Client({
-    authStrategy: new LocalAuth(),
-    puppeteer: {
-        headless: true,
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--no-zygote',
-            '--single-process',
-            '--disable-gpu'
-        ],
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium'
-    }
-});
+// ⚠️ 2. ඔයාගේ Details
+const ADMIN_NUMBER = "94762513957@s.whatsapp.net"; // Baileys format
+const BATCH_GROUP_ID = "120363425513397101@g.us"; 
 
-client.on('qr', (qr) => {
-    qrcode.generate(qr, { small: true });
-    console.log('Scan the QR code above using WhatsApp Linked Devices!');
-});
+async function connectToWhatsApp() {
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
 
-client.on('ready', () => {
-    console.log('WhatsApp AI Bot is Ready and Online!');
-});
+    const sock = makeWASocket({
+        auth: state,
+        printQRInTerminal: false,
+        logger: pino({ level: 'silent' })
+    });
 
-client.on('message', async (msg) => {
+    sock.ev.on('creds.update', saveCreds);
 
-    // -------------------------------------------------------------
-    // 👑 1. ADMIN INTERACTIONS (ඔයා Personal Phone එකෙන් කතා කරන කොට)
-    // -------------------------------------------------------------
-    if (msg.from === ADMIN_NUMBER) {
+    sock.ev.on('connection.update', (update) => {
+        const { connection, lastDisconnect, qr } = update;
 
-        // A) ඔයා Photo / Notice එකක් යැව්වොත්
-        if (msg.hasMedia) {
-            try {
-                await msg.reply("හරි මචං, මම Image එක බලලා English Notice එකක් හදලා Group එකට දාන්නම්...");
-                const media = await msg.downloadMedia();
-                
-                const imagePart = {
-                    inlineData: {
-                        data: media.data,
-                        mimeType: media.mimetype
-                    }
-                };
-
-                const prompt = "Read this image notice and write a clear, attractive student announcement in SIMPLE ENGLISH. Use bold text for key dates, times, and instructions. Output ONLY the notice text without intro/outro.";
-                const result = await model.generateContent([prompt, imagePart]);
-                const announcement = result.response.text();
-
-                const finalMsg = `📢 *ANNOUNCEMENT*\n\n${announcement}`;
-                
-                // Group එකට යැවීම
-                await client.sendMessage(BATCH_GROUP_ID, media, { caption: finalMsg });
-                await msg.reply("හරි, Image එකයි Simple English Notice එකයි Group එකට දැම්මා! 👍");
-                return;
-            } catch (err) {
-                console.error('Error processing Image:', err);
-                await msg.reply("අයියෝ Image එක කියවගන්න බැරි වුණා, ආයේ දාලා බලන්න.");
-                return;
-            }
+        if (qr) {
+            console.log('\n=================== SCAN QR CODE BELOW ===================\n');
+            qrcode.generate(qr, { small: true });
+            console.log('\n==========================================================\n');
         }
 
-        // B) ඔයා සිංහලෙන්/සිංලිෂ් වලින් Group එකට දාන්න කියන මැසේජ්
-        const text = msg.body.toLowerCase();
-        
-        if (text.includes("කියපන්") || text.includes("කියන්න") || text.includes("දාපන්") || text.includes("දාන්න") || text.includes("inform") || text.includes("tell") || text.includes("post") || text.includes("announce")) {
-            try {
-                const prompt = `The Batch Rep sent this message (which might be in Sinhala or Singlish): "${msg.body}".
+        if (connection === 'close') {
+            const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
+            console.log('Connection closed, reconnecting...', shouldReconnect);
+            if (shouldReconnect) connectToWhatsApp();
+        } else if (connection === 'open') {
+            console.log('✅ WhatsApp AI Bot is Ready and Online!');
+        }
+    });
+
+    sock.ev.on('messages.upsert', async ({ messages, type }) => {
+        if (type !== 'notify') return;
+
+        for (const msg of messages) {
+            if (!msg.message || msg.key.fromMe) continue;
+
+            const sender = msg.key.remoteJid;
+            const messageType = Object.keys(msg.message)[0];
+            const isGroup = sender.endsWith('@g.us');
+
+            // Caption හෝ Text Message එක ලබා ගැනීම
+            const messageText = msg.message.conversation || 
+                              msg.message.extendedTextMessage?.text || 
+                              msg.message.imageMessage?.caption || "";
+
+            // -------------------------------------------------------------
+            // 👑 1. ADMIN INTERACTIONS (ඔයා Personal Phone එකෙන් කතා කරන කොට)
+            // -------------------------------------------------------------
+            if (sender === ADMIN_NUMBER) {
+
+                // A) ඔයා Photo / Notice එකක් යැව්වොත්
+                if (messageType === 'imageMessage') {
+                    try {
+                        await sock.sendMessage(sender, { text: "හරි මචං, මම Image එක බලලා English Notice එකක් හදලා Group එකට දාන්නම්..." }, { quoted: msg });
+
+                        const buffer = await downloadMediaMessage(msg, 'buffer', {});
+                        const base64Image = buffer.toString('base64');
+                        const mimeType = msg.message.imageMessage.mimetype || 'image/jpeg';
+
+                        const imagePart = {
+                            inlineData: {
+                                data: base64Image,
+                                mimeType: mimeType
+                            }
+                        };
+
+                        const prompt = "Read this image notice and write a clear, attractive student announcement in SIMPLE ENGLISH. Use bold text for key dates, times, and instructions. Output ONLY the notice text without intro/outro.";
+                        const result = await model.generateContent([prompt, imagePart]);
+                        const announcement = result.response.text();
+
+                        const finalMsg = `📢 *ANNOUNCEMENT*\n\n${announcement}`;
+
+                        // Group එකට Image එකයි Notice එකයි යැවීම
+                        await sock.sendMessage(BATCH_GROUP_ID, { 
+                            image: buffer, 
+                            caption: finalMsg 
+                        });
+
+                        await sock.sendMessage(sender, { text: "හරි, Image එකයි Simple English Notice එකයි Group එකට දැම්මා! 👍" }, { quoted: msg });
+                        return;
+                    } catch (err) {
+                        console.error('Error processing Image:', err);
+                        await sock.sendMessage(sender, { text: "අයියෝ Image එක කියවගන්න බැරි වුණා, ආයේ දාලා බලන්න." }, { quoted: msg });
+                        return;
+                    }
+                }
+
+                // B) ඔයා සිංහලෙන්/සිංලිෂ් වලින් Group එකට දාන්න කියන මැසේජ්
+                const text = messageText.toLowerCase();
+
+                if (text.includes("කියපන්") || text.includes("කියන්න") || text.includes("දාපන්") || text.includes("දාන්න") || text.includes("inform") || text.includes("tell") || text.includes("post") || text.includes("announce")) {
+                    try {
+                        const prompt = `The Batch Rep sent this message (which might be in Sinhala or Singlish): "${messageText}".
 Translate and convert this message into a well-formatted, clean, and SIMPLE ENGLISH announcement notice for university students. 
 Use clear structure, bold headings/key details, and appropriate emojis. 
 CRITICAL: Output ONLY the final simple English notice text. Do NOT add conversational replies like "Sure, here is your message".`;
 
-                const result = await model.generateContent(prompt);
-                const announcement = result.response.text();
+                        const result = await model.generateContent(prompt);
+                        const announcement = result.response.text();
 
-                const finalMsg = `📢 *ANNOUNCEMENT*\n\n${announcement}`;
+                        const finalMsg = `📢 *ANNOUNCEMENT*\n\n${announcement}`;
 
-                await client.sendMessage(BATCH_GROUP_ID, finalMsg);
-                await msg.reply("හරි මචං, මම ඒක Simple English වලින් Translate කරලා Group එකට දැම්මා! 👍");
-                return;
-            } catch (err) {
-                console.error('Error broadcasting admin message:', err);
+                        await sock.sendMessage(BATCH_GROUP_ID, { text: finalMsg });
+                        await sock.sendMessage(sender, { text: "හරි මචං, මම ඒක Simple English වලින් Translate කරලා Group එකට දැම්මා! 👍" }, { quoted: msg });
+                        return;
+                    } catch (err) {
+                        console.error('Error broadcasting admin message:', err);
+                    }
+                }
+
+                // C) ඔයා නිකන් වෙනත් දෙයක් ඇහුවොත් Direct Reply දීම
+                if (messageText) {
+                    try {
+                        const result = await model.generateContent(messageText);
+                        const reply = result.response.text();
+                        await sock.sendMessage(sender, { text: reply }, { quoted: msg });
+                        return;
+                    } catch (err) {
+                        console.error('Error responding to admin:', err);
+                        return;
+                    }
+                }
+            }
+
+            // -------------------------------------------------------------
+            // 🤖 2. STUDENT INTERACTIONS (ළමයින්ගේ Private Messages)
+            // -------------------------------------------------------------
+            if (isGroup) return; // Group ඇතුළේ වෙනත් අයගේ මැසේජ් වලට Auto Reply නොදෙයි
+
+            if (messageText) {
+                try {
+                    const result = await model.generateContent(messageText);
+                    const replyText = result.response.text();
+                    await sock.sendMessage(sender, { text: replyText }, { quoted: msg });
+                    console.log(`Replied to student: ${messageText}`);
+                } catch (error) {
+                    console.error('Error generating AI response:', error);
+                }
             }
         }
+    });
+}
 
-        // ඔයා නිකන් වෙනත් දෙයක් ඇහුවොත් Gemini එකෙන් ඔයාට Direct Reply දීම
-        try {
-            const result = await model.generateContent(msg.body);
-            const reply = result.response.text();
-            await msg.reply(reply);
-            return;
-        } catch (err) {
-            console.error('Error responding to admin:', err);
-            return;
-        }
-    }
-
-    // -------------------------------------------------------------
-    // 🤖 2. STUDENT INTERACTIONS (ළමයින්ගේ Private Messages)
-    // -------------------------------------------------------------
-    if (msg.from.endsWith('@g.us')) return;
-
-    try {
-        const result = await model.generateContent(msg.body);
-        const replyText = result.response.text();
-        await msg.reply(replyText);
-        console.log(`Replied to student: ${msg.body}`);
-    } catch (error) {
-        console.error('Error generating AI response:', error);
-    }
-});
-
-client.initialize();
+connectToWhatsApp();
