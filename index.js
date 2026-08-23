@@ -10,14 +10,23 @@ const QRCode = require('qrcode');
 const express = require('express');
 const pino = require('pino');
 
-// Express Web Server Setup (Web QR Code සඳහා)
+// Express Web Server Setup
 const app = express();
 const PORT = process.env.PORT || 3000;
 let latestQR = "";
 
 app.get('/', async (req, res) => {
     if (!latestQR) {
-        return res.send('<h2>QR Code එක තවම Generate වෙනවා හෝ Bot සක්‍රීය වී ඇත... Page එක Refresh කර බලන්න.</h2>');
+        return res.send(`
+            <html>
+                <head>
+                    <meta http-equiv="refresh" content="3">
+                </head>
+                <body style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#0d1117;color:white;">
+                    <h2>QR Code එක Loading... තත්පර 3න් Auto Refresh වෙයි...</h2>
+                </body>
+            </html>
+        `);
     }
     try {
         const qrImage = await QRCode.toDataURL(latestQR);
@@ -25,12 +34,10 @@ app.get('/', async (req, res) => {
             <html>
                 <head>
                     <title>WhatsApp Bot QR Code</title>
-                    <meta http-equiv="refresh" content="10">
                 </head>
                 <body style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#0d1117;color:white;">
                     <h2>Scan this QR Code with WhatsApp</h2>
                     <img src="${qrImage}" style="border:10px solid white;border-radius:10px;width:300px;height:300px;"/>
-                    <p>Page auto refreshes every 10 seconds</p>
                 </body>
             </html>
         `);
@@ -43,7 +50,7 @@ app.listen(PORT, () => {
     console.log(`Web server running on port ${PORT}`);
 });
 
-// ⚠️ 1. Gemini API Key & Model Setup
+// Gemini API Setup
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
@@ -55,18 +62,15 @@ YOUR RESPONSIBILITIES:
 1. Helping Students:
    - Answer student questions naturally, friendly, and accurately in Singlish, Sinhala, or English based on the user's language.
    - Assist them with Timetable info, Calendar link, Issue forms, and LIC contacts.
+   - Read images/notices sent by students and explain or summarize them clearly.
 
 2. Assisting the Batch Rep (Admin):
-   - When the Batch Rep asks you to post or announce something (even if spoken in Sinhala/Singlish), ALWAYS translate and rephrase it into clear, simple, professional English formatted as an official student notice.
-   - Process images/notices directly when sent by the Batch Rep and create English notices from them.
+   - When the Batch Rep asks you to post or announce something, translate and rephrase it into clear, simple, professional English formatted as an official student notice.
 
 Important Links & Info:
-1. Timetable / Calendar:
-   - Google Calendar Link: https://calendar.google.com/calendar/u/0?cid=Y2EwYjM4ZDE3MjcyOTIzMTY1N2FiZmMzNGYxYzdmZGJmOGVhMzMwNTBmZTZmNDYyM2Y1ZmFiODhjMGQzNDYzM0Bncm91cC5jYWxlbmRhci5nb29nbGUuY29t
-2. Issue Reporting Form:
-   - Link: https://docs.google.com/forms/d/e/1FAIpQLSfOUJnkMp8Tdig0C187WDOgU5AZmtPh3ayBZ-_z9xd23K3Zgw/viewform?usp=publish-editor
-3. SLIIT Support:
-   - Link: https://ask.sliit.lk/
+1. Timetable / Calendar: https://calendar.google.com/calendar/u/0?cid=Y2EwYjM4ZDE3MjcyOTIzMTY1N2FiZmMzNGYxYzdmZGJmOGVhMzMwNTBmZTZmNDYyM2Y1ZmFiODhjMGQzNDYzM0Bncm91cC5jYWxlbmRhci5nb29nbGUuY29t
+2. Issue Reporting Form: https://docs.google.com/forms/d/e/1FAIpQLSfOUJnkMp8Tdig0C187WDOgU5AZmtPh3ayBZ-_z9xd23K3Zgw/viewform?usp=publish-editor
+3. SLIIT Support: https://ask.sliit.lk/
 4. Lecturer In Charge (LIC) Details:
    - IT1150 - Technical Writing: Ms. Dinushika Jayathissa (dinushika.j@sliit.lk)
    - IT1160 - Discrete Mathematics: Ms. Nipuni Maleesha (nipuni.m@sliit.lk)
@@ -76,7 +80,7 @@ Important Links & Info:
 `;
 
 const model = genAI.getGenerativeModel({ 
-    model: "gemini-3.6-flash",
+    model: "gemini-3.1-flash-lite",
     systemInstruction: systemInstruction 
 });
 
@@ -98,7 +102,7 @@ async function connectToWhatsApp() {
         const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
-            latestQR = qr; // Save for web display
+            latestQR = qr;
             console.log('\n=================== SCAN QR CODE BELOW ===================\n');
             qrcodeTerminal.generate(qr, { small: true });
             console.log('\n==========================================================\n');
@@ -109,7 +113,7 @@ async function connectToWhatsApp() {
             console.log('Connection closed, reconnecting...', shouldReconnect);
             if (shouldReconnect) connectToWhatsApp();
         } else if (connection === 'open') {
-            latestQR = ""; // Clear QR once connected
+            latestQR = "";
             console.log('✅ WhatsApp AI Bot is Ready and Online!');
         }
     });
@@ -124,47 +128,69 @@ async function connectToWhatsApp() {
             const messageType = Object.keys(msg.message)[0];
             const isGroup = sender.endsWith('@g.us');
 
+            if (isGroup && sender !== BATCH_GROUP_ID) continue; // Skip other groups
+
             const messageText = msg.message.conversation || 
-                              msg.message.extendedTextMessage?.text || 
-                              msg.message.imageMessage?.caption || "";
+                                msg.message.extendedTextMessage?.text || 
+                                msg.message.imageMessage?.caption || "";
 
-            // Admin Actions
-            if (sender === ADMIN_NUMBER) {
-                if (messageType === 'imageMessage') {
-                    try {
-                        await sock.sendMessage(sender, { text: "හරි මචං, මම Image එක බලලා English Notice එකක් හදලා Group එකට දාන්නම්..." }, { quoted: msg });
+            // 1. Blue Tick (Seen) & Typing status
+            await sock.readMessages([msg.key]);
+            await sock.sendPresenceUpdate('composing', sender);
 
-                        const buffer = await downloadMediaMessage(msg, 'buffer', {});
-                        const base64Image = buffer.toString('base64');
-                        const mimeType = msg.message.imageMessage.mimetype || 'image/jpeg';
+            // 📸 IMAGE MESSAGE PROCESSING (Both Admin & Students)
+            if (messageType === 'imageMessage') {
+                try {
+                    await sock.sendMessage(sender, { 
+                        text: "⏳ **Image එක Processing...** පොඩ්ඩක් ඉන්න, මම මේක බලලා ඉක්මනින්ම විස්තර කරන්නම්!" 
+                    }, { quoted: msg });
 
-                        const imagePart = {
-                            inlineData: { data: base64Image, mimeType: mimeType }
-                        };
+                    const buffer = await downloadMediaMessage(msg, 'buffer', {});
+                    const base64Image = buffer.toString('base64');
+                    const mimeType = msg.message.imageMessage.mimetype || 'image/jpeg';
 
-                        const prompt = "Read this image notice and write a clear, attractive student announcement in SIMPLE ENGLISH. Use bold text for key dates, times, and instructions. Output ONLY the notice text without intro/outro.";
+                    const imagePart = {
+                        inlineData: { data: base64Image, mimeType: mimeType }
+                    };
+
+                    const captionPrompt = messageText ? ` User prompt/caption: "${messageText}"` : "";
+                    
+                    if (sender === ADMIN_NUMBER) {
+                        // Admin Image -> Post to Group
+                        const prompt = "Read this image notice and write a clear, attractive student announcement in SIMPLE ENGLISH. Use bold text for key dates, times, and instructions. Output ONLY the notice text without intro/outro." + captionPrompt;
                         const result = await model.generateContent([prompt, imagePart]);
                         const announcement = result.response.text();
 
                         const finalMsg = `📢 *ANNOUNCEMENT*\n\n${announcement}`;
 
                         await sock.sendMessage(BATCH_GROUP_ID, { image: buffer, caption: finalMsg });
-                        await sock.sendMessage(sender, { text: "හරි, Image එකයි Simple English Notice එකයි Group එකට දැම්මා! 👍" }, { quoted: msg });
-                        return;
-                    } catch (err) {
-                        console.error('Error processing Image:', err);
-                        await sock.sendMessage(sender, { text: "අයියෝ Image එක කියවගන්න බැරි වුණා, ආයේ දාලා බලන්න." }, { quoted: msg });
-                        return;
-                    }
-                }
+                        await sock.sendMessage(sender, { text: "✅ Image එකයි Simple English Notice එකයි Group එකට දැම්මා!" }, { quoted: msg });
+                    } else {
+                        // Student Image -> Reply to Student Directly
+                        const prompt = "Read this image notice/document. Explain its details clearly to the student in friendly Singlish or simple English based on what they asked." + captionPrompt;
+                        const result = await model.generateContent([prompt, imagePart]);
+                        const reply = result.response.text();
 
+                        await sock.sendMessage(sender, { text: reply }, { quoted: msg });
+                    }
+                    return;
+
+                } catch (err) {
+                    console.error('Error processing Image:', err);
+                    await sock.sendMessage(sender, { text: "❌ අයියෝ Image එක කියවගන්න බැරි වුණා, ආයේ දාලා බලන්න." }, { quoted: msg });
+                    return;
+                }
+            }
+
+            // 💬 TEXT MESSAGE PROCESSING
+            if (sender === ADMIN_NUMBER) {
                 const text = messageText.toLowerCase();
                 if (text.includes("කියපන්") || text.includes("කියන්න") || text.includes("දාපන්") || text.includes("දාන්න") || text.includes("inform") || text.includes("tell") || text.includes("post") || text.includes("announce")) {
                     try {
                         const prompt = `The Batch Rep sent this message: "${messageText}".
 Translate and convert this message into a well-formatted, clean, and SIMPLE ENGLISH announcement notice for university students. 
 Use clear structure, bold headings/key details, and appropriate emojis. 
-CRITICAL: Output ONLY the final simple English notice text. Do NOT add conversational replies like "Sure, here is your message".`;
+CRITICAL: Output ONLY the final simple English notice text.`;
 
                         const result = await model.generateContent(prompt);
                         const announcement = result.response.text();
@@ -178,29 +204,16 @@ CRITICAL: Output ONLY the final simple English notice text. Do NOT add conversat
                         console.error('Error broadcasting admin message:', err);
                     }
                 }
-
-                if (messageText) {
-                    try {
-                        const result = await model.generateContent(messageText);
-                        const reply = result.response.text();
-                        await sock.sendMessage(sender, { text: reply }, { quoted: msg });
-                        return;
-                    } catch (err) {
-                        console.error('Error responding to admin:', err);
-                        return;
-                    }
-                }
             }
 
-            // Student Interactions
-            if (isGroup) return;
+            // Normal AI Text Response for Students & Admin
+            if (isGroup) return; // Don't reply to random group text messages
 
             if (messageText) {
                 try {
                     const result = await model.generateContent(messageText);
                     const replyText = result.response.text();
                     await sock.sendMessage(sender, { text: replyText }, { quoted: msg });
-                    console.log(`Replied to student: ${messageText}`);
                 } catch (error) {
                     console.error('Error generating AI response:', error);
                 }
