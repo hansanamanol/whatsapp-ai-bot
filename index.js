@@ -16,38 +16,11 @@ const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 
 ffmpeg.setFfmpegPath(ffmpegPath);
 
-// 🚦 Message Queue System (Concurrency & Session corruption වැළැක්වීමට)
-const messageQueue = [];
-let isProcessingQueue = false;
-
-async function processQueue() {
-    if (isProcessingQueue || messageQueue.length === 0) return;
-    
-    isProcessingQueue = true;
-    const task = messageQueue.shift();
-    
-    try {
-        await task();
-    } catch (err) {
-        console.error("❌ Queue Processing Error:", err);
-    } finally {
-        setTimeout(() => {
-            isProcessingQueue = false;
-            processQueue();
-        }, 1000); 
-    }
-}
-
-function addToQueue(taskFunction) {
-    messageQueue.push(taskFunction);
-    processQueue();
-}
-
 // 👑 ADMIN / BATCH REP IDENTIFICATION
 const ADMIN_PHONE_NUMBER = "94762513957"; 
 const ADMIN_LID = "17848192627279"; 
 
-// 📢 GROUP IDs
+// 📢 GROUP IDs (ANNOUNCEMENT & GENERAL)
 const ANNOUNCEMENT_GROUP_ID = "120363425513397101@g.us"; 
 const GENERAL_GROUP_ID = "120363409747625255@g.us";
 
@@ -56,15 +29,13 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 let latestQR = "";
 
-app.get('/health', (req, res) => res.status(200).send('OK'));
-
 app.get('/', async (req, res) => {
     if (!latestQR) {
         return res.send(`
             <html>
                 <head><meta http-equiv="refresh" content="3"></head>
                 <body style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#0d1117;color:white;">
-                    <h2>WhatsApp AI Bot Active & Running! 🚀</h2>
+                    <h2>QR Code එක Loading... නැත්නම් Bot Online!</h2>
                 </body>
             </html>
         `);
@@ -85,7 +56,7 @@ app.get('/', async (req, res) => {
     }
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, () => {
     console.log(`Web server running on port ${PORT}`);
 });
 
@@ -187,6 +158,7 @@ async function connectToWhatsApp() {
         markOnlineOnConnect: true,
         generateHighQualityLinkPreview: true,
         badSessionDeleteHistory: true,
+        keepAliveIntervalMs: 20000,
         retryRequestDelayMs: 2000
     });
 
@@ -198,19 +170,27 @@ async function connectToWhatsApp() {
         if (qr) {
             latestQR = qr;
             qrcodeTerminal.generate(qr, { small: true });
+            console.log("👉 New QR Code Ready! Open your Railway App URL to Scan.");
         }
 
         if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
+            const statusCode = (lastDisconnect?.error)?.output?.statusCode;
+            console.log(`⚠️ Connection closed. Status Code: ${statusCode}`);
+            const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+            
             if (shouldReconnect) {
-                connectToWhatsApp();
+                console.log("🔄 Reconnecting...");
+                setTimeout(() => connectToWhatsApp(), 3000);
             } else {
-                console.log('Logged out. Restarting...');
+                console.log('❌ Session invalidated. Restarting clean...');
+                if (fs.existsSync('auth_info_baileys')) {
+                    fs.rmSync('auth_info_baileys', { recursive: true, force: true });
+                }
                 process.exit(1);
             }
         } else if (connection === 'open') {
             latestQR = "";
-            console.log('✅ WhatsApp AI Bot is Ready and Online!');
+            console.log('🚀 ✅ WhatsApp AI Bot is READY, CONNECTED & ONLINE!');
         }
     });
 
@@ -218,156 +198,165 @@ async function connectToWhatsApp() {
         if (type !== 'notify') return;
 
         for (const msg of messages) {
-            // 🧪 Self-testing වලට විතරක් (fromMe Ignore කරන්නේ නෑ):
-            if (!msg.message) continue;
+            try {
+                if (!msg.message) continue;
 
-            addToQueue(async () => {
-                try {
-                    const chatJid = msg.key.remoteJid;
-                    const isGroup = chatJid.endsWith('@g.us');
-                    const sender = msg.key.participant || msg.key.remoteJid;
+                const sender = msg.key.remoteJid;
+                const isGroup = sender.endsWith('@g.us');
 
-                    // Allowed Groups filter
-                    if (isGroup && chatJid !== ANNOUNCEMENT_GROUP_ID && chatJid !== GENERAL_GROUP_ID) return;
+                if (isGroup && sender !== ANNOUNCEMENT_GROUP_ID && sender !== GENERAL_GROUP_ID) continue;
 
-                    await sock.readMessages([msg.key]);
+                await sock.readMessages([msg.key]);
 
-                    const imgMsg = msg.message.imageMessage || 
-                                   msg.message.viewOnceMessage?.message?.imageMessage ||
-                                   msg.message.viewOnceMessageV2?.message?.imageMessage ||
-                                   msg.message.ephemeralMessage?.message?.imageMessage;
+                const imgMsg = msg.message.imageMessage || 
+                               msg.message.viewOnceMessage?.message?.imageMessage ||
+                               msg.message.viewOnceMessageV2?.message?.imageMessage ||
+                               msg.message.ephemeralMessage?.message?.imageMessage;
 
-                    const audioMsg = msg.message.audioMessage ||
-                                     msg.message.viewOnceMessage?.message?.audioMessage ||
-                                     msg.message.ephemeralMessage?.message?.audioMessage;
+                const audioMsg = msg.message.audioMessage ||
+                                 msg.message.viewOnceMessage?.message?.audioMessage ||
+                                 msg.message.ephemeralMessage?.message?.audioMessage;
 
-                    const docMsg = msg.message.documentMessage || 
-                                   msg.message.documentWithCaptionMessage?.message?.documentMessage ||
-                                   msg.message.ephemeralMessage?.message?.documentMessage;
+                const docMsg = msg.message.documentMessage || 
+                               msg.message.documentWithCaptionMessage?.message?.documentMessage ||
+                               msg.message.ephemeralMessage?.message?.documentMessage;
 
-                    const firstMsgType = Object.keys(msg.message)[0];
-                    const contextInfo = msg.message[firstMsgType]?.contextInfo || msg.message.extendedTextMessage?.contextInfo;
-                    const quotedMsgObj = contextInfo?.quotedMessage;
-                    
-                    const quotedText = quotedMsgObj?.conversation ||
-                                      quotedMsgObj?.extendedTextMessage?.text ||
-                                      quotedMsgObj?.imageMessage?.caption || "";
+                const firstMsgType = Object.keys(msg.message)[0];
+                const contextInfo = msg.message[firstMsgType]?.contextInfo || msg.message.extendedTextMessage?.contextInfo;
+                const quotedMsgObj = contextInfo?.quotedMessage;
+                
+                const quotedText = quotedMsgObj?.conversation ||
+                                  quotedMsgObj?.extendedTextMessage?.text ||
+                                  quotedMsgObj?.imageMessage?.caption || "";
 
-                    const rawMessageText = msg.message.conversation || 
-                                           msg.message.extendedTextMessage?.text || 
-                                           imgMsg?.caption || 
-                                           docMsg?.caption || "";
+                const rawMessageText = msg.message.conversation || 
+                                       msg.message.extendedTextMessage?.text || 
+                                       imgMsg?.caption || 
+                                       docMsg?.caption || "";
 
-                    if (!rawMessageText && !imgMsg && !audioMsg && !docMsg) return;
+                console.log(`📩 [RECEIVED] From ${sender}: "${rawMessageText}"`);
 
-                    console.log(`📩 Processing message from ${chatJid}: "${rawMessageText}"`);
+                let fullUserPrompt = rawMessageText;
+                if (quotedText) {
+                    fullUserPrompt = `[Quoted/Referenced Text: "${quotedText}"]\nUser Action Requested: "${rawMessageText}"`;
+                }
 
-                    let fullUserPrompt = rawMessageText;
-                    if (quotedText) {
-                        fullUserPrompt = `[Quoted/Referenced Text: "${quotedText}"]\nUser Action Requested: "${rawMessageText}"`;
-                    }
+                // 🎙️ AUDIO / VOICE MESSAGE
+                if (audioMsg) {
+                    await sock.sendPresenceUpdate('composing', sender);
+                    await sock.sendMessage(sender, { text: "🎙️ **Voice Note එක Process වෙමින් පවතියි...**" }, { quoted: msg });
 
-                    // 🎙️ AUDIO PROCESSING
-                    if (audioMsg) {
-                        await sock.sendPresenceUpdate('composing', chatJid);
-                        await sock.sendMessage(chatJid, { text: "🎙️ **Voice Note එක Process වෙමින් පවතියි...**" }, { quoted: msg });
+                    const oggBuffer = await downloadMediaMessage(msg, 'buffer', {});
+                    const mp3Buffer = await convertAudioToWav(oggBuffer);
+                    const base64Audio = mp3Buffer.toString('base64');
 
-                        const oggBuffer = await downloadMediaMessage(msg, 'buffer', {});
-                        const mp3Buffer = await convertAudioToWav(oggBuffer);
-                        const base64Audio = mp3Buffer.toString('base64');
+                    const audioPart = { inlineData: { data: base64Audio, mimeType: 'audio/mp3' } };
+                    const prompt = "Listen carefully to this audio message. Reply clearly in friendly Singlish or Sinhala/English.";
+                    const result = await model.generateContent([prompt, audioPart]);
+                    const reply = result.response.text();
 
-                        const audioPart = { inlineData: { data: base64Audio, mimeType: 'audio/mp3' } };
-                        const prompt = "Listen carefully to this audio message. Reply clearly in friendly Singlish or Sinhala/English.";
-                        const result = await model.generateContent([prompt, audioPart]);
-                        const reply = result.response.text();
+                    await sock.sendMessage(sender, { text: reply }, { quoted: msg });
+                    return;
+                }
 
-                        await sock.sendMessage(chatJid, { text: reply }, { quoted: msg });
-                        return;
-                    }
+                // 📄 DOCUMENT / PDF
+                if (docMsg) {
+                    const mimeType = docMsg?.mimetype || '';
 
-                    // 📄 DOCUMENT / PDF PROCESSING
-                    if (docMsg) {
-                        const mimeType = docMsg?.mimetype || '';
-
-                        if (mimeType === 'application/pdf') {
-                            await sock.sendPresenceUpdate('composing', chatJid);
-                            await sock.sendMessage(chatJid, { text: "📄 **PDF Document එක Read කරමින් පවතියි...** පොඩ්ඩක් ඉන්න!" }, { quoted: msg });
-
-                            const buffer = await downloadMediaMessage(msg, 'buffer', {});
-                            const base64Pdf = buffer.toString('base64');
-
-                            const pdfPart = { inlineData: { data: base64Pdf, mimeType: 'application/pdf' } };
-                            const captionPrompt = rawMessageText ? ` User instructions: "${rawMessageText}"` : "";
-                            
-                            const prompt = "Read this PDF document carefully and fulfill the user request in clear Singlish or simple English." + captionPrompt;
-                            const result = await model.generateContent([prompt, pdfPart]);
-                            const reply = result.response.text();
-
-                            await sock.sendMessage(chatJid, { text: reply }, { quoted: msg });
-                            return;
-                        }
-                    }
-
-                    // 📸 IMAGE PROCESSING
-                    if (imgMsg) {
-                        await sock.sendPresenceUpdate('composing', chatJid);
-                        await sock.sendMessage(chatJid, { text: "⏳ **Image එක Processing...**" }, { quoted: msg });
+                    if (mimeType === 'application/pdf') {
+                        await sock.sendPresenceUpdate('composing', sender);
+                        await sock.sendMessage(sender, { text: "📄 **PDF Document එක Read කරමින් පවතියි...** පොඩ්ඩක් ඉන්න!" }, { quoted: msg });
 
                         const buffer = await downloadMediaMessage(msg, 'buffer', {});
-                        const base64Image = buffer.toString('base64');
-                        const mimeType = imgMsg.mimetype || 'image/jpeg';
+                        const base64Pdf = buffer.toString('base64');
 
-                        const imagePart = { inlineData: { data: base64Image, mimeType: mimeType } };
+                        const pdfPart = { inlineData: { data: base64Pdf, mimeType: 'application/pdf' } };
                         const captionPrompt = rawMessageText ? ` User instructions: "${rawMessageText}"` : "";
-
-                        const prompt = "Read all details in this screenshot/image. If requested, generate a clean and formatted announcement notice or answer the user's question clearly in simple English or Singlish." + captionPrompt;
-                        const result = await model.generateContent([prompt, imagePart]);
+                        
+                        const prompt = "Read this PDF document carefully and fulfill the user request in clear Singlish or simple English." + captionPrompt;
+                        const result = await model.generateContent([prompt, pdfPart]);
                         const reply = result.response.text();
 
-                        await sock.sendMessage(chatJid, { text: reply }, { quoted: msg });
+                        await sock.sendMessage(sender, { text: reply }, { quoted: msg });
                         return;
                     }
+                }
 
-                    // 📢 ADMIN ANNOUNCEMENT BROADCAST LOGIC (Only in Direct Messages)
-                    if (!isGroup) {
-                        const textLower = rawMessageText.toLowerCase().trim();
-                        const postKeywords = ["send to group", "post to group", "yawanna group", "group එකට දාන්න", "group එකට යවන්න"];
-                        const isPostRequest = postKeywords.some(keyword => textLower.includes(keyword));
+                // 📸 IMAGE
+                if (imgMsg) {
+                    await sock.sendPresenceUpdate('composing', sender);
+                    await sock.sendMessage(sender, { text: "⏳ **Image එක Processing...**" }, { quoted: msg });
 
-                        if (isPostRequest) {
-                            const isAdmin = sender.includes(ADMIN_PHONE_NUMBER) || (ADMIN_LID && sender.includes(ADMIN_LID));
+                    const buffer = await downloadMediaMessage(msg, 'buffer', {});
+                    const base64Image = buffer.toString('base64');
+                    const mimeType = imgMsg.mimetype || 'image/jpeg';
 
-                            if (!isAdmin) {
-                                await sock.sendMessage(chatJid, { text: "❌ මචං, Group එකට Announcements දාන්න පුළුවන් Batch Rep (Monal) ට විතරයි!" }, { quoted: msg });
-                                return;
-                            }
-                            
-                            let textToPost = quotedText || rawMessageText;
-                            let targetGroupId = textLower.includes("general") ? GENERAL_GROUP_ID : ANNOUNCEMENT_GROUP_ID; 
+                    const imagePart = { inlineData: { data: base64Image, mimeType: mimeType } };
+                    const captionPrompt = rawMessageText ? ` User instructions: "${rawMessageText}"` : "";
 
-                            const finalMsg = `📢 *ANNOUNCEMENT*\n\n${textToPost}`;
-                            await sock.sendMessage(targetGroupId, { text: finalMsg });
-                            await sock.sendMessage(chatJid, { text: `✅ Notice එක Group එකට දැම්මා මචං! 🚀` }, { quoted: msg });
+                    const prompt = "Read all details in this screenshot/image. If requested, generate a clean and formatted announcement notice or answer the user's question clearly in simple English or Singlish." + captionPrompt;
+                    const result = await model.generateContent([prompt, imagePart]);
+                    const reply = result.response.text();
+
+                    await sock.sendMessage(sender, { text: reply }, { quoted: msg });
+                    return;
+                }
+
+                // 💬 DIRECT CHAT & BROADCAST
+                if (!isGroup) {
+                    const textLower = rawMessageText.toLowerCase().trim();
+                    
+                    const postKeywords = [
+                        "send this message to group", "send to group", "post to group",
+                        "yawanna group එකට", "යවන්න group", "group එකට දාන්න", "group එකට දාපන්", "group එකට යවන්න"
+                    ];
+                    
+                    const isPostRequest = postKeywords.some(keyword => textLower.includes(keyword));
+
+                    if (isPostRequest) {
+                        const isAdmin = sender.includes(ADMIN_PHONE_NUMBER) || (ADMIN_LID && sender.includes(ADMIN_LID));
+
+                        if (!isAdmin) {
+                            await sock.sendMessage(sender, { text: "❌ මචං, Group එකට Announcements දාන්න පුළුවන් Batch Rep (Monal) ට විතරයි!" }, { quoted: msg });
                             return;
                         }
-                    }
+                        
+                        let textToPost = quotedText || rawMessageText;
 
-                    // 💬 UNIVERSAL CHAT RESPONSE (Groups & DMs)
+                        if (!textToPost || (textToPost === rawMessageText && isPostRequest && !quotedText)) {
+                            await sock.sendMessage(sender, { text: "⚠️ මචං, Group එකට දාන්න ඕන Message එකට Reply (Quote) කරලා 'Send to group' කියලා එවන්න!" }, { quoted: msg });
+                            return;
+                        }
+
+                        let targetGroupId = ANNOUNCEMENT_GROUP_ID; 
+                        let groupName = "Announcement Group";
+
+                        if (textLower.includes("general") || textLower.includes("chat")) {
+                            targetGroupId = GENERAL_GROUP_ID;
+                            groupName = "General Group";
+                        }
+
+                        const finalMsg = `📢 *ANNOUNCEMENT*\n\n${textToPost}`;
+
+                        await sock.sendMessage(targetGroupId, { text: finalMsg });
+                        await sock.sendMessage(sender, { text: `✅ හරි මචං, මම ඒ Notice එක කෙලින්ම *${groupName}* එකට දැම්මා! 🚀` }, { quoted: msg });
+                        return;
+                    }
+                
                     if (rawMessageText) {
-                        await sock.sendPresenceUpdate('composing', chatJid);
+                        await sock.sendPresenceUpdate('composing', sender);
+                        console.log(`🤖 Generating Gemini response for prompt: "${fullUserPrompt}"...`);
                         
                         const result = await model.generateContent(fullUserPrompt);
                         const replyText = result.response.text();
                         
-                        // Target Chat එකට (Group එකේ නම් Group එකට, DM නම් DM එකට) Reply යැවීම
-                        await sock.sendMessage(chatJid, { text: replyText }, { quoted: msg });
-                        console.log(`✅ [Sent Successfully] to ${chatJid}`);
+                        console.log(`✅ Sending reply back...`);
+                        await sock.sendMessage(sender, { text: replyText }, { quoted: msg });
                     }
-
-                } catch (msgError) {
-                    console.error("❌ Error processing individual queued message:", msgError);
                 }
-            });
+            } catch (msgError) {
+                console.error("❌ Error processing individual message:", msgError);
+            }
         }
     });
 }
