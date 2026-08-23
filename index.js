@@ -48,6 +48,7 @@ const model = genAI.getGenerativeModel({
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
+        headless: true,
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
@@ -57,7 +58,8 @@ const client = new Client({
             '--no-zygote',
             '--single-process',
             '--disable-gpu'
-        ]
+        ],
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium'
     }
 });
 
