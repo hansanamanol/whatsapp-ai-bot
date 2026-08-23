@@ -55,7 +55,7 @@ IMPORTANT RULES:
 `;
 
 const model = genAI.getGenerativeModel({ 
-    model: "gemini-3.1-flash-lite",
+    model: "gemini-3.5-flash-lite",
     systemInstruction: systemInstruction 
 });
 
@@ -69,7 +69,9 @@ async function startBot() {
         auth: state,
         logger: pino({ level: 'silent' }),
         printQRInTerminal: false,
-        keepAliveIntervalMs: 20000
+        keepAliveIntervalMs: 20000,
+        // 🚀 Enable LID mapping in Baileys
+        getMesssage: async () => { return { conversation: 'Hi' } }
     });
 
     sock.ev.on('creds.update', saveCreds);
@@ -100,17 +102,10 @@ async function startBot() {
             try {
                 if (!msg.message || msg.key.fromMe) continue;
 
-                let remoteJid = msg.key.remoteJid;
+                const remoteJid = msg.key.remoteJid;
                 const isGroup = remoteJid.endsWith('@g.us');
 
                 if (isGroup) continue;
-
-                // 🎯 LID to Phone Number Conversion Fix
-                if (remoteJid.endsWith('@lid')) {
-                    if (remoteJid.includes("17848192627279")) {
-                        remoteJid = "94762513957@s.whatsapp.net"; // Monal's Phone Number
-                    }
-                }
 
                 const now = Date.now();
                 if (userCooldowns.has(remoteJid)) {
@@ -125,8 +120,7 @@ async function startBot() {
                 const imgMsg = msg.message.imageMessage;
                 if (!text && !imgMsg) continue;
 
-                console.log(`📩 Message from ${remoteJid}: "${text}"`);
-                await sock.sendPresenceUpdate('composing', remoteJid);
+                console.log(`📩 Processing message from ${remoteJid}: "${text}"`);
 
                 let replyText = "";
 
@@ -142,9 +136,9 @@ async function startBot() {
                 }
 
                 if (replyText) {
-                    // Direct target sending without relying purely on quoted LID
-                    await sock.sendMessage(remoteJid, { text: replyText });
-                    console.log(`✅ Sent directly to ${remoteJid}`);
+                    // 🚀 CRITICAL FIX: Send reply using msg.key so Baileys auto-resolves LID/PN context
+                    await sock.sendMessage(remoteJid, { text: replyText }, { quoted: msg });
+                    console.log(`✅ Sent reply to ${remoteJid}`);
                 }
 
             } catch (err) {
