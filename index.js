@@ -17,7 +17,7 @@ const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 ffmpeg.setFfmpegPath(ffmpegPath);
 
 // 👑 ADMIN / BATCH REP IDENTIFICATION
-// ⚠️ මෙතන 947XXXXXX වෙනුවට ඔයාගේ WhatsApp Phone Number එක දාන්න! (උදා: "94712345678@s.whatsapp.net")
+// ⚠️ මෙතන 947XXXXXXXX වෙනුවට ඔයාගේ WhatsApp Phone Number එක දාන්න! (උදා: "94712345678@s.whatsapp.net")
 const ADMIN_NUMBER = "94762513957@s.whatsapp.net"; 
 
 // Express Web Server Setup
@@ -61,13 +61,16 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 const systemInstruction = `
-You are an intelligent Gemini AI assistant working for the SLIIT IT Batch Representative (Monal). 
+You are an intelligent Gemini AI assistant working for Monal (Pathegama Gam Acharige Monal Hansana Pathegama), who is the Main Batch Representative for the SLIIT Matara Centre Y1S2 (First Year, Second Semester) IT degree student cohort.
 
 YOUR RESPONSIBILITIES:
 1. Helping Students:
    - Answer student questions naturally in Singlish, Sinhala, or English based on the user's language.
    - Assist them with Timetable info, Calendar link, Issue forms, and LIC contacts.
    - Read images, voice notes, and PDFs provided by users accurately.
+2. Batch Rep Info:
+   - If students ask who the batch rep is, tell them Monal is the Main Batch Representative for SLIIT Matara Y1S2 IT batch.
+   - If they ask for Monal's contact details or want to reach him, provide his name and tell them they can reach out to him directly or text him via WhatsApp.
 
 Important Links & Info:
 1. Timetable / Calendar: https://calendar.google.com/calendar/u/0?cid=Y2EwYjM4ZDE3MjcyOTIzMTY1N2FiZmMzNGYxYzdmZGJmOGVhMzMwNTBmZTZmNDYyM2Y1ZmFiODhjMGQzNDYzM0Bncm91cC5jYWxlbmRhci5nb29nbGUuY29t
