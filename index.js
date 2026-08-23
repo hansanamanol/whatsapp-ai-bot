@@ -57,30 +57,19 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 const systemInstruction = `
-You are an intelligent Gemini AI assistant working for the SLIIT IT Y1S2 Batch Representative (Monal). 
-You behave like a natural, friendly conversational AI assistant.
+You are an intelligent Gemini AI assistant working for the SLIIT IT Batch Representative (Monal). 
+You behave like a natural conversational AI.
 
-CRITICAL CONTEXT ABOUT THE WhatsApp GROUP:
-- You are strictly operating for ONLY ONE WhatsApp Group, which is the official "SLIIT IT Y1S2 Batch Group".
-- NEVER ask Monal which group to send messages to. There is ONLY ONE group, and you already know it.
-
-SPECIAL INSTRUCTION FOR ADMIN (MONAL / BATCH REP):
-- The user you are serving is Monal, the SLIIT IT Y1S2 Batch Representative.
-- Recognize him as "Monal" or "SLIIT IT Y1S2 Batch Rep".
-- NEVER claim you sent, posted, or shared a message to the group unless it was actually executed by the system logic.
-
-YOUR RESPONSIBILITIES FOR STUDENTS:
+YOUR RESPONSIBILITIES:
 1. Helping Students:
-   - Answer student questions naturally in Singlish, Sinhala, or English based on their language.
-   - Assist them with Timetable info, Calendar link, Issue forms, and LIC contacts for Year 1 Semester 2.
-   - Listen to voice notes (audio) sent by students/admin and reply appropriately in text.
-   - Always pay close attention to quoted/replied context if provided in the prompt.
-2. Direct Contact for Personal Issues / AI Limitations:
-   - If a student asks a personal issue, complex query you cannot solve, or explicitly requests to speak to the Batch Rep / Monal, provide Monal's contact info nicely.
-   - Monal (Batch Rep) Contact Details:
-     * Name: Monal (SLIIT IT Y1S2 Batch Rep)
-     * WhatsApp / Mobile: +94 76 251 3957
-     * Direct Chat Link: https://wa.me/94762513957
+   - Answer student questions naturally in Singlish, Sinhala, or English based on the user's language.
+   - Assist them with Timetable info, Calendar link, Issue forms, and LIC contacts.
+   - Listen to voice notes (audio) sent by students/admin and reply appropriately.
+   - Always pay close attention to quoted/replied context if provided.
+
+2. Assisting the Batch Rep (Admin):
+   - You HAVE direct capability to post messages into the WhatsApp group via your code. 
+   - Never tell the user to copy-paste or that you lack direct access.
 
 Important Links & Info:
 1. Timetable / Calendar: https://calendar.google.com/calendar/u/0?cid=Y2EwYjM4ZDE3MjcyOTIzMTY1N2FiZmMzNGYxYzdmZGJmOGVhMzMwNTBmZTZmNDYyM2Y1ZmFiODhjMGQzNDYzM0Bncm91cC5jYWxlbmRhci5nb29nbGUuY29t
@@ -95,13 +84,13 @@ Important Links & Info:
 `;
 
 const model = genAI.getGenerativeModel({ 
-    model: "gemini-3.1-flash-lite",
+    model: "gemini-3.6-flash",
     systemInstruction: systemInstruction 
 });
 
+const ADMIN_NUMBER = "94762513957@s.whatsapp.net";
 const BATCH_GROUP_ID = "120363425513397101@g.us"; 
 
-// Helper function to convert WhatsApp Audio (OGG/Opus) to MP3/WAV
 function convertAudioToWav(inputBuffer) {
     return new Promise((resolve, reject) => {
         const tempIn = path.join(__dirname, `temp_${Date.now()}.ogg`);
@@ -113,8 +102,8 @@ function convertAudioToWav(inputBuffer) {
             .toFormat('mp3')
             .on('end', () => {
                 const outputBuffer = fs.readFileSync(tempOut);
-                if (fs.existsSync(tempIn)) fs.unlinkSync(tempIn);
-                if (fs.existsSync(tempOut)) fs.unlinkSync(tempOut);
+                fs.unlinkSync(tempIn);
+                fs.unlinkSync(tempOut);
                 resolve(outputBuffer);
             })
             .on('error', (err) => {
@@ -169,10 +158,6 @@ async function connectToWhatsApp() {
             const messageType = Object.keys(msg.message)[0];
             const isGroup = sender.endsWith('@g.us');
 
-            // Robust Admin Detection (Matches Monal's Number reliably)
-            const cleanSender = sender.split('@')[0];
-            const isAdmin = cleanSender.includes("762513957") || cleanSender.includes("94762513957");
-
             if (isGroup && sender !== BATCH_GROUP_ID) continue; 
 
             await sock.readMessages([msg.key]);
@@ -189,14 +174,14 @@ async function connectToWhatsApp() {
 
             let fullUserPrompt = rawMessageText;
             if (quotedText) {
-                fullUserPrompt = `[Context / Previous Message Being Replied To: "${quotedText}"]\nUser Current Request: "${rawMessageText}"`;
+                fullUserPrompt = `Content to post/process: "${quotedText}"\nUser Instruction: "${rawMessageText}"`;
             }
 
             // 🎙️ AUDIO / VOICE MESSAGE PROCESSING
             if (messageType === 'audioMessage') {
                 try {
                     await sock.sendMessage(sender, { 
-                        text: "🎙️ **Voice Note එක ඇහෙමින් පවතියි...** පොඩ්ඩක් ඉන්න, මම ඒක අහලා උත්තරයක් දෙන්නම්!" 
+                        text: "🎙️ **Voice Note එක Process වෙමින් පවතියි...** පොඩ්ඩක් ඉන්න!" 
                     }, { quoted: msg });
 
                     const oggBuffer = await downloadMediaMessage(msg, 'buffer', {});
@@ -207,7 +192,7 @@ async function connectToWhatsApp() {
                         inlineData: { data: base64Audio, mimeType: 'audio/mp3' }
                     };
 
-                    const prompt = "Listen carefully to this audio message from the student/admin. Understand what they are saying and reply clearly in friendly Singlish or Sinhala/English based on their language.";
+                    const prompt = "Listen carefully to this audio message. Reply clearly in friendly Singlish or Sinhala/English.";
                     const result = await model.generateContent([prompt, audioPart]);
                     const reply = result.response.text();
 
@@ -216,7 +201,7 @@ async function connectToWhatsApp() {
 
                 } catch (err) {
                     console.error('Error processing Audio:', err);
-                    await sock.sendMessage(sender, { text: "❌ අයියෝ Voice Message එක තේරුම් ගන්න බැරි වුණා. පැහැදිලිව ආයේ එකක් දාන්නකෝ." }, { quoted: msg });
+                    await sock.sendMessage(sender, { text: "❌ අයියෝ Voice Message එක තේරුම් ගන්න බැරි වුණා." }, { quoted: msg });
                     return;
                 }
             }
@@ -225,7 +210,7 @@ async function connectToWhatsApp() {
             if (messageType === 'imageMessage') {
                 try {
                     await sock.sendMessage(sender, { 
-                        text: "⏳ **Image එක Processing...** පොඩ්ඩක් ඉන්න, මම මේක බලලා ඉක්මනින්ම විස්තර කරන්නම්!" 
+                        text: "⏳ **Image එක Processing...** පොඩ්ඩක් ඉන්න!" 
                     }, { quoted: msg });
 
                     const buffer = await downloadMediaMessage(msg, 'buffer', {});
@@ -238,7 +223,7 @@ async function connectToWhatsApp() {
 
                     const captionPrompt = rawMessageText ? ` User prompt/caption: "${rawMessageText}"` : "";
 
-                    if (isAdmin) {
+                    if (sender === ADMIN_NUMBER) {
                         const prompt = "Read this image notice and write a clear, attractive student announcement in SIMPLE ENGLISH. Use bold text for key dates, times, and instructions. Output ONLY the notice text without intro/outro." + captionPrompt;
                         const result = await model.generateContent([prompt, imagePart]);
                         const announcement = result.response.text();
@@ -246,9 +231,9 @@ async function connectToWhatsApp() {
                         const finalMsg = `📢 *ANNOUNCEMENT*\n\n${announcement}`;
 
                         await sock.sendMessage(BATCH_GROUP_ID, { image: buffer, caption: finalMsg });
-                        await sock.sendMessage(sender, { text: "✅ Image එකයි Simple English Notice එකයි Group එකට දැම්මා Monal!" }, { quoted: msg });
+                        await sock.sendMessage(sender, { text: "✅ Image එකයි Notice එකයි Group එකට දැම්මා!" }, { quoted: msg });
                     } else {
-                        const prompt = "Read this image notice/document. Explain its details clearly to the student in friendly Singlish or simple English based on what they asked." + captionPrompt;
+                        const prompt = "Read this image notice/document. Explain its details clearly to the student in friendly Singlish or simple English." + captionPrompt;
                         const result = await model.generateContent([prompt, imagePart]);
                         const reply = result.response.text();
 
@@ -258,47 +243,50 @@ async function connectToWhatsApp() {
 
                 } catch (err) {
                     console.error('Error processing Image:', err);
-                    await sock.sendMessage(sender, { text: "❌ අයියෝ Image එක කියවගන්න බැරි වුණා, ආයේ දාලා බලන්න." }, { quoted: msg });
+                    await sock.sendMessage(sender, { text: "❌ Image එක කියවගන්න බැරි වුණා." }, { quoted: msg });
                     return;
                 }
             }
 
-            // 💬 TEXT MESSAGE PROCESSING (FORCE BROADCAST TO GROUP FOR MONAL)
-            if (isAdmin && !isGroup) {
-                const text = rawMessageText.toLowerCase();
+            // 💬 TEXT MESSAGE PROCESSING (ADMIN BROADCAST DETECTOR)
+            const text = rawMessageText.toLowerCase();
+            const postKeywords = ["yawanna", "යවන්න", "send", "post", "announce", "inform", "tell", "දාන්න", "දාපන්", "කියන්න", "කියපන්"];
+            const isPostCommand = postKeywords.some(keyword => text.includes(keyword));
 
-                // Regex matches any variation of sending/posting to group
-                const broadcastTrigger = /(group|ගෲප්|දාන්න|දාපන්|යවන්න|යවපන්|share|post|announce|inform|send)/i;
+            // Direct Post logic for Admin
+            if (isPostCommand && sender === ADMIN_NUMBER) {
+                try {
+                    await sock.sendMessage(sender, { text: "⏳ **Notice එක Group එකට Format කරලා යවමින් පවතියි...**" }, { quoted: msg });
 
-                if (broadcastTrigger.test(text) || quotedText) {
-                    try {
-                        const prompt = `The Batch Rep (Monal) gave this command/text: "${fullUserPrompt}".
-Task: Convert the core information/notice into a clean, well-formatted, and professional SIMPLE ENGLISH announcement for university students. 
-Include headings, bold text for key details, and appropriate emojis.
-IMPORTANT: Output ONLY the notice text itself. Do not include meta comments like "Here is the notice".`;
+                    const prompt = `You are a helper script formatting a message to post directly to a student group.
+Input content and instruction:
+${fullUserPrompt}
 
-                        const result = await model.generateContent(prompt);
-                        const announcement = result.response.text();
+TASK: Format the notice into clean, simple, and attractive SIMPLE ENGLISH for university students.
+Include bold headings, clear schedule/venue details, and emojis.
+CRITICAL RULE: Return ONLY the exact notice text to be sent. Absolutely NO conversational intro like "Sure, I can help" or instructions to copy-paste.`;
 
-                        const finalMsg = `📢 *ANNOUNCEMENT*\n\n${announcement}`;
+                    const result = await model.generateContent(prompt);
+                    const announcement = result.response.text();
 
-                        // Executing actual message send action to group
-                        await sock.sendMessage(BATCH_GROUP_ID, { text: finalMsg });
-                        
-                        // Confirm back to Monal ONLY AFTER successful send
-                        await sock.sendMessage(sender, { text: "✅ හරි Monal, මම ඒ Notice එක Simple English වලින් සකස් කරලා SLIIT IT Y1S2 Batch Group එකට දැන්ම දැම්මා! 👍" }, { quoted: msg });
-                        return;
-                    } catch (err) {
-                        console.error('Error broadcasting admin message:', err);
-                        await sock.sendMessage(sender, { text: "❌ Group එකට Message එක යවද්දී දෝෂයක් ආවා, පොඩ්ඩක් බලන්න." }, { quoted: msg });
-                        return;
-                    }
+                    const finalMsg = `📢 *ANNOUNCEMENT*\n\n${announcement}`;
+
+                    // Post to Batch Group
+                    await sock.sendMessage(BATCH_GROUP_ID, { text: finalMsg });
+
+                    // Confirm to Admin
+                    await sock.sendMessage(sender, { text: "✅ හරි මචං, මම ඒක Simple English වලින් හදලා Direct Group එකට දැම්මා! 👍" }, { quoted: msg });
+                    return;
+                } catch (err) {
+                    console.error('Error broadcasting admin message:', err);
+                    await sock.sendMessage(sender, { text: "❌ Group එකට Post කිරීමේදී දෝෂයක් ආවා." }, { quoted: msg });
+                    return;
                 }
             }
 
             if (isGroup) return;
 
-            // General AI Response for DM Chat
+            // Normal Student / General Queries
             if (rawMessageText) {
                 try {
                     const result = await model.generateContent(fullUserPrompt);
