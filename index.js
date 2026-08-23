@@ -122,7 +122,7 @@ CRITICAL CODE & TUTORIAL ANALYSIS RULES:
 
 // ✅ Using gemini-1.5-flash which is standard and universally supported
 const model = genAI.getGenerativeModel({ 
-    model: "gemini-1.5-flash",
+    model: "gemini-3.1-flash-lite",
     systemInstruction: systemInstruction 
 });
 
