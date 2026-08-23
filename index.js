@@ -17,8 +17,11 @@ const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 ffmpeg.setFfmpegPath(ffmpegPath);
 
 // 👑 ADMIN / BATCH REP IDENTIFICATION
-// ⚠️ මෙතන 947XXXXXXXX වෙනුවට ඔයාගේ WhatsApp Phone Number එක දාන්න! (උදා: "94712345678@s.whatsapp.net")
-const ADMIN_NUMBER = "94762513957@s.whatsapp.net"; 
+const ADMIN_PHONE_NUMBER = "94762513957"; 
+
+// 📢 GROUP IDs (ANNOUNCEMENT & GENERAL)
+const ANNOUNCEMENT_GROUP_ID = "120363425513397101@g.us"; 
+const GENERAL_GROUP_ID = "120363409747625255@g.us";
 
 // Express Web Server Setup
 const app = express();
@@ -70,6 +73,12 @@ YOUR IDENTITY & RESPONSIBILITIES:
 - Assist students with Timetable info, Calendar link, Issue forms, LMS links, Course Outlines, and LIC contacts.
 - Read images, voice notes, and PDFs provided by users accurately and explain them.
 
+BATCH REPRESENTATIVE (MONAL HANSANA) CONTACT DETAILS:
+- When students ask for Batch Rep's contact details, phone number, email, or how to contact Monal, provide the following details cleanly:
+  * Name: Monal Hansana (SLIIT IT Batch Representative)
+  * Contact Number: +94 76 251 3957 (076 251 3957)
+  * Official SLIIT Email: it26100930@my.sliit.lk
+
 Y1S2 MODULE DETAILS & LIC INFORMATION:
 1. IT1170 - Data Structures and Algorithms (DSA)
    - LIC: Prof. Nathali Silva (nathali.s@sliit.lk)
@@ -114,8 +123,6 @@ const model = genAI.getGenerativeModel({
     model: "gemini-3.1-flash-lite",
     systemInstruction: systemInstruction 
 });
-
-const BATCH_GROUP_ID = "120363425513397101@g.us"; 
 
 function convertAudioToWav(inputBuffer) {
     return new Promise((resolve, reject) => {
@@ -187,32 +194,32 @@ async function connectToWhatsApp() {
 
             const sender = msg.key.remoteJid;
             const isGroup = sender.endsWith('@g.us');
-            
-            if (isGroup) console.log("📌 Group ID:", sender);
 
-            //if (isGroup && sender !== BATCH_GROUP_ID) continue; 
+            // 🛑 Groups දෙක හැර වෙනත් Groups Skip කිරීම
+            if (isGroup && sender !== ANNOUNCEMENT_GROUP_ID && sender !== GENERAL_GROUP_ID) continue;
 
             await sock.readMessages([msg.key]);
             await sock.sendPresenceUpdate('composing', sender);
 
-            // Extract Image Object dynamically
+            // Extract Media Objects
             const imgMsg = msg.message.imageMessage || 
                            msg.message.viewOnceMessage?.message?.imageMessage ||
                            msg.message.viewOnceMessageV2?.message?.imageMessage ||
                            msg.message.ephemeralMessage?.message?.imageMessage;
 
-            // Extract Audio Object
             const audioMsg = msg.message.audioMessage ||
                              msg.message.viewOnceMessage?.message?.audioMessage ||
                              msg.message.ephemeralMessage?.message?.audioMessage;
 
-            // Extract Document Object
             const docMsg = msg.message.documentMessage || 
                            msg.message.documentWithCaptionMessage?.message?.documentMessage ||
                            msg.message.ephemeralMessage?.message?.documentMessage;
 
-            const contextInfo = msg.message[Object.keys(msg.message)[0]]?.contextInfo;
+            // Extract Context/Quoted Message
+            const firstMsgType = Object.keys(msg.message)[0];
+            const contextInfo = msg.message[firstMsgType]?.contextInfo || msg.message.extendedTextMessage?.contextInfo;
             const quotedMsgObj = contextInfo?.quotedMessage;
+            
             const quotedText = quotedMsgObj?.conversation ||
                               quotedMsgObj?.extendedTextMessage?.text ||
                               quotedMsgObj?.imageMessage?.caption || "";
@@ -303,35 +310,45 @@ async function connectToWhatsApp() {
                 }
             }
 
-            // 💬 DIRECT MESSAGE BROADCAST COMMAND (Admin / Batch Rep Only)
+            // 💬 DIRECT MESSAGE BROADCAST COMMAND (Admin Only)
             if (!isGroup) {
-                const textLower = rawMessageText.toLowerCase();
-                const postKeywords = ["this one", "yawanna", "යවන්න", "send this", "post this", "send to group", "post to group", "දාන්න", "දාපන්", "කියන්න", "කියපන්"];
+                const textLower = rawMessageText.toLowerCase().trim();
+                
+                const postKeywords = [
+                    "send", "post", "yawanna", "යවන්න", "this one", 
+                    "group", "දාන්න", "දාපන්", "කියන්න", "කියපන්", 
+                    "announce", "broadcast"
+                ];
                 
                 const isPostRequest = postKeywords.some(keyword => textLower.includes(keyword));
+                const isAdmin = sender.includes(ADMIN_PHONE_NUMBER);
 
-                // 🛑 CHECK: ළමයෙක් "send to group" කිව්වට යවන්නෙ නෑ, ඔයා (ADMIN) කිව්වොත් විතරයි යවන්නේ
-                if (isPostRequest && sender === ADMIN_NUMBER) {
+                if (isPostRequest && isAdmin) {
                     try {
-                        let finalContentToPost = "";
+                        const contentToFormat = quotedText || rawMessageText;
 
-                        if (quotedText) {
-                            const prompt = `The user wants to post this quoted content to the student group: "${quotedText}".
-Convert and format this content into a clean, professional, simple English student announcement with emojis and bold key details. 
-Output ONLY the final announcement text without intro/outro text!`;
+                        // Target Group තීරණය කිරීම
+                        let targetGroupId = ANNOUNCEMENT_GROUP_ID;
+                        let targetGroupName = "Announcement Group";
 
-                            const result = await model.generateContent(prompt);
-                            finalContentToPost = result.response.text();
-                        } else {
-                            const prompt = `Convert this text into a clean simple English announcement notice for university students: "${rawMessageText}". Output ONLY the final notice text!`;
-                            const result = await model.generateContent(prompt);
-                            finalContentToPost = result.response.text();
+                        if (textLower.includes("general") || textLower.includes("chat") || textLower.includes("ජෙනරල්")) {
+                            targetGroupId = GENERAL_GROUP_ID;
+                            targetGroupName = "General Chat Group";
                         }
+
+                        const prompt = `The user wants to broadcast the following text/notice to the university student WhatsApp group:
+"${contentToFormat}"
+
+Reformat and optimize this into a clean, highly readable, professional, and friendly student announcement in Simple English. Use relevant emojis and bold text for key points.
+CRITICAL INSTRUCTION: Output ONLY the final announcement text to be sent directly to students. Do not add any conversational intros, explanations, or meta-comments like "Here is your notice:".`;
+
+                        const result = await model.generateContent(prompt);
+                        const finalContentToPost = result.response.text().trim();
 
                         const finalMsg = `📢 *ANNOUNCEMENT*\n\n${finalContentToPost}`;
 
-                        await sock.sendMessage(BATCH_GROUP_ID, { text: finalMsg });
-                        await sock.sendMessage(sender, { text: "✅ හරි මචං, මම ඒ Notice එක කෙලින්ම Group එකට දැම්මා! 🚀" }, { quoted: msg });
+                        await sock.sendMessage(targetGroupId, { text: finalMsg });
+                        await sock.sendMessage(sender, { text: `✅ හරි මචං, මම ඒ Notice එක කෙලින්ම *${targetGroupName}* එකට දැම්මා! 🚀` }, { quoted: msg });
                         return;
                     } catch (err) {
                         console.error('Error broadcasting admin message:', err);
@@ -343,7 +360,7 @@ Output ONLY the final announcement text without intro/outro text!`;
 
             if (isGroup) return;
 
-            // Normal DM Chat Response (For all students, including admin)
+            // Normal DM Chat Response
             if (rawMessageText) {
                 try {
                     const result = await model.generateContent(fullUserPrompt);
