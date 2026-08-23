@@ -313,10 +313,10 @@ async function connectToWhatsApp() {
 // 💬 DIRECT MESSAGE BROADCAST COMMAND (DM Only)
             if (!isGroup) {
                 const textLower = rawMessageText.toLowerCase().trim();
+               // ✅ අලුත් Code එක (Fix කරපු තැන)
                 const postKeywords = [
                     "send this message to group", "send to group", "post to group",
-                    "this one", "yawanna", "යවන්න", "send", "post", 
-                    "announce", "inform", "tell", "දාන්න", "දාපන්", "කියන්න"
+                    "yawanna group එකට", "යවන්න group", "group එකට දාන්න", "group එකට දාපන්", "group එකට යවන්න"
                 ];
                 
                 const isPostRequest = postKeywords.some(keyword => textLower.includes(keyword));
