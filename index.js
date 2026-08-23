@@ -56,11 +56,6 @@ app.listen(PORT, () => {
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
-// 👑 ADMIN & GROUP CONFIGURATIONS
-const ADMIN_NUMBER = "94762513957@s.whatsapp.net"; // ඔයාගේ WhatsApp Number එක
-const ANNOUNCEMENT_GROUP_ID = "120363425513397101@g.us"; 
-const GENERAL_GROUP_ID = "120363409747625255@g.us";
-
 const systemInstruction = `
 You are an intelligent Gemini AI assistant working for the SLIIT IT Batch Representative (Monal). 
 
@@ -68,7 +63,7 @@ YOUR RESPONSIBILITIES:
 1. Helping Students:
    - Answer student questions naturally in Singlish, Sinhala, or English based on the user's language.
    - Assist them with Timetable info, Calendar link, Issue forms, and LIC contacts.
-   - Listen to voice notes (audio) and read PDFs/images sent by students/admin and reply appropriately.
+   - Read images, voice notes, and PDFs provided by users accurately.
 
 Important Links & Info:
 1. Timetable / Calendar: https://calendar.google.com/calendar/u/0?cid=Y2EwYjM4ZDE3MjcyOTIzMTY1N2FiZmMzNGYxYzdmZGJmOGVhMzMwNTBmZTZmNDYyM2Y1ZmFiODhjMGQzNDYzM0Bncm91cC5jYWxlbmRhci5nb29nbGUuY29t
@@ -83,9 +78,11 @@ Important Links & Info:
 `;
 
 const model = genAI.getGenerativeModel({ 
-    model: "gemini-3.1-flash-light",
+    model: "gemini-3.1-flash-lite",
     systemInstruction: systemInstruction 
 });
+
+const BATCH_GROUP_ID = "120363425513397101@g.us"; 
 
 function convertAudioToWav(inputBuffer) {
     return new Promise((resolve, reject) => {
@@ -151,19 +148,30 @@ async function connectToWhatsApp() {
             if (!msg.message || msg.key.fromMe) continue;
 
             const sender = msg.key.remoteJid;
-            const messageType = Object.keys(msg.message)[0];
             const isGroup = sender.endsWith('@g.us');
 
-            // Log Group ID if message comes from any group
-            if (isGroup) {
-                console.log("📌 REAL GROUP ID IS:", sender);
-                if (sender !== ANNOUNCEMENT_GROUP_ID && sender !== GENERAL_GROUP_ID) continue;
-            }
+            if (isGroup && sender !== BATCH_GROUP_ID) continue; 
 
             await sock.readMessages([msg.key]);
             await sock.sendPresenceUpdate('composing', sender);
 
-            const contextInfo = msg.message[messageType]?.contextInfo;
+            // Extract Image Object dynamically (Handles Normal, ViewOnce, and Ephemeral Messages)
+            const imgMsg = msg.message.imageMessage || 
+                           msg.message.viewOnceMessage?.message?.imageMessage ||
+                           msg.message.viewOnceMessageV2?.message?.imageMessage ||
+                           msg.message.ephemeralMessage?.message?.imageMessage;
+
+            // Extract Audio Object
+            const audioMsg = msg.message.audioMessage ||
+                             msg.message.viewOnceMessage?.message?.audioMessage ||
+                             msg.message.ephemeralMessage?.message?.audioMessage;
+
+            // Extract Document Object
+            const docMsg = msg.message.documentMessage || 
+                           msg.message.documentWithCaptionMessage?.message?.documentMessage ||
+                           msg.message.ephemeralMessage?.message?.documentMessage;
+
+            const contextInfo = msg.message[Object.keys(msg.message)[0]]?.contextInfo;
             const quotedMsgObj = contextInfo?.quotedMessage;
             const quotedText = quotedMsgObj?.conversation ||
                               quotedMsgObj?.extendedTextMessage?.text ||
@@ -171,15 +179,16 @@ async function connectToWhatsApp() {
 
             const rawMessageText = msg.message.conversation || 
                                    msg.message.extendedTextMessage?.text || 
-                                   msg.message.imageMessage?.caption || "";
+                                   imgMsg?.caption || 
+                                   docMsg?.caption || "";
 
             let fullUserPrompt = rawMessageText;
             if (quotedText) {
-                fullUserPrompt = `[Quoted/Referenced Context: "${quotedText}"]\nUser Action Requested: "${rawMessageText}"`;
+                fullUserPrompt = `[Quoted/Referenced Text: "${quotedText}"]\nUser Action Requested: "${rawMessageText}"`;
             }
 
             // 🎙️ AUDIO / VOICE MESSAGE PROCESSING
-            if (messageType === 'audioMessage') {
+            if (audioMsg) {
                 try {
                     await sock.sendMessage(sender, { text: "🎙️ **Voice Note එක Process වෙමින් පවතියි...**" }, { quoted: msg });
 
@@ -202,9 +211,8 @@ async function connectToWhatsApp() {
             }
 
             // 📄 DOCUMENT / PDF MESSAGE PROCESSING
-            if (messageType === 'documentMessage' || messageType === 'documentWithCaptionMessage') {
+            if (docMsg) {
                 try {
-                    const docMsg = msg.message.documentMessage || msg.message.documentWithCaptionMessage?.message?.documentMessage;
                     const mimeType = docMsg?.mimetype || '';
 
                     if (mimeType === 'application/pdf') {
@@ -214,9 +222,9 @@ async function connectToWhatsApp() {
                         const base64Pdf = buffer.toString('base64');
 
                         const pdfPart = { inlineData: { data: base64Pdf, mimeType: 'application/pdf' } };
-                        const captionPrompt = rawMessageText ? ` User prompt: "${rawMessageText}"` : "";
+                        const captionPrompt = rawMessageText ? ` User instructions: "${rawMessageText}"` : "";
                         
-                        const prompt = "Read this PDF document carefully and summarize or answer the user's request about it in simple English/Singlish." + captionPrompt;
+                        const prompt = "Read this PDF document carefully and fulfill the user request in clear Singlish or simple English." + captionPrompt;
                         const result = await model.generateContent([prompt, pdfPart]);
                         const reply = result.response.text();
 
@@ -231,108 +239,70 @@ async function connectToWhatsApp() {
             }
 
             // 📸 IMAGE MESSAGE PROCESSING
-            if (messageType === 'imageMessage') {
+            if (imgMsg) {
                 try {
                     await sock.sendMessage(sender, { text: "⏳ **Image එක Processing...**" }, { quoted: msg });
 
                     const buffer = await downloadMediaMessage(msg, 'buffer', {});
                     const base64Image = buffer.toString('base64');
-                    const mimeType = msg.message.imageMessage.mimetype || 'image/jpeg';
+                    const mimeType = imgMsg.mimetype || 'image/jpeg';
 
                     const imagePart = { inlineData: { data: base64Image, mimeType: mimeType } };
-                    const captionPrompt = rawMessageText ? ` User prompt: "${rawMessageText}"` : "";
+                    const captionPrompt = rawMessageText ? ` User instructions: "${rawMessageText}"` : "";
 
-                    if (!isGroup) {
-                        // 🔒 Check if Sender is Admin
-                        if (sender === ADMIN_NUMBER) {
-                            const prompt = "Read this image notice and write a clean, official SIMPLE ENGLISH student announcement. Use bold text for key dates/times. Output ONLY the notice text." + captionPrompt;
-                            const result = await model.generateContent([prompt, imagePart]);
-                            const announcement = result.response.text();
+                    const prompt = "Read all details in this screenshot/image. If requested, generate a clean and formatted announcement notice or answer the user's question clearly in simple English or Singlish." + captionPrompt;
+                    const result = await model.generateContent([prompt, imagePart]);
+                    const reply = result.response.text();
 
-                            const finalMsg = `📢 *ANNOUNCEMENT*\n\n${announcement}`;
-
-                            await sock.sendMessage(ANNOUNCEMENT_GROUP_ID, { image: buffer, caption: finalMsg });
-                            await sock.sendMessage(sender, { text: "✅ Image එකයි Notice එකයි Announcement Group එකට දැම්මා!" }, { quoted: msg });
-                        } else {
-                            // Student image upload - Just explain
-                            const prompt = "Read this image document and explain its details clearly to the student in friendly Singlish or English." + captionPrompt;
-                            const result = await model.generateContent([prompt, imagePart]);
-                            await sock.sendMessage(sender, { text: result.response.text() }, { quoted: msg });
-                        }
-                    } else {
-                        const prompt = "Read this image notice/document. Explain its details clearly in friendly Singlish or English." + captionPrompt;
-                        const result = await model.generateContent([prompt, imagePart]);
-                        await sock.sendMessage(sender, { text: result.response.text() }, { quoted: msg });
-                    }
+                    await sock.sendMessage(sender, { text: reply }, { quoted: msg });
                     return;
                 } catch (err) {
                     console.error('Error processing Image:', err);
-                    await sock.sendMessage(sender, { text: "❌ Image එක කියවගන්න බැරි වුණා." }, { quoted: msg });
+                    await sock.sendMessage(sender, { text: "❌ Image එක කියවගන්න බැරි වුණා. කරුණාකර නැවත එවා බලන්න." }, { quoted: msg });
                     return;
                 }
             }
 
-            // 💬 DIRECT MESSAGE BROADCAST COMMAND (DM Only & Admin Security Only)
+            // 💬 DIRECT MESSAGE BROADCAST COMMAND (DM Only)
             if (!isGroup) {
                 const textLower = rawMessageText.toLowerCase();
-                const postKeywords = ["this one", "this", "yawanna", "යවන්න", "send", "post", "announce", "inform", "tell", "දාන්න", "දාපන්", "කියන්න", "කියපන්", "yes", "go ahead"];
+                const postKeywords = ["this one", "yawanna", "යවන්න", "send this", "post this", "send to group", "post to group", "දාන්න", "දාපන්", "කියන්න", "කියපන්"];
                 
                 const isPostRequest = postKeywords.some(keyword => textLower.includes(keyword));
 
-                if (isPostRequest || (quotedText && (textLower.includes("this") || textLower.includes("මේක")))) {
-                    
-                    // 🔒 SECURITY CHECK: Only Admin Can Post
-                    if (sender !== ADMIN_NUMBER) {
-                        console.log("⚠️ Unauthorized attempt to post to group by:", sender);
-                    } else {
-                        try {
-                            let finalContentToPost = "";
+                if (isPostRequest) {
+                    try {
+                        let finalContentToPost = "";
 
-                            if (quotedText) {
-                                const prompt = `The user wants to post this quoted content to the student group: "${quotedText}".
+                        if (quotedText) {
+                            const prompt = `The user wants to post this quoted content to the student group: "${quotedText}".
 Convert and format this content into a clean, professional, simple English student announcement with emojis and bold key details. 
 Output ONLY the final announcement text without intro/outro text!`;
 
-                                const result = await model.generateContent(prompt);
-                                finalContentToPost = result.response.text();
-                            } else {
-                                const prompt = `Convert this text into a clean simple English announcement notice for university students: "${rawMessageText}". Output ONLY the final notice text!`;
-                                const result = await model.generateContent(prompt);
-                                finalContentToPost = result.response.text();
-                            }
-
-                            const finalMsg = `📢 *ANNOUNCEMENT*\n\n${finalContentToPost}`;
-
-                            // 🎯 Targeting Group based on user message
-                            const isGeneralOnly = textLower.includes("general") || textLower.includes("main");
-                            const isBoth = textLower.includes("both") || textLower.includes("දෙකටම");
-
-                            if (isGeneralOnly) {
-                                await sock.sendMessage(GENERAL_GROUP_ID, { text: finalMsg });
-                                await sock.sendMessage(sender, { text: "✅ Notice එක General Group එකට දැම්මා! 🚀" }, { quoted: msg });
-                            } else if (isBoth) {
-                                await sock.sendMessage(ANNOUNCEMENT_GROUP_ID, { text: finalMsg }).catch(e => console.error("Announcement Group error:", e));
-                                await sock.sendMessage(GENERAL_GROUP_ID, { text: finalMsg }).catch(e => console.error("General Group error:", e));
-                                await sock.sendMessage(sender, { text: "✅ Notice එක Groups දෙකටම දැම්මා! 🚀" }, { quoted: msg });
-                            } else {
-                                // Default: Announcement Group Only
-                                await sock.sendMessage(ANNOUNCEMENT_GROUP_ID, { text: finalMsg });
-                                await sock.sendMessage(sender, { text: "✅ Notice එක Announcement Group එකට දැම්මා! 🚀" }, { quoted: msg });
-                            }
-                            return;
-
-                        } catch (err) {
-                            console.error('Error broadcasting admin message:', err);
-                            await sock.sendMessage(sender, { text: "❌ Group එකට Post කිරීමේදී Error එකක් ආවා." }, { quoted: msg });
-                            return;
+                            const result = await model.generateContent(prompt);
+                            finalContentToPost = result.response.text();
+                        } else {
+                            const prompt = `Convert this text into a clean simple English announcement notice for university students: "${rawMessageText}". Output ONLY the final notice text!`;
+                            const result = await model.generateContent(prompt);
+                            finalContentToPost = result.response.text();
                         }
+
+                        const finalMsg = `📢 *ANNOUNCEMENT*\n\n${finalContentToPost}`;
+
+                        await sock.sendMessage(BATCH_GROUP_ID, { text: finalMsg });
+                        await sock.sendMessage(sender, { text: "✅ හරි මචං, මම ඒ Notice එක කෙලින්ම Group එකට දැම්මා! 🚀" }, { quoted: msg });
+                        return;
+                    } catch (err) {
+                        console.error('Error broadcasting admin message:', err);
+                        await sock.sendMessage(sender, { text: "❌ Group එකට Post කිරීමේදී Error එකක් ආවා." }, { quoted: msg });
+                        return;
                     }
                 }
             }
 
             if (isGroup) return;
 
-            // Normal DM Chat Response for Everyone
+            // Normal DM Chat Response
             if (rawMessageText) {
                 try {
                     const result = await model.generateContent(fullUserPrompt);
