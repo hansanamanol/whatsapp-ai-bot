@@ -5,10 +5,45 @@ const {
     downloadMediaMessage 
 } = require('@whiskeysockets/baileys');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const qrcode = require('qrcode-terminal');
+const qrcodeTerminal = require('qrcode-terminal');
+const QRCode = require('qrcode');
+const express = require('express');
 const pino = require('pino');
 
-// ⚠️ 1. Gemini API Key & Model Setup (gemini-2.5-flash)
+// Express Web Server Setup (Web QR Code සඳහා)
+const app = express();
+const PORT = process.env.PORT || 3000;
+let latestQR = "";
+
+app.get('/', async (req, res) => {
+    if (!latestQR) {
+        return res.send('<h2>QR Code එක තවම Generate වෙනවා හෝ Bot සක්‍රීය වී ඇත... Page එක Refresh කර බලන්න.</h2>');
+    }
+    try {
+        const qrImage = await QRCode.toDataURL(latestQR);
+        res.send(`
+            <html>
+                <head>
+                    <title>WhatsApp Bot QR Code</title>
+                    <meta http-equiv="refresh" content="10">
+                </head>
+                <body style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;background:#0d1117;color:white;">
+                    <h2>Scan this QR Code with WhatsApp</h2>
+                    <img src="${qrImage}" style="border:10px solid white;border-radius:10px;width:300px;height:300px;"/>
+                    <p>Page auto refreshes every 10 seconds</p>
+                </body>
+            </html>
+        `);
+    } catch (err) {
+        res.status(500).send('Error generating QR code');
+    }
+});
+
+app.listen(PORT, () => {
+    console.log(`Web server running on port ${PORT}`);
+});
+
+// ⚠️ 1. Gemini API Key & Model Setup
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
@@ -45,8 +80,7 @@ const model = genAI.getGenerativeModel({
     systemInstruction: systemInstruction 
 });
 
-// ⚠️ 2. ඔයාගේ Details
-const ADMIN_NUMBER = "94762513957@s.whatsapp.net"; // Baileys format
+const ADMIN_NUMBER = "94762513957@s.whatsapp.net";
 const BATCH_GROUP_ID = "120363425513397101@g.us"; 
 
 async function connectToWhatsApp() {
@@ -64,8 +98,9 @@ async function connectToWhatsApp() {
         const { connection, lastDisconnect, qr } = update;
 
         if (qr) {
+            latestQR = qr; // Save for web display
             console.log('\n=================== SCAN QR CODE BELOW ===================\n');
-            qrcode.generate(qr, { small: true });
+            qrcodeTerminal.generate(qr, { small: true });
             console.log('\n==========================================================\n');
         }
 
@@ -74,6 +109,7 @@ async function connectToWhatsApp() {
             console.log('Connection closed, reconnecting...', shouldReconnect);
             if (shouldReconnect) connectToWhatsApp();
         } else if (connection === 'open') {
+            latestQR = ""; // Clear QR once connected
             console.log('✅ WhatsApp AI Bot is Ready and Online!');
         }
     });
@@ -88,17 +124,12 @@ async function connectToWhatsApp() {
             const messageType = Object.keys(msg.message)[0];
             const isGroup = sender.endsWith('@g.us');
 
-            // Caption හෝ Text Message එක ලබා ගැනීම
             const messageText = msg.message.conversation || 
                               msg.message.extendedTextMessage?.text || 
                               msg.message.imageMessage?.caption || "";
 
-            // -------------------------------------------------------------
-            // 👑 1. ADMIN INTERACTIONS (ඔයා Personal Phone එකෙන් කතා කරන කොට)
-            // -------------------------------------------------------------
+            // Admin Actions
             if (sender === ADMIN_NUMBER) {
-
-                // A) ඔයා Photo / Notice එකක් යැව්වොත්
                 if (messageType === 'imageMessage') {
                     try {
                         await sock.sendMessage(sender, { text: "හරි මචං, මම Image එක බලලා English Notice එකක් හදලා Group එකට දාන්නම්..." }, { quoted: msg });
@@ -108,10 +139,7 @@ async function connectToWhatsApp() {
                         const mimeType = msg.message.imageMessage.mimetype || 'image/jpeg';
 
                         const imagePart = {
-                            inlineData: {
-                                data: base64Image,
-                                mimeType: mimeType
-                            }
+                            inlineData: { data: base64Image, mimeType: mimeType }
                         };
 
                         const prompt = "Read this image notice and write a clear, attractive student announcement in SIMPLE ENGLISH. Use bold text for key dates, times, and instructions. Output ONLY the notice text without intro/outro.";
@@ -120,12 +148,7 @@ async function connectToWhatsApp() {
 
                         const finalMsg = `📢 *ANNOUNCEMENT*\n\n${announcement}`;
 
-                        // Group එකට Image එකයි Notice එකයි යැවීම
-                        await sock.sendMessage(BATCH_GROUP_ID, { 
-                            image: buffer, 
-                            caption: finalMsg 
-                        });
-
+                        await sock.sendMessage(BATCH_GROUP_ID, { image: buffer, caption: finalMsg });
                         await sock.sendMessage(sender, { text: "හරි, Image එකයි Simple English Notice එකයි Group එකට දැම්මා! 👍" }, { quoted: msg });
                         return;
                     } catch (err) {
@@ -135,12 +158,10 @@ async function connectToWhatsApp() {
                     }
                 }
 
-                // B) ඔයා සිංහලෙන්/සිංලිෂ් වලින් Group එකට දාන්න කියන මැසේජ්
                 const text = messageText.toLowerCase();
-
                 if (text.includes("කියපන්") || text.includes("කියන්න") || text.includes("දාපන්") || text.includes("දාන්න") || text.includes("inform") || text.includes("tell") || text.includes("post") || text.includes("announce")) {
                     try {
-                        const prompt = `The Batch Rep sent this message (which might be in Sinhala or Singlish): "${messageText}".
+                        const prompt = `The Batch Rep sent this message: "${messageText}".
 Translate and convert this message into a well-formatted, clean, and SIMPLE ENGLISH announcement notice for university students. 
 Use clear structure, bold headings/key details, and appropriate emojis. 
 CRITICAL: Output ONLY the final simple English notice text. Do NOT add conversational replies like "Sure, here is your message".`;
@@ -158,7 +179,6 @@ CRITICAL: Output ONLY the final simple English notice text. Do NOT add conversat
                     }
                 }
 
-                // C) ඔයා නිකන් වෙනත් දෙයක් ඇහුවොත් Direct Reply දීම
                 if (messageText) {
                     try {
                         const result = await model.generateContent(messageText);
@@ -172,10 +192,8 @@ CRITICAL: Output ONLY the final simple English notice text. Do NOT add conversat
                 }
             }
 
-            // -------------------------------------------------------------
-            // 🤖 2. STUDENT INTERACTIONS (ළමයින්ගේ Private Messages)
-            // -------------------------------------------------------------
-            if (isGroup) return; // Group ඇතුළේ වෙනත් අයගේ මැසේජ් වලට Auto Reply නොදෙයි
+            // Student Interactions
+            if (isGroup) return;
 
             if (messageText) {
                 try {
