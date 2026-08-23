@@ -4,7 +4,6 @@ const express = require('express');
 const pino = require('pino');
 const QRCode = require('qrcode');
 
-// 🌐 Railway Web Server for Keeping App Alive & QR Scanning
 const app = express();
 const PORT = process.env.PORT || 3000;
 let latestQR = "";
@@ -19,7 +18,6 @@ app.get('/', async (req, res) => {
 });
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
 
-// 🤖 Gemini Setup (Using fast and lightweight official Gemini model)
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
 const systemInstruction = `
@@ -57,13 +55,12 @@ IMPORTANT RULES:
 `;
 
 const model = genAI.getGenerativeModel({ 
-    model: "gemini-3.5-flash-lite",
+    model: "gemini-3.1-flash-lite",
     systemInstruction: systemInstruction 
 });
 
-// 🛡️ Rate Limiting Mechanism (Spam & Multi-User Traffic Control)
 const userCooldowns = new Map();
-const COOLDOWN_TIME_MS = 3000; // 3 Seconds delay per user
+const COOLDOWN_TIME_MS = 3000; 
 
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
@@ -92,8 +89,6 @@ async function startBot() {
             if (shouldReconnect) {
                 console.log("🔄 Reconnecting...");
                 setTimeout(() => startBot(), 3000);
-            } else {
-                console.log("❌ Logged out. Resetting...");
             }
         }
     });
@@ -103,57 +98,55 @@ async function startBot() {
         
         for (const msg of messages) {
             try {
-                // Ignore empty messages, status updates, or own messages
                 if (!msg.message || msg.key.fromMe) continue;
 
-                const jid = msg.key.remoteJid;
-                const isGroup = jid.endsWith('@g.us');
+                const remoteJid = msg.key.remoteJid;
+                const isGroup = remoteJid.endsWith('@g.us');
 
-                // 🛑 Groups අතහැර Direct Private Messages (PM) වලට විතරක් Reply කරමු
                 if (isGroup) continue;
 
-                // 🛡️ Rate Limiting Check (ලමයි ගොඩක් එකපාර Message එවද්දී Control කරන්න)
-                const now = Date.now();
-                if (userCooldowns.has(jid)) {
-                    const lastMsgTime = userCooldowns.get(jid);
-                    if (now - lastMsgTime < COOLDOWN_TIME_MS) {
-                        continue; // Skip rapid spam messages from the same user
-                    }
+                // 🛑 CRITICAL FIX: Get actual user phone JID instead of @lid
+                let targetJid = remoteJid;
+                if (msg.key.participant) {
+                    targetJid = msg.key.participant;
+                } else if (msg.message?.extendedTextMessage?.contextInfo?.participant) {
+                    targetJid = msg.message.extendedTextMessage.contextInfo.participant;
                 }
-                userCooldowns.set(jid, now);
+
+                // If it's still @lid, extract sender PN or send directly via quoted key
+                const now = Date.now();
+                if (userCooldowns.has(remoteJid)) {
+                    if (now - userCooldowns.get(remoteJid) < COOLDOWN_TIME_MS) continue;
+                }
+                userCooldowns.set(remoteJid, now);
 
                 const text = msg.message.conversation || 
                              msg.message.extendedTextMessage?.text || 
                              msg.message.imageMessage?.caption || "";
                 
                 const imgMsg = msg.message.imageMessage;
-
                 if (!text && !imgMsg) continue;
 
-                console.log(`📩 Received Message from ${jid}: "${text}"`);
-
-                await sock.sendPresenceUpdate('composing', jid);
+                console.log(`📩 Message from ${remoteJid}: "${text}"`);
+                await sock.sendPresenceUpdate('composing', remoteJid);
 
                 let replyText = "";
 
-                // 📸 Image එක්ක ප්‍රශ්නයක් ඇහුවොත් (e.g. Schedule/Question Screenshot)
                 if (imgMsg) {
                     const buffer = await downloadMediaMessage(msg, 'buffer', {});
                     const imagePart = { inlineData: { data: buffer.toString('base64'), mimeType: imgMsg.mimetype || 'image/jpeg' } };
                     const prompt = text ? text : "Explain or solve this academic image for the student.";
-                    
                     const result = await model.generateContent([prompt, imagePart]);
                     replyText = result.response.text();
-                } 
-                // 💬 Normal Text Message
-                else {
+                } else {
                     const result = await model.generateContent(text);
                     replyText = result.response.text();
                 }
 
                 if (replyText) {
-                    await sock.sendMessage(jid, { text: replyText }, { quoted: msg });
-                    console.log(`✅ Replied to ${jid}`);
+                    // 🚀 EXACT FIX: Reply directly to remoteJid specifying quoted message
+                    await sock.sendMessage(remoteJid, { text: replyText }, { quoted: msg });
+                    console.log(`✅ Replied successfully!`);
                 }
 
             } catch (err) {
