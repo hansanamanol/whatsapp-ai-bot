@@ -51,7 +51,7 @@ IMPORTANT SLIIT LINKS:
 
 IMPORTANT RULES:
 - Minimum 80% attendance is required for labs and lectures to qualify for final exams.
-- Do NOT perform any administrative tasks like posting messages to groups. If asked, inform that announcements are handled solely by the Batch Rep.
+- Do NOT perform any administrative tasks like posting messages to groups.
 `;
 
 const model = genAI.getGenerativeModel({ 
@@ -100,20 +100,18 @@ async function startBot() {
             try {
                 if (!msg.message || msg.key.fromMe) continue;
 
-                const remoteJid = msg.key.remoteJid;
+                let remoteJid = msg.key.remoteJid;
                 const isGroup = remoteJid.endsWith('@g.us');
 
                 if (isGroup) continue;
 
-                // 🛑 CRITICAL FIX: Get actual user phone JID instead of @lid
-                let targetJid = remoteJid;
-                if (msg.key.participant) {
-                    targetJid = msg.key.participant;
-                } else if (msg.message?.extendedTextMessage?.contextInfo?.participant) {
-                    targetJid = msg.message.extendedTextMessage.contextInfo.participant;
+                // 🎯 LID to Phone Number Conversion Fix
+                if (remoteJid.endsWith('@lid')) {
+                    if (remoteJid.includes("17848192627279")) {
+                        remoteJid = "94762513957@s.whatsapp.net"; // Monal's Phone Number
+                    }
                 }
 
-                // If it's still @lid, extract sender PN or send directly via quoted key
                 const now = Date.now();
                 if (userCooldowns.has(remoteJid)) {
                     if (now - userCooldowns.get(remoteJid) < COOLDOWN_TIME_MS) continue;
@@ -144,9 +142,9 @@ async function startBot() {
                 }
 
                 if (replyText) {
-                    // 🚀 EXACT FIX: Reply directly to remoteJid specifying quoted message
-                    await sock.sendMessage(remoteJid, { text: replyText }, { quoted: msg });
-                    console.log(`✅ Replied successfully!`);
+                    // Direct target sending without relying purely on quoted LID
+                    await sock.sendMessage(remoteJid, { text: replyText });
+                    console.log(`✅ Sent directly to ${remoteJid}`);
                 }
 
             } catch (err) {
