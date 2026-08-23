@@ -322,6 +322,13 @@ async function connectToWhatsApp() {
                 const isPostRequest = postKeywords.some(keyword => textLower.includes(keyword));
 
                 if (isPostRequest) {
+                    // 🔒 SECURITY CHECK: Admin (Monal) විතරද කියලා බලනවා
+                    const isAdmin = sender.includes(ADMIN_PHONE_NUMBER) || (ADMIN_LID && sender.includes(ADMIN_LID));
+
+                    if (!isAdmin) {
+                        await sock.sendMessage(sender, { text: "❌ මචං, Group එකට Announcements දාන්න පුළුවන් Batch Rep (Monal) ට විතරයි!" }, { quoted: msg });
+                        return;
+                    }
                     try {
                         // 1. Quoted Message එකක් තියෙනවා නම් ඒක ගන්න, නැත්නම් Raw Message එක ගන්න
                         let textToPost = quotedText || rawMessageText;
