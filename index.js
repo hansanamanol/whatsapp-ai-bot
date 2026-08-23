@@ -218,7 +218,8 @@ async function connectToWhatsApp() {
         if (type !== 'notify') return;
 
         for (const msg of messages) {
-            if (!msg.message || msg.key.fromMe) continue;
+            // 🧪 Self-testing වලට විතරක් (fromMe Ignore කරන්නේ නෑ):
+            if (!msg.message) continue;
 
             addToQueue(async () => {
                 try {
