@@ -315,24 +315,25 @@ async function connectToWhatsApp() {
             if (!isGroup) {
                 const textLower = rawMessageText.toLowerCase().trim();
 
-                // Check Admin: Check Phone Number OR LID ID
+                // 1. Admin ID Check (Phone Number OR LID)
                 const senderDigitsOnly = sender.replace(/\D/g, ''); 
                 const isAdmin = senderDigitsOnly.includes(ADMIN_PHONE_NUMBER) || sender.includes(ADMIN_LID);
 
-                // Broad Keywords Matching
+                // 2. Broad Keywords Matching
                 const postKeywords = [
-                    "send", "post", "yawanna", "යවන්න", "this", 
+                    "send", "post", "yawanna", "යවන්න", "this", "it",
                     "group", "දාන්න", "දාපන්", "කියන්න", "කියපන්", 
                     "announce", "broadcast", "msg", "message"
                 ];
 
                 const isPostRequest = postKeywords.some(keyword => textLower.includes(keyword));
 
+                // 🚨 If Admin AND (Trigger Keyword OR Quoted Message Present)
                 if (isAdmin && (isPostRequest || quotedText)) {
                     try {
                         const contentToFormat = quotedText || rawMessageText;
 
-                        // Target Group තීරණය කිරීම
+                        // Target Group එක තීරණය කිරීම (General ද Announcement ද)
                         let targetGroupId = ANNOUNCEMENT_GROUP_ID;
                         let targetGroupName = "Announcement Group";
 
@@ -341,7 +342,7 @@ async function connectToWhatsApp() {
                             targetGroupName = "General Chat Group";
                         }
 
-                        // Processing status message to Admin
+                        // Admin ට Status Message එක යැවීම
                         await sock.sendMessage(sender, { text: `⏳ **Notice එක ${targetGroupName} එකට Format කරමින් පවතියි...**` }, { quoted: msg });
 
                         const prompt = `The user wants to broadcast the following text/notice to the university student WhatsApp group:
@@ -355,11 +356,13 @@ CRITICAL INSTRUCTION: Output ONLY the final announcement text to be sent directl
 
                         const finalMsg = `📢 *ANNOUNCEMENT*\n\n${finalContentToPost}`;
 
-                        // Send to the targeted Group
+                        // Targeted Group එකට යැවීම
                         await sock.sendMessage(targetGroupId, { text: finalMsg });
-                        // Confirm to Admin
+                        
+                        // Admin ට Confirmation එක යැවීම
                         await sock.sendMessage(sender, { text: `✅ හරි මචං, මම ඒ Notice එක කෙලින්ම *${targetGroupName}* එකට දැම්මා! 🚀` }, { quoted: msg });
-                        return; // Stop Gemini DM processing
+                        
+                        return; // 🛑 Gemini AI එකේ Normal Response එකට යෑම නතර කිරීම
                     } catch (err) {
                         console.error('Error broadcasting admin message:', err);
                         await sock.sendMessage(sender, { text: "❌ Group එකට Post කිරීමේදී Error එකක් ආවා." }, { quoted: msg });
