@@ -5,9 +5,9 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
 
 WORKDIR /usr/src/app
 
-COPY package*.json ./
-RUN npm install
-
+# Files ඔක්කොම මුලින්ම Copy කරගෙන ඊටපස්සේ Install කරන්න
 COPY . .
+
+RUN npm install
 
 CMD [ "node", "index.js" ]
