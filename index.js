@@ -18,7 +18,7 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 
 // 👑 ADMIN / BATCH REP IDENTIFICATION
 const ADMIN_PHONE_NUMBER = "94762513957"; 
-const ADMIN_LID = "17848192627279"; // ඔයාගේ WhatsApp LID එk
+const ADMIN_LID = "17848192627279"; 
 
 // 📢 GROUP IDs (ANNOUNCEMENT & GENERAL)
 const ANNOUNCEMENT_GROUP_ID = "120363425513397101@g.us"; 
@@ -120,8 +120,9 @@ CRITICAL CODE & TUTORIAL ANALYSIS RULES:
   3. Keep track of accurate question labeling (a, b, c, d, e) without swapping their code contents.
 `;
 
+// ✅ Fixed Model Name to valid API model
 const model = genAI.getGenerativeModel({ 
-    model: "gemini-3.1-flash-lite",
+    model: "gemini-2.5-flash",
     systemInstruction: systemInstruction 
 });
 
@@ -135,10 +136,14 @@ function convertAudioToWav(inputBuffer) {
         ffmpeg(tempIn)
             .toFormat('mp3')
             .on('end', () => {
-                const outputBuffer = fs.readFileSync(tempOut);
-                fs.unlinkSync(tempIn);
-                fs.unlinkSync(tempOut);
-                resolve(outputBuffer);
+                try {
+                    const outputBuffer = fs.readFileSync(tempOut);
+                    if (fs.existsSync(tempIn)) fs.unlinkSync(tempIn);
+                    if (fs.existsSync(tempOut)) fs.unlinkSync(tempOut);
+                    resolve(outputBuffer);
+                } catch (e) {
+                    reject(e);
+                }
             })
             .on('error', (err) => {
                 if (fs.existsSync(tempIn)) fs.unlinkSync(tempIn);
@@ -310,10 +315,11 @@ async function connectToWhatsApp() {
                     return;
                 }
             }
-// 💬 DIRECT MESSAGE BROADCAST COMMAND (DM Only)
+
+            // 💬 DIRECT MESSAGE BROADCAST & DM CHAT (DM Only)
             if (!isGroup) {
                 const textLower = rawMessageText.toLowerCase().trim();
-               // ✅ අලුත් Code එක (Fix කරපු තැන)
+                
                 const postKeywords = [
                     "send this message to group", "send to group", "post to group",
                     "yawanna group එකට", "යවන්න group", "group එකට දාන්න", "group එකට දාපන්", "group එකට යවන්න"
@@ -330,17 +336,14 @@ async function connectToWhatsApp() {
                         return;
                     }
                     try {
-                        // 1. Quoted Message එකක් තියෙනවා නම් ඒක ගන්න, නැත්නම් Raw Message එක ගන්න
                         let textToPost = quotedText || rawMessageText;
 
-                        // Post කරන්න කිසිම Content එකක් නැත්නම්
                         if (!textToPost || (textToPost === rawMessageText && isPostRequest && !quotedText)) {
                             await sock.sendMessage(sender, { text: "⚠️ මචං, Group එකට දාන්න ඕන Message එකට Reply (Quote) කරලා 'Send to group' කියලා එවන්න!" }, { quoted: msg });
                             return;
                         }
 
-                        // 2. Target Group එක Select කරගැනීම (General ද Announcement ද කියලා)
-                        let targetGroupId = ANNOUNCEMENT_GROUP_ID; // Default targeting
+                        let targetGroupId = ANNOUNCEMENT_GROUP_ID; 
                         let groupName = "Announcement Group";
 
                         if (textLower.includes("general") || textLower.includes("chat")) {
@@ -348,10 +351,8 @@ async function connectToWhatsApp() {
                             groupName = "General Group";
                         }
 
-                        // 3. Notice Format එක
                         const finalMsg = `📢 *ANNOUNCEMENT*\n\n${textToPost}`;
 
-                        // 4. Selected Group එකට Post කිරීම
                         await sock.sendMessage(targetGroupId, { text: finalMsg });
                         await sock.sendMessage(sender, { text: `✅ හරි මචං, මම ඒ Notice එක කෙලින්ම *${groupName}* එකට දැම්මා! 🚀` }, { quoted: msg });
                         return;
@@ -363,14 +364,14 @@ async function connectToWhatsApp() {
                     }
                 }
             
-            // Normal DM Chat Response
-            if (rawMessageText) {
-                try {
-                    const result = await model.generateContent(fullUserPrompt);
-                    const replyText = result.response.text();
-                    await sock.sendMessage(sender, { text: replyText }, { quoted: msg });
-                } catch (error) {
-                    console.error('Error generating AI response:', error);
+                // Normal DM Chat Response (Gemini AI)
+                if (rawMessageText) {
+                    try {
+                        const result = await model.generateContent(fullUserPrompt);
+                        const replyText = result.response.text();
+                        await sock.sendMessage(sender, { text: replyText }, { quoted: msg });
+                    } catch (error) {
+                        console.error('Error generating AI response:', error);
                     }
                 }
             }      
