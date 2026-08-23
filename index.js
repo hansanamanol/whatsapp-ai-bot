@@ -67,8 +67,7 @@ CRITICAL CONTEXT ABOUT THE WhatsApp GROUP:
 SPECIAL INSTRUCTION FOR ADMIN (MONAL / BATCH REP):
 - The user you are serving is Monal, the SLIIT IT Y1S2 Batch Representative.
 - Recognize him as "Monal" or "SLIIT IT Y1S2 Batch Rep".
-- When he chats with you or asks "මම කවුද?" / "Who am I?", acknowledge him clearly as Monal, the SLIIT IT Y1S2 Batch Representative.
-- NEVER lie to Monal saying you posted/shared something to the group unless it was actually broadcasted.
+- NEVER claim you sent, posted, or shared a message to the group unless it was actually executed by the system logic.
 
 YOUR RESPONSIBILITIES FOR STUDENTS:
 1. Helping Students:
@@ -100,7 +99,6 @@ const model = genAI.getGenerativeModel({
     systemInstruction: systemInstruction 
 });
 
-const ADMIN_NUMBER = "94762513957@s.whatsapp.net";
 const BATCH_GROUP_ID = "120363425513397101@g.us"; 
 
 // Helper function to convert WhatsApp Audio (OGG/Opus) to MP3/WAV
@@ -171,9 +169,9 @@ async function connectToWhatsApp() {
             const messageType = Object.keys(msg.message)[0];
             const isGroup = sender.endsWith('@g.us');
 
-            // Admin Identification Check
+            // Robust Admin Detection (Matches Monal's Number reliably)
             const cleanSender = sender.split('@')[0];
-            const isAdmin = cleanSender.includes("94762513957") || sender === ADMIN_NUMBER;
+            const isAdmin = cleanSender.includes("762513957") || cleanSender.includes("94762513957");
 
             if (isGroup && sender !== BATCH_GROUP_ID) continue; 
 
@@ -191,7 +189,7 @@ async function connectToWhatsApp() {
 
             let fullUserPrompt = rawMessageText;
             if (quotedText) {
-                fullUserPrompt = `[Context / Previous Message Being Replied To: "${quotedText}"]\nUser Current Response: "${rawMessageText}"`;
+                fullUserPrompt = `[Context / Previous Message Being Replied To: "${quotedText}"]\nUser Current Request: "${rawMessageText}"`;
             }
 
             // 🎙️ AUDIO / VOICE MESSAGE PROCESSING
@@ -265,28 +263,29 @@ async function connectToWhatsApp() {
                 }
             }
 
-            // 💬 TEXT MESSAGE PROCESSING (DIRECT BROADCAST DETECTOR FOR ADMIN)
+            // 💬 TEXT MESSAGE PROCESSING (FORCE BROADCAST TO GROUP FOR MONAL)
             if (isAdmin && !isGroup) {
                 const text = rawMessageText.toLowerCase();
 
-                const isShareCommand = text.includes("group") || text.includes("දාන්න") || text.includes("දාපන්") || 
-                                       text.includes("යවන්න") || text.includes("යවපන්") || text.includes("share") || 
-                                       text.includes("post") || text.includes("announce") || text.includes("inform");
+                // Regex matches any variation of sending/posting to group
+                const broadcastTrigger = /(group|ගෲප්|දාන්න|දාපන්|යවන්න|යවපන්|share|post|announce|inform|send)/i;
 
-                if (isShareCommand) {
+                if (broadcastTrigger.test(text) || quotedText) {
                     try {
-                        const prompt = `The Batch Rep (Monal) wants to send an announcement notice to the batch group.
-Message / Context: "${fullUserPrompt}".
-Reformat and convert this message into a well-structured, clean, professional, and SIMPLE ENGLISH announcement notice for university students. 
-Use clear headings, bold details, and emojis.
-CRITICAL: Output ONLY the notice text itself. Do not include intro/outro greetings like "Here is your notice".`;
+                        const prompt = `The Batch Rep (Monal) gave this command/text: "${fullUserPrompt}".
+Task: Convert the core information/notice into a clean, well-formatted, and professional SIMPLE ENGLISH announcement for university students. 
+Include headings, bold text for key details, and appropriate emojis.
+IMPORTANT: Output ONLY the notice text itself. Do not include meta comments like "Here is the notice".`;
 
                         const result = await model.generateContent(prompt);
                         const announcement = result.response.text();
 
                         const finalMsg = `📢 *ANNOUNCEMENT*\n\n${announcement}`;
 
+                        // Executing actual message send action to group
                         await sock.sendMessage(BATCH_GROUP_ID, { text: finalMsg });
+                        
+                        // Confirm back to Monal ONLY AFTER successful send
                         await sock.sendMessage(sender, { text: "✅ හරි Monal, මම ඒ Notice එක Simple English වලින් සකස් කරලා SLIIT IT Y1S2 Batch Group එකට දැන්ම දැම්මා! 👍" }, { quoted: msg });
                         return;
                     } catch (err) {
