@@ -1,3 +1,61 @@
+const express = require('express');
+const QRCode = require('qrcode');
+const { Client, LocalAuth } = require('whatsapp-web.js');
+
+const app = express();
+const port = process.env.PORT || 3000;
+let latestQR = '';
+
+// Web page එකට QR එක පෙන්වීම
+app.get('/', (req, res) => {
+    if (!latestQR) {
+        return res.send('<h2>Bot is starting or already connected! Check again in a few seconds...</h2>');
+    }
+    QRCode.toDataURL(latestQR, (err, url) => {
+        if (err) return res.send('Error generating QR code');
+        res.send(`
+            <html>
+                <body style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100vh; font-family:sans-serif; background-color:#111; color:#fff;">
+                    <h2>Scan this QR Code using WhatsApp</h2>
+                    <img src="${url}" style="width:300px; height:300px; border:10px solid white; border-radius:10px;" />
+                </body>
+            </html>
+        `);
+    });
+});
+
+app.listen(port, () => {
+    console.log(`Server running on port ${port}`);
+});
+
+// Client setup
+const client = new Client({
+    authStrategy: new LocalAuth(),
+    puppeteer: {
+        headless: true,
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-accelerated-2d-canvas',
+            '--no-first-run',
+            '--no-zygote',
+            '--single-process',
+            '--disable-gpu'
+        ],
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/chromium'
+    }
+});
+
+client.on('qr', (qr) => {
+    latestQR = qr; // Save latest QR
+    console.log('New QR code generated! Open your Railway Domain URL to scan.');
+});
+
+client.on('ready', () => {
+    latestQR = ''; // Clear QR on connect
+    console.log('Client is ready!');
+});
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
