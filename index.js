@@ -63,6 +63,7 @@ YOUR RESPONSIBILITIES:
    - Answer student questions naturally, friendly, and accurately in Singlish, Sinhala, or English based on the user's language.
    - Assist them with Timetable info, Calendar link, Issue forms, and LIC contacts.
    - Read images/notices sent by students and explain or summarize them clearly.
+   - Always pay close attention to quoted/replied context if provided in the prompt.
 
 2. Assisting the Batch Rep (Admin):
    - When the Batch Rep asks you to post or announce something, translate and rephrase it into clear, simple, professional English formatted as an official student notice.
@@ -111,7 +112,12 @@ async function connectToWhatsApp() {
         if (connection === 'close') {
             const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
             console.log('Connection closed, reconnecting...', shouldReconnect);
-            if (shouldReconnect) connectToWhatsApp();
+            if (shouldReconnect) {
+                connectToWhatsApp();
+            } else {
+                console.log('Logged out. Restarting process...');
+                process.exit(1);
+            }
         } else if (connection === 'open') {
             latestQR = "";
             console.log('✅ WhatsApp AI Bot is Ready and Online!');
@@ -128,15 +134,27 @@ async function connectToWhatsApp() {
             const messageType = Object.keys(msg.message)[0];
             const isGroup = sender.endsWith('@g.us');
 
-            if (isGroup && sender !== BATCH_GROUP_ID) continue; // Skip other groups
-
-            const messageText = msg.message.conversation || 
-                                msg.message.extendedTextMessage?.text || 
-                                msg.message.imageMessage?.caption || "";
+            if (isGroup && sender !== BATCH_GROUP_ID) continue; 
 
             // 1. Blue Tick (Seen) & Typing status
             await sock.readMessages([msg.key]);
             await sock.sendPresenceUpdate('composing', sender);
+
+            // Extract Quoted Message Context (කලින් Reply කරපු Message එකේ Text එක)
+            const contextInfo = msg.message[messageType]?.contextInfo;
+            const quotedText = contextInfo?.quotedMessage?.conversation ||
+                              contextInfo?.quotedMessage?.extendedTextMessage?.text ||
+                              contextInfo?.quotedMessage?.imageMessage?.caption || "";
+
+            const rawMessageText = msg.message.conversation || 
+                                   msg.message.extendedTextMessage?.text || 
+                                   msg.message.imageMessage?.caption || "";
+
+            // Quoted message එකක් තිබුණොත් ඒක Prompt එකට Context එකක් විදිහට එකතු කරනවා
+            let fullUserPrompt = rawMessageText;
+            if (quotedText) {
+                fullUserPrompt = `[Context / Previous Message Being Replied To: "${quotedText}"]\nUser Current Response: "${rawMessageText}"`;
+            }
 
             // 📸 IMAGE MESSAGE PROCESSING (Both Admin & Students)
             if (messageType === 'imageMessage') {
@@ -153,10 +171,9 @@ async function connectToWhatsApp() {
                         inlineData: { data: base64Image, mimeType: mimeType }
                     };
 
-                    const captionPrompt = messageText ? ` User prompt/caption: "${messageText}"` : "";
+                    const captionPrompt = rawMessageText ? ` User prompt/caption: "${rawMessageText}"` : "";
                     
                     if (sender === ADMIN_NUMBER) {
-                        // Admin Image -> Post to Group
                         const prompt = "Read this image notice and write a clear, attractive student announcement in SIMPLE ENGLISH. Use bold text for key dates, times, and instructions. Output ONLY the notice text without intro/outro." + captionPrompt;
                         const result = await model.generateContent([prompt, imagePart]);
                         const announcement = result.response.text();
@@ -166,7 +183,6 @@ async function connectToWhatsApp() {
                         await sock.sendMessage(BATCH_GROUP_ID, { image: buffer, caption: finalMsg });
                         await sock.sendMessage(sender, { text: "✅ Image එකයි Simple English Notice එකයි Group එකට දැම්මා!" }, { quoted: msg });
                     } else {
-                        // Student Image -> Reply to Student Directly
                         const prompt = "Read this image notice/document. Explain its details clearly to the student in friendly Singlish or simple English based on what they asked." + captionPrompt;
                         const result = await model.generateContent([prompt, imagePart]);
                         const reply = result.response.text();
@@ -184,10 +200,10 @@ async function connectToWhatsApp() {
 
             // 💬 TEXT MESSAGE PROCESSING
             if (sender === ADMIN_NUMBER) {
-                const text = messageText.toLowerCase();
+                const text = rawMessageText.toLowerCase();
                 if (text.includes("කියපන්") || text.includes("කියන්න") || text.includes("දාපන්") || text.includes("දාන්න") || text.includes("inform") || text.includes("tell") || text.includes("post") || text.includes("announce")) {
                     try {
-                        const prompt = `The Batch Rep sent this message: "${messageText}".
+                        const prompt = `The Batch Rep sent this message: "${fullUserPrompt}".
 Translate and convert this message into a well-formatted, clean, and SIMPLE ENGLISH announcement notice for university students. 
 Use clear structure, bold headings/key details, and appropriate emojis. 
 CRITICAL: Output ONLY the final simple English notice text.`;
@@ -209,9 +225,9 @@ CRITICAL: Output ONLY the final simple English notice text.`;
             // Normal AI Text Response for Students & Admin
             if (isGroup) return; // Don't reply to random group text messages
 
-            if (messageText) {
+            if (rawMessageText) {
                 try {
-                    const result = await model.generateContent(messageText);
+                    const result = await model.generateContent(fullUserPrompt);
                     const replyText = result.response.text();
                     await sock.sendMessage(sender, { text: replyText }, { quoted: msg });
                 } catch (error) {
