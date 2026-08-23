@@ -85,7 +85,6 @@ app.get('/', async (req, res) => {
     }
 });
 
-// Railway Binding Fix (0.0.0.0)
 app.listen(PORT, '0.0.0.0', () => {
     console.log(`Web server running on port ${PORT}`);
 });
@@ -145,7 +144,7 @@ IMPORTANT LINKS & PORTALS:
 `;
 
 const model = genAI.getGenerativeModel({ 
-    model: "gemini-3.5-flash",
+    model: "gemini-1.5-flash",
     systemInstruction: systemInstruction 
 });
 
@@ -223,14 +222,11 @@ async function connectToWhatsApp() {
 
             addToQueue(async () => {
                 try {
-                    let sender = msg.key.remoteJid;
-                    if (msg.key.participant) {
-                        sender = msg.key.participant;
-                    }
-
-                    const isGroup = msg.key.remoteJid.endsWith('@g.us');
                     const chatJid = msg.key.remoteJid;
+                    const isGroup = chatJid.endsWith('@g.us');
+                    const sender = msg.key.participant || msg.key.remoteJid;
 
+                    // Allowed Groups filter
                     if (isGroup && chatJid !== ANNOUNCEMENT_GROUP_ID && chatJid !== GENERAL_GROUP_ID) return;
 
                     await sock.readMessages([msg.key]);
@@ -261,14 +257,16 @@ async function connectToWhatsApp() {
                                            imgMsg?.caption || 
                                            docMsg?.caption || "";
 
-                    console.log(`📩 [Queued Process] From ${chatJid}: "${rawMessageText}"`);
+                    if (!rawMessageText && !imgMsg && !audioMsg && !docMsg) return;
+
+                    console.log(`📩 Processing message from ${chatJid}: "${rawMessageText}"`);
 
                     let fullUserPrompt = rawMessageText;
                     if (quotedText) {
                         fullUserPrompt = `[Quoted/Referenced Text: "${quotedText}"]\nUser Action Requested: "${rawMessageText}"`;
                     }
 
-                    // 🎙️ AUDIO
+                    // 🎙️ AUDIO PROCESSING
                     if (audioMsg) {
                         await sock.sendPresenceUpdate('composing', chatJid);
                         await sock.sendMessage(chatJid, { text: "🎙️ **Voice Note එක Process වෙමින් පවතියි...**" }, { quoted: msg });
@@ -286,13 +284,13 @@ async function connectToWhatsApp() {
                         return;
                     }
 
-                    // 📄 DOCUMENT / PDF
+                    // 📄 DOCUMENT / PDF PROCESSING
                     if (docMsg) {
                         const mimeType = docMsg?.mimetype || '';
 
                         if (mimeType === 'application/pdf') {
                             await sock.sendPresenceUpdate('composing', chatJid);
-                            await sock.sendMessage(chatJid, { text: "📄 **PDF Document එක Read කරමින් පවතියි...** పొඩ්ඩක් ඉන්න!" }, { quoted: msg });
+                            await sock.sendMessage(chatJid, { text: "📄 **PDF Document එක Read කරමින් පවතියි...** පොඩ්ඩක් ඉන්න!" }, { quoted: msg });
 
                             const buffer = await downloadMediaMessage(msg, 'buffer', {});
                             const base64Pdf = buffer.toString('base64');
@@ -309,7 +307,7 @@ async function connectToWhatsApp() {
                         }
                     }
 
-                    // 📸 IMAGE
+                    // 📸 IMAGE PROCESSING
                     if (imgMsg) {
                         await sock.sendPresenceUpdate('composing', chatJid);
                         await sock.sendMessage(chatJid, { text: "⏳ **Image එක Processing...**" }, { quoted: msg });
@@ -329,15 +327,10 @@ async function connectToWhatsApp() {
                         return;
                     }
 
-                    // 💬 DM & BROADCAST
+                    // 📢 ADMIN ANNOUNCEMENT BROADCAST LOGIC (Only in Direct Messages)
                     if (!isGroup) {
                         const textLower = rawMessageText.toLowerCase().trim();
-                        
-                        const postKeywords = [
-                            "send this message to group", "send to group", "post to group",
-                            "yawanna group එකට", "යවන්න group", "group එකට දාන්න", "group එකට දාපන්", "group එකට යවන්න"
-                        ];
-                        
+                        const postKeywords = ["send to group", "post to group", "yawanna group", "group එකට දාන්න", "group එකට යවන්න"];
                         const isPostRequest = postKeywords.some(keyword => textLower.includes(keyword));
 
                         if (isPostRequest) {
@@ -349,36 +342,27 @@ async function connectToWhatsApp() {
                             }
                             
                             let textToPost = quotedText || rawMessageText;
-
-                            if (!textToPost || (textToPost === rawMessageText && isPostRequest && !quotedText)) {
-                                await sock.sendMessage(chatJid, { text: "⚠️ මචං, Group එකට දාන්න ඕන Message එකට Reply (Quote) කරලා 'Send to group' කියලා එවන්න!" }, { quoted: msg });
-                                return;
-                            }
-
-                            let targetGroupId = ANNOUNCEMENT_GROUP_ID; 
-                            let groupName = "Announcement Group";
-
-                            if (textLower.includes("general") || textLower.includes("chat")) {
-                                targetGroupId = GENERAL_GROUP_ID;
-                                groupName = "General Group";
-                            }
+                            let targetGroupId = textLower.includes("general") ? GENERAL_GROUP_ID : ANNOUNCEMENT_GROUP_ID; 
 
                             const finalMsg = `📢 *ANNOUNCEMENT*\n\n${textToPost}`;
-
                             await sock.sendMessage(targetGroupId, { text: finalMsg });
-                            await sock.sendMessage(chatJid, { text: `✅ හරි මචං, මම ඒ Notice එක කෙලින්ම *${groupName}* එකට දැම්මා! 🚀` }, { quoted: msg });
+                            await sock.sendMessage(chatJid, { text: `✅ Notice එක Group එකට දැම්මා මචං! 🚀` }, { quoted: msg });
                             return;
                         }
-                    
-                        if (rawMessageText) {
-                            await sock.sendPresenceUpdate('composing', chatJid);
-                            
-                            const result = await model.generateContent(fullUserPrompt);
-                            const replyText = result.response.text();
-                            
-                            await sock.sendMessage(chatJid, { text: replyText }, { quoted: msg });
-                        }
                     }
+
+                    // 💬 UNIVERSAL CHAT RESPONSE (Groups & DMs)
+                    if (rawMessageText) {
+                        await sock.sendPresenceUpdate('composing', chatJid);
+                        
+                        const result = await model.generateContent(fullUserPrompt);
+                        const replyText = result.response.text();
+                        
+                        // Target Chat එකට (Group එකේ නම් Group එකට, DM නම් DM එකට) Reply යැවීම
+                        await sock.sendMessage(chatJid, { text: replyText }, { quoted: msg });
+                        console.log(`✅ [Sent Successfully] to ${chatJid}`);
+                    }
+
                 } catch (msgError) {
                     console.error("❌ Error processing individual queued message:", msgError);
                 }
