@@ -187,8 +187,10 @@ async function connectToWhatsApp() {
 
             const sender = msg.key.remoteJid;
             const isGroup = sender.endsWith('@g.us');
+            
+            if (isGroup) console.log("📌 Group ID:", sender);
 
-            if (isGroup && sender !== BATCH_GROUP_ID) continue; 
+            //if (isGroup && sender !== BATCH_GROUP_ID) continue; 
 
             await sock.readMessages([msg.key]);
             await sock.sendPresenceUpdate('composing', sender);
