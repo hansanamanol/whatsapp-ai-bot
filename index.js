@@ -1,8 +1,9 @@
-const { 
-    default: makeWASocket, 
-    useMultiFileAuthState, 
-    DisconnectReason, 
-    downloadMediaMessage 
+const {
+    default: makeWASocket,
+    useMultiFileAuthState,
+    DisconnectReason,
+    downloadMediaMessage,
+    jidNormalizedUser
 } = require('@whiskeysockets/baileys');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const qrcodeTerminal = require('qrcode-terminal');
@@ -11,18 +12,76 @@ const express = require('express');
 const pino = require('pino');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const ffmpeg = require('fluent-ffmpeg');
-const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 
-ffmpeg.setFfmpegPath(ffmpegPath);
+try {
+    const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
+    ffmpeg.setFfmpegPath(ffmpegPath);
+} catch (e) {
+    console.log("Using system installed ffmpeg");
+}
 
 // 👑 ADMIN / BATCH REP IDENTIFICATION
-const ADMIN_PHONE_NUMBER = "94762513957"; 
-const ADMIN_LID = "17848192627279"; 
+const ADMIN_PHONE_NUMBER = "94762513957";
+const ADMIN_LID = "17848192627279";
 
 // 📢 GROUP IDs (ANNOUNCEMENT & GENERAL)
-const ANNOUNCEMENT_GROUP_ID = "120363425513397101@g.us"; 
+const ANNOUNCEMENT_GROUP_ID = "120363425513397101@g.us";
 const GENERAL_GROUP_ID = "120363409747625255@g.us";
+
+// 🧵 CONCURRENCY QUEUE
+const MAX_CONCURRENT = 3;
+
+class ConcurrencyQueue {
+    constructor(concurrency) {
+        this.concurrency = concurrency;
+        this.running = 0;
+        this.queue = [];
+    }
+
+    add(task) {
+        return new Promise((resolve, reject) => {
+            this.queue.push({ task, resolve, reject });
+            this._next();
+        });
+    }
+
+    _next() {
+        if (this.running >= this.concurrency || this.queue.length === 0) return;
+        const { task, resolve, reject } = this.queue.shift();
+        this.running++;
+        task()
+            .then(resolve)
+            .catch(reject)
+            .finally(() => {
+                this.running--;
+                this._next();
+            });
+    }
+}
+
+const messageQueue = new ConcurrencyQueue(MAX_CONCURRENT);
+
+// 🔁 MESSAGE DEDUP
+const processedMessages = new Set();
+const MAX_TRACKED_MESSAGES = 1000;
+
+function markProcessed(id) {
+    processedMessages.add(id);
+    if (processedMessages.size > MAX_TRACKED_MESSAGES) {
+        const oldest = processedMessages.values().next().value;
+        processedMessages.delete(oldest);
+    }
+}
+
+// 🔒 ADMIN CHECK
+function isSenderAdmin(sender) {
+    const normalized = jidNormalizedUser(sender) || sender;
+    const isPhoneMatch = normalized === `${ADMIN_PHONE_NUMBER}@s.whatsapp.net`;
+    const isLidMatch = ADMIN_LID && (normalized === `${ADMIN_LID}@lid` || sender.includes(ADMIN_LID));
+    return isPhoneMatch || isLidMatch || sender.includes(ADMIN_PHONE_NUMBER);
+}
 
 // Express Web Server Setup
 const app = express();
@@ -62,6 +121,10 @@ app.listen(PORT, () => {
 
 // Gemini API Setup
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+if (!GEMINI_API_KEY) {
+    console.error('❌ GEMINI_API_KEY environment variable eka set karala nathnam bot ekata Gemini call ganna barinawa.');
+    process.exit(1);
+}
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 const systemInstruction = `
@@ -120,16 +183,16 @@ CRITICAL CODE & TUTORIAL ANALYSIS RULES:
   3. Keep track of accurate question labeling (a, b, c, d, e) without swapping their code contents.
 `;
 
-// ✅ Fixed Model Name to valid API model
-const model = genAI.getGenerativeModel({ 
+const model = genAI.getGenerativeModel({
     model: "gemini-3.5-flash-lite",
-    systemInstruction: systemInstruction 
+    systemInstruction: systemInstruction
 });
 
 function convertAudioToWav(inputBuffer) {
     return new Promise((resolve, reject) => {
-        const tempIn = path.join(__dirname, `temp_${Date.now()}.ogg`);
-        const tempOut = path.join(__dirname, `temp_${Date.now()}.mp3`);
+        const uniqueId = crypto.randomUUID();
+        const tempIn = path.join(__dirname, `temp_${uniqueId}.ogg`);
+        const tempOut = path.join(__dirname, `temp_${uniqueId}.mp3`);
 
         fs.writeFileSync(tempIn, inputBuffer);
 
@@ -192,189 +255,175 @@ async function connectToWhatsApp() {
         }
     });
 
+    async function processMessage(sock, msg) {
+        const sender = msg.key.remoteJid;
+        const isGroup = sender.endsWith('@g.us');
+
+        // 🛑 සියලුම Group Messages මෙතැනින්ම Ignore කරනු ලැබේ
+        if (isGroup) return;
+
+        await sock.readMessages([msg.key]);
+        await sock.sendPresenceUpdate('composing', sender);
+
+        const imgMsg = msg.message.imageMessage ||
+                       msg.message.viewOnceMessage?.message?.imageMessage ||
+                       msg.message.viewOnceMessageV2?.message?.imageMessage ||
+                       msg.message.ephemeralMessage?.message?.imageMessage;
+
+        const audioMsg = msg.message.audioMessage ||
+                         msg.message.viewOnceMessage?.message?.audioMessage ||
+                         msg.message.ephemeralMessage?.message?.audioMessage;
+
+        const docMsg = msg.message.documentMessage ||
+                       msg.message.documentWithCaptionMessage?.message?.documentMessage ||
+                       msg.message.ephemeralMessage?.message?.documentMessage;
+
+        const firstMsgType = Object.keys(msg.message)[0];
+        const contextInfo = msg.message[firstMsgType]?.contextInfo || msg.message.extendedTextMessage?.contextInfo;
+        const quotedMsgObj = contextInfo?.quotedMessage;
+
+        const quotedText = quotedMsgObj?.conversation ||
+                          quotedMsgObj?.extendedTextMessage?.text ||
+                          quotedMsgObj?.imageMessage?.caption || "";
+
+        const rawMessageText = msg.message.conversation ||
+                               msg.message.extendedTextMessage?.text ||
+                               imgMsg?.caption ||
+                               docMsg?.caption || "";
+
+        let fullUserPrompt = rawMessageText;
+        if (quotedText) {
+            fullUserPrompt = `[Quoted/Referenced Text: "${quotedText}"]\nUser Action Requested: "${rawMessageText}"`;
+        }
+
+        // Voice Note Processing (Only in DM)
+        if (audioMsg) {
+            try {
+                await sock.sendMessage(sender, { text: "🎙️ **Voice Note එක Process වෙමින් පවතියි...**" }, { quoted: msg });
+                const oggBuffer = await downloadMediaMessage(msg, 'buffer', {});
+                const mp3Buffer = await convertAudioToWav(oggBuffer);
+                const base64Audio = mp3Buffer.toString('base64');
+                const audioPart = { inlineData: { data: base64Audio, mimeType: 'audio/mp3' } };
+                const prompt = "Listen carefully to this audio message. Reply clearly in friendly Singlish or Sinhala/English.";
+                const result = await model.generateContent([prompt, audioPart]);
+                const reply = result.response.text();
+                await sock.sendMessage(sender, { text: reply }, { quoted: msg });
+            } catch (err) {
+                console.error('Error processing Audio:', err);
+                await sock.sendMessage(sender, { text: "❌ Voice Message එක තේරුම් ගන්න බැරි වුණා." }, { quoted: msg });
+            }
+            return;
+        }
+
+        // PDF Processing (Only in DM)
+        if (docMsg) {
+            try {
+                const mimeType = docMsg?.mimetype || '';
+                if (mimeType === 'application/pdf') {
+                    await sock.sendMessage(sender, { text: "📄 **PDF Document එක Read කරමින් පවතියි...** පොඩ්ඩක් ඉන්න!" }, { quoted: msg });
+                    const buffer = await downloadMediaMessage(msg, 'buffer', {});
+                    const base64Pdf = buffer.toString('base64');
+                    const pdfPart = { inlineData: { data: base64Pdf, mimeType: 'application/pdf' } };
+                    const captionPrompt = rawMessageText ? ` User instructions: "${rawMessageText}"` : "";
+                    const prompt = "Read this PDF document carefully and fulfill the user request in clear Singlish or simple English." + captionPrompt;
+                    const result = await model.generateContent([prompt, pdfPart]);
+                    const reply = result.response.text();
+                    await sock.sendMessage(sender, { text: reply }, { quoted: msg });
+                }
+            } catch (err) {
+                console.error('Error processing PDF Document:', err);
+                await sock.sendMessage(sender, { text: "❌ PDF එක Read කරගන්න බැරි වුණා." }, { quoted: msg });
+            }
+            return;
+        }
+
+        // Image Processing (Only in DM)
+        if (imgMsg) {
+            try {
+                await sock.sendMessage(sender, { text: "⏳ **Image එක Processing...**" }, { quoted: msg });
+                const buffer = await downloadMediaMessage(msg, 'buffer', {});
+                const base64Image = buffer.toString('base64');
+                const mimeType = imgMsg.mimetype || 'image/jpeg';
+                const imagePart = { inlineData: { data: base64Image, mimeType: mimeType } };
+                const captionPrompt = rawMessageText ? ` User instructions: "${rawMessageText}"` : "";
+                const prompt = "Read all details in this screenshot/image. If requested, generate a clean and formatted announcement notice or answer the user's question clearly in simple English or Singlish." + captionPrompt;
+                const result = await model.generateContent([prompt, imagePart]);
+                const reply = result.response.text();
+                await sock.sendMessage(sender, { text: reply }, { quoted: msg });
+            } catch (err) {
+                console.error('Error processing Image:', err);
+                await sock.sendMessage(sender, { text: "❌ Image එක කියවගන්න බැරි වුණා. කරුණාකර නැවත එවා බලන්න." }, { quoted: msg });
+            }
+            return;
+        }
+
+        // Admin Broadcast Feature (Only via DM)
+        const textLower = rawMessageText.toLowerCase().trim();
+        const postKeywords = [
+            "send this message to group", "send to group", "post to group",
+            "yawanna group එකට", "යවන්න group", "group එකට දාන්න", "group එකට දාපන්", "group එකට යවන්න"
+        ];
+        const isPostRequest = postKeywords.some(keyword => textLower.includes(keyword));
+
+        if (isPostRequest) {
+            const isAdmin = isSenderAdmin(sender);
+
+            if (!isAdmin) {
+                await sock.sendMessage(sender, { text: "❌ මචං, Group එකට Announcements දාන්න පුළුවන් Batch Rep (Monal) ට විතරයි!" }, { quoted: msg });
+                return;
+            }
+            try {
+                let textToPost = quotedText || rawMessageText;
+
+                if (!textToPost || (textToPost === rawMessageText && isPostRequest && !quotedText)) {
+                    await sock.sendMessage(sender, { text: "⚠️ මචං, Group එකට දාන්න ඕන Message එකට Reply (Quote) කරලා 'Send to group' කියලා එවන්න!" }, { quoted: msg });
+                    return;
+                }
+
+                let targetGroupId = ANNOUNCEMENT_GROUP_ID;
+                let groupName = "Announcement Group";
+
+                if (textLower.includes("general") || textLower.includes("chat")) {
+                    targetGroupId = GENERAL_GROUP_ID;
+                    groupName = "General Group";
+                }
+
+                const finalMsg = `📢 *ANNOUNCEMENT*\n\n${textToPost}`;
+
+                await sock.sendMessage(targetGroupId, { text: finalMsg });
+                await sock.sendMessage(sender, { text: `✅ හරි මචං, මම ඒ Notice එක කෙලින්ම *${groupName}* එකට දැම්මා! 🚀` }, { quoted: msg });
+                return;
+            } catch (err) {
+                console.error('Error broadcasting admin message:', err);
+                await sock.sendMessage(sender, { text: "❌ Group එකට Post කිරීමේදී Error එකක් ආවා." }, { quoted: msg });
+                return;
+            }
+        }
+
+        // Standard Text AI Reply (Only in DM)
+        if (rawMessageText) {
+            try {
+                const result = await model.generateContent(fullUserPrompt);
+                const replyText = result.response.text();
+                await sock.sendMessage(sender, { text: replyText }, { quoted: msg });
+            } catch (error) {
+                console.error('Error generating AI response:', error);
+            }
+        }
+    }
+
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
         if (type !== 'notify') return;
 
         for (const msg of messages) {
             if (!msg.message || msg.key.fromMe) continue;
 
-            const sender = msg.key.remoteJid;
-            const isGroup = sender.endsWith('@g.us');
+            if (processedMessages.has(msg.key.id)) continue;
+            markProcessed(msg.key.id);
 
-            // 🛑 Groups දෙක හැර වෙනත් Groups Skip කිරීම
-            if (isGroup && sender !== ANNOUNCEMENT_GROUP_ID && sender !== GENERAL_GROUP_ID) continue;
-
-            await sock.readMessages([msg.key]);
-            await sock.sendPresenceUpdate('composing', sender);
-
-            // Extract Media Objects
-            const imgMsg = msg.message.imageMessage || 
-                           msg.message.viewOnceMessage?.message?.imageMessage ||
-                           msg.message.viewOnceMessageV2?.message?.imageMessage ||
-                           msg.message.ephemeralMessage?.message?.imageMessage;
-
-            const audioMsg = msg.message.audioMessage ||
-                             msg.message.viewOnceMessage?.message?.audioMessage ||
-                             msg.message.ephemeralMessage?.message?.audioMessage;
-
-            const docMsg = msg.message.documentMessage || 
-                           msg.message.documentWithCaptionMessage?.message?.documentMessage ||
-                           msg.message.ephemeralMessage?.message?.documentMessage;
-
-            // Extract Context/Quoted Message
-            const firstMsgType = Object.keys(msg.message)[0];
-            const contextInfo = msg.message[firstMsgType]?.contextInfo || msg.message.extendedTextMessage?.contextInfo;
-            const quotedMsgObj = contextInfo?.quotedMessage;
-            
-            const quotedText = quotedMsgObj?.conversation ||
-                              quotedMsgObj?.extendedTextMessage?.text ||
-                              quotedMsgObj?.imageMessage?.caption || "";
-
-            const rawMessageText = msg.message.conversation || 
-                                   msg.message.extendedTextMessage?.text || 
-                                   imgMsg?.caption || 
-                                   docMsg?.caption || "";
-
-            let fullUserPrompt = rawMessageText;
-            if (quotedText) {
-                fullUserPrompt = `[Quoted/Referenced Text: "${quotedText}"]\nUser Action Requested: "${rawMessageText}"`;
-            }
-
-            // 🎙️ AUDIO / VOICE MESSAGE PROCESSING
-            if (audioMsg) {
-                try {
-                    await sock.sendMessage(sender, { text: "🎙️ **Voice Note එක Process වෙමින් පවතියි...**" }, { quoted: msg });
-
-                    const oggBuffer = await downloadMediaMessage(msg, 'buffer', {});
-                    const mp3Buffer = await convertAudioToWav(oggBuffer);
-                    const base64Audio = mp3Buffer.toString('base64');
-
-                    const audioPart = { inlineData: { data: base64Audio, mimeType: 'audio/mp3' } };
-                    const prompt = "Listen carefully to this audio message. Reply clearly in friendly Singlish or Sinhala/English.";
-                    const result = await model.generateContent([prompt, audioPart]);
-                    const reply = result.response.text();
-
-                    await sock.sendMessage(sender, { text: reply }, { quoted: msg });
-                    return;
-                } catch (err) {
-                    console.error('Error processing Audio:', err);
-                    await sock.sendMessage(sender, { text: "❌ Voice Message එක තේරුම් ගන්න බැරි වුණා." }, { quoted: msg });
-                    return;
-                }
-            }
-
-            // 📄 DOCUMENT / PDF MESSAGE PROCESSING
-            if (docMsg) {
-                try {
-                    const mimeType = docMsg?.mimetype || '';
-
-                    if (mimeType === 'application/pdf') {
-                        await sock.sendMessage(sender, { text: "📄 **PDF Document එක Read කරමින් පවතියි...** පොඩ්ඩක් ඉන්න!" }, { quoted: msg });
-
-                        const buffer = await downloadMediaMessage(msg, 'buffer', {});
-                        const base64Pdf = buffer.toString('base64');
-
-                        const pdfPart = { inlineData: { data: base64Pdf, mimeType: 'application/pdf' } };
-                        const captionPrompt = rawMessageText ? ` User instructions: "${rawMessageText}"` : "";
-                        
-                        const prompt = "Read this PDF document carefully and fulfill the user request in clear Singlish or simple English." + captionPrompt;
-                        const result = await model.generateContent([prompt, pdfPart]);
-                        const reply = result.response.text();
-
-                        await sock.sendMessage(sender, { text: reply }, { quoted: msg });
-                        return;
-                    }
-                } catch (err) {
-                    console.error('Error processing PDF Document:', err);
-                    await sock.sendMessage(sender, { text: "❌ PDF එක Read කරගන්න බැරි වුණා." }, { quoted: msg });
-                    return;
-                }
-            }
-
-            // 📸 IMAGE MESSAGE PROCESSING
-            if (imgMsg) {
-                try {
-                    await sock.sendMessage(sender, { text: "⏳ **Image එක Processing...**" }, { quoted: msg });
-
-                    const buffer = await downloadMediaMessage(msg, 'buffer', {});
-                    const base64Image = buffer.toString('base64');
-                    const mimeType = imgMsg.mimetype || 'image/jpeg';
-
-                    const imagePart = { inlineData: { data: base64Image, mimeType: mimeType } };
-                    const captionPrompt = rawMessageText ? ` User instructions: "${rawMessageText}"` : "";
-
-                    const prompt = "Read all details in this screenshot/image. If requested, generate a clean and formatted announcement notice or answer the user's question clearly in simple English or Singlish." + captionPrompt;
-                    const result = await model.generateContent([prompt, imagePart]);
-                    const reply = result.response.text();
-
-                    await sock.sendMessage(sender, { text: reply }, { quoted: msg });
-                    return;
-                } catch (err) {
-                    console.error('Error processing Image:', err);
-                    await sock.sendMessage(sender, { text: "❌ Image එක කියවගන්න බැරි වුණා. කරුණාකර නැවත එවා බලන්න." }, { quoted: msg });
-                    return;
-                }
-            }
-
-            // 💬 DIRECT MESSAGE BROADCAST & DM CHAT (DM Only)
-            if (!isGroup) {
-                const textLower = rawMessageText.toLowerCase().trim();
-                
-                const postKeywords = [
-                    "send this message to group", "send to group", "post to group",
-                    "yawanna group එකට", "යවන්න group", "group එකට දාන්න", "group එකට දාපන්", "group එකට යවන්න"
-                ];
-                
-                const isPostRequest = postKeywords.some(keyword => textLower.includes(keyword));
-
-                if (isPostRequest) {
-                    // 🔒 SECURITY CHECK: Admin (Monal) විතරද කියලා බලනවා
-                    const isAdmin = sender.includes(ADMIN_PHONE_NUMBER) || (ADMIN_LID && sender.includes(ADMIN_LID));
-
-                    if (!isAdmin) {
-                        await sock.sendMessage(sender, { text: "❌ මචං, Group එකට Announcements දාන්න පුළුවන් Batch Rep (Monal) ට විතරයි!" }, { quoted: msg });
-                        return;
-                    }
-                    try {
-                        let textToPost = quotedText || rawMessageText;
-
-                        if (!textToPost || (textToPost === rawMessageText && isPostRequest && !quotedText)) {
-                            await sock.sendMessage(sender, { text: "⚠️ මචං, Group එකට දාන්න ඕන Message එකට Reply (Quote) කරලා 'Send to group' කියලා එවන්න!" }, { quoted: msg });
-                            return;
-                        }
-
-                        let targetGroupId = ANNOUNCEMENT_GROUP_ID; 
-                        let groupName = "Announcement Group";
-
-                        if (textLower.includes("general") || textLower.includes("chat")) {
-                            targetGroupId = GENERAL_GROUP_ID;
-                            groupName = "General Group";
-                        }
-
-                        const finalMsg = `📢 *ANNOUNCEMENT*\n\n${textToPost}`;
-
-                        await sock.sendMessage(targetGroupId, { text: finalMsg });
-                        await sock.sendMessage(sender, { text: `✅ හරි මචං, මම ඒ Notice එක කෙලින්ම *${groupName}* එකට දැම්මා! 🚀` }, { quoted: msg });
-                        return;
-
-                    } catch (err) {
-                        console.error('Error broadcasting admin message:', err);
-                        await sock.sendMessage(sender, { text: "❌ Group එකට Post කිරීමේදී Error එකක් ආවා." }, { quoted: msg });
-                        return;
-                    }
-                }
-            
-                // Normal DM Chat Response (Gemini AI)
-                if (rawMessageText) {
-                    try {
-                        const result = await model.generateContent(fullUserPrompt);
-                        const replyText = result.response.text();
-                        await sock.sendMessage(sender, { text: replyText }, { quoted: msg });
-                    } catch (error) {
-                        console.error('Error generating AI response:', error);
-                    }
-                }
-            }      
+            messageQueue.add(() => processMessage(sock, msg)).catch((err) => {
+                console.error('Queued message processing failed:', err);
+            });
         }
     });
 }
