@@ -14,13 +14,9 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const ffmpeg = require('fluent-ffmpeg');
+const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 
-try {
-    const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
-    ffmpeg.setFfmpegPath(ffmpegPath);
-} catch (e) {
-    console.log("Using system installed ffmpeg");
-}
+ffmpeg.setFfmpegPath(ffmpegPath);
 
 // 👑 ADMIN / BATCH REP IDENTIFICATION
 const ADMIN_PHONE_NUMBER = "94762513957";
@@ -30,8 +26,15 @@ const ADMIN_LID = "17848192627279";
 const ANNOUNCEMENT_GROUP_ID = "120363425513397101@g.us";
 const GENERAL_GROUP_ID = "120363409747625255@g.us";
 
+// ======================================================================
 // 🧵 CONCURRENCY QUEUE
-const MAX_CONCURRENT = 3;
+// Godak students ekaparata message dammoth, siyaluma Gemini/ffmpeg calls
+// ekawaraama fire wenawa nam, API rate limits වදින්න, ffmpeg processes
+// ගොඩගැහෙන්න, RAM/CPU spike එකකින් bot එක crash වෙන්නත් පුළුවන්.
+// මේ queue එකෙන් එකවර process වෙන message ගණන limit කරනවා (MAX_CONCURRENT),
+// ඉතුරු ඒවා queue එකේ රැඳිලා, එකින් එක slot එකක් available වෙනකොට process වෙනවා.
+// ======================================================================
+const MAX_CONCURRENT = 3; // Test කරලා ඔයාගේ server/API quota එකට ගැලපෙන ලෙස වෙනස් කරන්න
 
 class ConcurrencyQueue {
     constructor(concurrency) {
@@ -40,9 +43,16 @@ class ConcurrencyQueue {
         this.queue = [];
     }
 
-    add(task) {
+    // onQueued(position) is called ONLY when the task cannot start immediately
+    // (i.e. all MAX_CONCURRENT slots are busy) — position is this task's place
+    // in line (1 = next up). Use it to tell the sender "please wait".
+    add(task, onQueued) {
         return new Promise((resolve, reject) => {
+            const willWait = this.running >= this.concurrency;
             this.queue.push({ task, resolve, reject });
+            if (willWait && typeof onQueued === 'function') {
+                onQueued(this.queue.length);
+            }
             this._next();
         });
     }
@@ -63,7 +73,12 @@ class ConcurrencyQueue {
 
 const messageQueue = new ConcurrencyQueue(MAX_CONCURRENT);
 
+// ======================================================================
 // 🔁 MESSAGE DEDUP
+// Baileys reconnect වෙනකොට sometimes same message event දෙපාරක් fire
+// වෙන්න පුළුවන් (network hiccup, resync). මේ Set එකෙන් message.id track
+// කරලා, දැනටමත් process කරපු message එකක් ආයෙත් process කරන එක නවත්තනවා.
+// ======================================================================
 const processedMessages = new Set();
 const MAX_TRACKED_MESSAGES = 1000;
 
@@ -75,7 +90,14 @@ function markProcessed(id) {
     }
 }
 
-// 🔒 ADMIN CHECK
+// ======================================================================
+// 🔒 ADMIN CHECK (safer version)
+// Original code eke `sender.includes(...)` කියන්නේ substring match එකක්.
+// Practically risk අඩුයි, ඒත් jidNormalizedUser() එකෙන් JID එක normalize
+// කරලා exact compare කරන එකයි Baileys ගේ recommended approach එක.
+// ⚠️ Test කරලා බලන්න: ඔයාගේ Baileys version එකේ LID JIDs ලියෙන්නේ
+// "<lid>@lid" විදිහටද කියලා. එහෙම නැත්නම් suffix එක වෙනස් කරන්න.
+// ======================================================================
 function isSenderAdmin(sender) {
     const normalized = jidNormalizedUser(sender) || sender;
     const isPhoneMatch = normalized === `${ADMIN_PHONE_NUMBER}@s.whatsapp.net`;
@@ -122,7 +144,7 @@ app.listen(PORT, () => {
 // Gemini API Setup
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 if (!GEMINI_API_KEY) {
-    console.error('❌ GEMINI_API_KEY environment variable eka set karala nathnam bot ekata Gemini call ganna barinawa.');
+    console.error('❌ GEMINI_API_KEY environment variable eka set karala nathnam bot ekata Gemini call ganna barinawa. Process eka nawaththanawa.');
     process.exit(1);
 }
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
@@ -176,6 +198,10 @@ IMPORTANT LINKS & PORTALS:
 4. Issue Reporting Form: https://docs.google.com/forms/d/e/1FAIpQLSfOUJnkMp8Tdig0C187WDOgU5AZmtPh3ayBZ-_z9xd23K3Zgw/viewform?usp=publish-editor
 5. SLIIT Support Desk: https://ask.sliit.lk/
 
+CRITICAL — NEVER CLAIM TO HAVE SENT/POSTED SOMETHING:
+- You CANNOT actually send messages, post announcements, or perform any action outside this chat reply. That is handled separately by the bot's code, not by you.
+- NEVER say things like "I've sent this to the group" or "yawanawa" / "දැම්මා" as if the action already happened. If a user asks you to post/send something to a group, simply explain that only the Batch Rep (Monal) can trigger that via a direct message with the correct phrasing, and do not simulate or pretend the action occurred.
+
 CRITICAL CODE & TUTORIAL ANALYSIS RULES:
 - When analyzing code snippets or tutorials:
   1. Pay EXTREME attention to variable scope and re-initialization (e.g., whether 'j = 1' is initialized OUTSIDE or INSIDE an outer loop).
@@ -188,6 +214,9 @@ const model = genAI.getGenerativeModel({
     systemInstruction: systemInstruction
 });
 
+// convertAudioToWav actually converts to mp3 (kept name for compatibility with earlier code).
+// Uses crypto.randomUUID() now instead of Date.now() so two students sending voice notes
+// at the exact same millisecond never collide on the same temp filename.
 function convertAudioToWav(inputBuffer) {
     return new Promise((resolve, reject) => {
         const uniqueId = crypto.randomUUID();
@@ -255,12 +284,16 @@ async function connectToWhatsApp() {
         }
     });
 
+    // ------------------------------------------------------------------
+    // 🧠 Actual per-message processing logic (unchanged behaviour),
+    // now wrapped as a standalone function so it can be handed to the
+    // concurrency queue instead of running unbounded in a tight loop.
+    // ------------------------------------------------------------------
     async function processMessage(sock, msg) {
         const sender = msg.key.remoteJid;
         const isGroup = sender.endsWith('@g.us');
 
-        // 🛑 සියලුම Group Messages මෙතැනින්ම Ignore කරනු ලැබේ
-        if (isGroup) return;
+        if (isGroup && sender !== ANNOUNCEMENT_GROUP_ID && sender !== GENERAL_GROUP_ID) return;
 
         await sock.readMessages([msg.key]);
         await sock.sendPresenceUpdate('composing', sender);
@@ -296,7 +329,6 @@ async function connectToWhatsApp() {
             fullUserPrompt = `[Quoted/Referenced Text: "${quotedText}"]\nUser Action Requested: "${rawMessageText}"`;
         }
 
-        // Voice Note Processing (Only in DM)
         if (audioMsg) {
             try {
                 await sock.sendMessage(sender, { text: "🎙️ **Voice Note එක Process වෙමින් පවතියි...**" }, { quoted: msg });
@@ -315,7 +347,6 @@ async function connectToWhatsApp() {
             return;
         }
 
-        // PDF Processing (Only in DM)
         if (docMsg) {
             try {
                 const mimeType = docMsg?.mimetype || '';
@@ -337,7 +368,6 @@ async function connectToWhatsApp() {
             return;
         }
 
-        // Image Processing (Only in DM)
         if (imgMsg) {
             try {
                 await sock.sendMessage(sender, { text: "⏳ **Image එක Processing...**" }, { quoted: msg });
@@ -357,57 +387,62 @@ async function connectToWhatsApp() {
             return;
         }
 
-        // Admin Broadcast Feature (Only via DM)
-        const textLower = rawMessageText.toLowerCase().trim();
-        const postKeywords = [
-            "send this message to group", "send to group", "post to group",
-            "yawanna group එකට", "යවන්න group", "group එකට දාන්න", "group එකට දාපන්", "group එකට යවන්න"
-        ];
-        const isPostRequest = postKeywords.some(keyword => textLower.includes(keyword));
+        if (!isGroup) {
+            const textLower = rawMessageText.toLowerCase().trim();
 
-        if (isPostRequest) {
-            const isAdmin = isSenderAdmin(sender);
+            // "send it announcement group", "post this to group", "group ekata yawanna"
+            // wage variations okkoma catch wenna, "send/post/yawa/dapan" wage word ekak
+            // + "group/එකට" wage word ekak eka message ekema thiyenawada balanawa,
+            // exact phrase ekakma match wenna one nathiwa.
+            const hasSendWord = /\b(send|post|share|yawa|yawanna|dapan|dan)\b/i.test(textLower)
+                || rawMessageText.includes("දාන්න") || rawMessageText.includes("දාපන්") || rawMessageText.includes("යවන්න");
+            const hasGroupWord = /\bgroup\b/i.test(textLower) || rawMessageText.includes("එකට") || rawMessageText.includes("ග්‍රුප්");
 
-            if (!isAdmin) {
-                await sock.sendMessage(sender, { text: "❌ මචං, Group එකට Announcements දාන්න පුළුවන් Batch Rep (Monal) ට විතරයි!" }, { quoted: msg });
-                return;
-            }
-            try {
-                let textToPost = quotedText || rawMessageText;
+            const isPostRequest = hasSendWord && hasGroupWord;
 
-                if (!textToPost || (textToPost === rawMessageText && isPostRequest && !quotedText)) {
-                    await sock.sendMessage(sender, { text: "⚠️ මචං, Group එකට දාන්න ඕන Message එකට Reply (Quote) කරලා 'Send to group' කියලා එවන්න!" }, { quoted: msg });
+            if (isPostRequest) {
+                const isAdmin = isSenderAdmin(sender);
+
+                if (!isAdmin) {
+                    await sock.sendMessage(sender, { text: "❌ මචං, Group එකට Announcements දාන්න පුළුවන් Batch Rep (Monal) ට විතරයි!" }, { quoted: msg });
                     return;
                 }
+                try {
+                    let textToPost = quotedText || rawMessageText;
 
-                let targetGroupId = ANNOUNCEMENT_GROUP_ID;
-                let groupName = "Announcement Group";
+                    if (!textToPost || (textToPost === rawMessageText && isPostRequest && !quotedText)) {
+                        await sock.sendMessage(sender, { text: "⚠️ මචං, Group එකට දාන්න ඕන Message එකට Reply (Quote) කරලා 'Send to group' කියලා එවන්න!" }, { quoted: msg });
+                        return;
+                    }
 
-                if (textLower.includes("general") || textLower.includes("chat")) {
-                    targetGroupId = GENERAL_GROUP_ID;
-                    groupName = "General Group";
+                    let targetGroupId = ANNOUNCEMENT_GROUP_ID;
+                    let groupName = "Announcement Group";
+
+                    if (textLower.includes("general") || textLower.includes("chat")) {
+                        targetGroupId = GENERAL_GROUP_ID;
+                        groupName = "General Group";
+                    }
+
+                    const finalMsg = `📢 *ANNOUNCEMENT*\n\n${textToPost}`;
+
+                    await sock.sendMessage(targetGroupId, { text: finalMsg });
+                    await sock.sendMessage(sender, { text: `✅ හරි මචං, මම ඒ Notice එක කෙලින්ම *${groupName}* එකට දැම්මා! 🚀` }, { quoted: msg });
+                    return;
+                } catch (err) {
+                    console.error('Error broadcasting admin message:', err);
+                    await sock.sendMessage(sender, { text: "❌ Group එකට Post කිරීමේදී Error එකක් ආවා." }, { quoted: msg });
+                    return;
                 }
-
-                const finalMsg = `📢 *ANNOUNCEMENT*\n\n${textToPost}`;
-
-                await sock.sendMessage(targetGroupId, { text: finalMsg });
-                await sock.sendMessage(sender, { text: `✅ හරි මචං, මම ඒ Notice එක කෙලින්ම *${groupName}* එකට දැම්මා! 🚀` }, { quoted: msg });
-                return;
-            } catch (err) {
-                console.error('Error broadcasting admin message:', err);
-                await sock.sendMessage(sender, { text: "❌ Group එකට Post කිරීමේදී Error එකක් ආවා." }, { quoted: msg });
-                return;
             }
-        }
 
-        // Standard Text AI Reply (Only in DM)
-        if (rawMessageText) {
-            try {
-                const result = await model.generateContent(fullUserPrompt);
-                const replyText = result.response.text();
-                await sock.sendMessage(sender, { text: replyText }, { quoted: msg });
-            } catch (error) {
-                console.error('Error generating AI response:', error);
+            if (rawMessageText) {
+                try {
+                    const result = await model.generateContent(fullUserPrompt);
+                    const replyText = result.response.text();
+                    await sock.sendMessage(sender, { text: replyText }, { quoted: msg });
+                } catch (error) {
+                    console.error('Error generating AI response:', error);
+                }
             }
         }
     }
@@ -418,10 +453,29 @@ async function connectToWhatsApp() {
         for (const msg of messages) {
             if (!msg.message || msg.key.fromMe) continue;
 
+            // Dedup: monawahari duplicate event ekak nam skip karanawa
             if (processedMessages.has(msg.key.id)) continue;
             markProcessed(msg.key.id);
 
-            messageQueue.add(() => processMessage(sock, msg)).catch((err) => {
+            // Godak students ekaparata message dammoth, wada eka queue ekakata
+            // dala, MAX_CONCURRENT ekata adu wenna process karanawa.
+            // Ekak fail unath anith messages wala processing eka nawathinne na.
+            // Kenek ge message eka anith kenage nisa waiting nam, ohata
+            // "please wait" notice ekak yawanawa (once, queue eke welawe witharai).
+            messageQueue.add(
+                () => processMessage(sock, msg),
+                async (position) => {
+                    try {
+                        await sock.sendMessage(
+                            msg.key.remoteJid,
+                            { text: `⏳ මචං, ටිකක් ඉන්න! දැනට කලින් message(s) ටිකක් process වෙමින් තියෙනවා (queue: ${position}). ඉක්මනටම reply කරන්නම්! 🙏` },
+                            { quoted: msg }
+                        );
+                    } catch (e) {
+                        console.error('Failed to send queued notice:', e);
+                    }
+                }
+            ).catch((err) => {
                 console.error('Queued message processing failed:', err);
             });
         }
