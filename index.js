@@ -25,7 +25,7 @@ const ADMIN_LID = "17848192627279";
 // "whoami" command eken labena EXACT JID string eka methanata add karanna —
 // self-chat, multi-device, LID mismatch wage cases walata mekamai reliable
 // fix eka. Example: ADMIN_JIDS = ["94762513957@s.whatsapp.net"]
-const ADMIN_JIDS = [];
+const ADMIN_JIDS = [178481912627279@lid];
 
 // 📢 GROUP IDs (ANNOUNCEMENT & GENERAL)
 const ANNOUNCEMENT_GROUP_ID = "120363425513397101@g.us";
