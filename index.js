@@ -105,6 +105,28 @@ function isSenderAdmin(sender) {
     return isPhoneMatch || isLidMatch || sender.includes(ADMIN_PHONE_NUMBER);
 }
 
+// "send it announcement group", "post this to group", "group ekata yawanna" wage
+// variations okkoma catch wenna, "send/post/yawa/dapan" wage word ekak +
+// "group/එකට" wage word ekak eka text ekema thiyenawada balanawa (exact phrase
+// match wenna one nathiwa). Text broadcast ekatath, image-to-group ekatath
+// dekatama share karana helper ekak.
+function isGroupPostRequest(rawText) {
+    const lower = rawText.toLowerCase().trim();
+    const hasSendWord = /\b(send|post|share|yawa|yawanna|dapan|dan)\b/i.test(lower)
+        || rawText.includes("දාන්න") || rawText.includes("දාපන්") || rawText.includes("යවන්න");
+    const hasGroupWord = /\bgroup\b/i.test(lower) || rawText.includes("එකට") || rawText.includes("ග්‍රුප්");
+    return hasSendWord && hasGroupWord;
+}
+
+function stripPostCommandWords(rawText) {
+    let cleaned = rawText;
+    const wordsToStrip = ["send", "post", "share", "yawa", "yawanna", "dapan", "dan", "group", "general", "chat", "දාන්න", "දාපන්", "යවන්න", "එකට", "ග්‍රුප්"];
+    wordsToStrip.forEach((w) => {
+        cleaned = cleaned.replace(new RegExp(w, 'gi'), '');
+    });
+    return cleaned.replace(/\s+/g, ' ').trim();
+}
+
 // Express Web Server Setup
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -319,6 +341,9 @@ async function connectToWhatsApp() {
                           quotedMsgObj?.extendedTextMessage?.text ||
                           quotedMsgObj?.imageMessage?.caption || "";
 
+        const quotedImageMsg = quotedMsgObj?.imageMessage;
+        const quotedDocMsg = quotedMsgObj?.documentMessage;
+
         const rawMessageText = msg.message.conversation ||
                                msg.message.extendedTextMessage?.text ||
                                imgMsg?.caption ||
@@ -327,6 +352,60 @@ async function connectToWhatsApp() {
         let fullUserPrompt = rawMessageText;
         if (quotedText) {
             fullUserPrompt = `[Quoted/Referenced Text: "${quotedText}"]\nUser Action Requested: "${rawMessageText}"`;
+        }
+
+        // 📤 QUOTE-REPLY POST TO GROUP (admin only, DM only)
+        // Admin kalin chat eke tibba image/PDF ekak (ayeth upload karanne nathuwa)
+        // reply/quote karala "send to group" kiwwoth, mek block eka handle karanawa.
+        // Current message ekatama image/doc ekak attach karala nam (imgMsg/docMsg),
+        // eka wenama direct-upload logic eken handle wenawa — ehema attachment ekak
+        // nathi, purana ekakata reply karapu welawe witharai mek block eka trigger wenne.
+        if (!isGroup && !imgMsg && !docMsg && (quotedImageMsg || quotedDocMsg) && isGroupPostRequest(rawMessageText)) {
+            const isAdmin = isSenderAdmin(sender);
+            if (!isAdmin) {
+                await sock.sendMessage(sender, { text: "❌ මචං, Group එකට දාන්න පුළුවන් Batch Rep (Monal) ට විතරයි!" }, { quoted: msg });
+                return;
+            }
+            try {
+                // downloadMediaMessage ekata purana media eka fetch karanna, eka
+                // pointa karana msg object ekak fake karala hadanawa — real WhatsApp
+                // request ekakadi Baileys wada karanne meka wagema.
+                const fakeQuotedMsg = {
+                    key: {
+                        remoteJid: sender,
+                        id: contextInfo?.stanzaId || msg.key.id,
+                        fromMe: false,
+                        participant: contextInfo?.participant
+                    },
+                    message: quotedMsgObj
+                };
+                const buffer = await downloadMediaMessage(fakeQuotedMsg, 'buffer', {});
+
+                const captionLower = rawMessageText.toLowerCase().trim();
+                let targetGroupId = ANNOUNCEMENT_GROUP_ID;
+                let groupName = "Announcement Group";
+                if (captionLower.includes("general") || captionLower.includes("chat")) {
+                    targetGroupId = GENERAL_GROUP_ID;
+                    groupName = "General Group";
+                }
+                const cleanCaption = stripPostCommandWords(rawMessageText);
+
+                if (quotedImageMsg) {
+                    await sock.sendMessage(targetGroupId, { image: buffer, caption: cleanCaption || undefined });
+                } else {
+                    await sock.sendMessage(targetGroupId, {
+                        document: buffer,
+                        mimetype: quotedDocMsg.mimetype || 'application/octet-stream',
+                        fileName: quotedDocMsg.fileName || 'document',
+                        caption: cleanCaption || undefined
+                    });
+                }
+                await sock.sendMessage(sender, { text: `✅ හරි මචං, ${quotedImageMsg ? 'Image' : 'Document'} එක කෙලින්ම *${groupName}* එකට දැම්මා! 🚀` }, { quoted: msg });
+            } catch (err) {
+                console.error('Error posting quoted media to group:', err);
+                await sock.sendMessage(sender, { text: "❌ Group එකට Post කිරීමේදී Error එකක් ආවා." }, { quoted: msg });
+            }
+            return;
         }
 
         if (audioMsg) {
@@ -348,6 +427,42 @@ async function connectToWhatsApp() {
         }
 
         if (docMsg) {
+            // 📤 DOCUMENT POST TO GROUP (admin only, DM only, PDF or any file type)
+            // Direct upload karapu document ekakata "send to group" caption eka
+            // dammoth, Gemini analyze karanne nathuwa file ekama group ekata forward karanawa.
+            if (!isGroup && isGroupPostRequest(rawMessageText)) {
+                const isAdmin = isSenderAdmin(sender);
+                if (!isAdmin) {
+                    await sock.sendMessage(sender, { text: "❌ මචං, Group එකට Documents දාන්න පුළුවන් Batch Rep (Monal) ට විතරයි!" }, { quoted: msg });
+                    return;
+                }
+                try {
+                    const buffer = await downloadMediaMessage(msg, 'buffer', {});
+
+                    const captionLower = rawMessageText.toLowerCase().trim();
+                    let targetGroupId = ANNOUNCEMENT_GROUP_ID;
+                    let groupName = "Announcement Group";
+                    if (captionLower.includes("general") || captionLower.includes("chat")) {
+                        targetGroupId = GENERAL_GROUP_ID;
+                        groupName = "General Group";
+                    }
+                    const cleanCaption = stripPostCommandWords(rawMessageText);
+
+                    await sock.sendMessage(targetGroupId, {
+                        document: buffer,
+                        mimetype: docMsg.mimetype || 'application/octet-stream',
+                        fileName: docMsg.fileName || 'document',
+                        caption: cleanCaption || undefined
+                    });
+                    await sock.sendMessage(sender, { text: `✅ හරි මචං, Document එක කෙලින්ම *${groupName}* එකට දැම්මා! 🚀` }, { quoted: msg });
+                } catch (err) {
+                    console.error('Error posting document to group:', err);
+                    await sock.sendMessage(sender, { text: "❌ Document එක Group එකට Post කිරීමේදී Error එකක් ආවා." }, { quoted: msg });
+                }
+                return;
+            }
+
+            // 🔍 Normal PDF analysis (Gemini reads/explains the PDF)
             try {
                 const mimeType = docMsg?.mimetype || '';
                 if (mimeType === 'application/pdf') {
@@ -369,6 +484,46 @@ async function connectToWhatsApp() {
         }
 
         if (imgMsg) {
+            // 🖼️ IMAGE POST TO GROUP (admin only, DM only)
+            // Admin ek image ekak DM ekaka "send to group" / "group එකට දාන්න" wage
+            // caption ekakin dammoth, ekama image eka (Gemini eken analyze karanne na)
+            // group ekatama forward karanawa — text broadcast eke wage logic ekama.
+            if (!isGroup) {
+                const captionLower = rawMessageText.toLowerCase().trim();
+                const isImagePostRequest = isGroupPostRequest(rawMessageText);
+
+                if (isImagePostRequest) {
+                    const isAdmin = isSenderAdmin(sender);
+                    if (!isAdmin) {
+                        await sock.sendMessage(sender, { text: "❌ මචං, Group එකට Images දාන්න පුළුවන් Batch Rep (Monal) ට විතරයි!" }, { quoted: msg });
+                        return;
+                    }
+                    try {
+                        const buffer = await downloadMediaMessage(msg, 'buffer', {});
+
+                        let targetGroupId = ANNOUNCEMENT_GROUP_ID;
+                        let groupName = "Announcement Group";
+                        if (captionLower.includes("general") || captionLower.includes("chat")) {
+                            targetGroupId = GENERAL_GROUP_ID;
+                            groupName = "General Group";
+                        }
+
+                        const cleanCaption = stripPostCommandWords(rawMessageText);
+
+                        await sock.sendMessage(targetGroupId, {
+                            image: buffer,
+                            caption: cleanCaption || undefined
+                        });
+                        await sock.sendMessage(sender, { text: `✅ හරි මචං, Image එක කෙලින්ම *${groupName}* එකට දැම්මා! 🚀` }, { quoted: msg });
+                    } catch (err) {
+                        console.error('Error posting image to group:', err);
+                        await sock.sendMessage(sender, { text: "❌ Image එක Group එකට Post කිරීමේදී Error එකක් ආවා." }, { quoted: msg });
+                    }
+                    return;
+                }
+            }
+
+            // 🔍 Normal image analysis (Gemini reads/explains the image)
             try {
                 await sock.sendMessage(sender, { text: "⏳ **Image එක Processing...**" }, { quoted: msg });
                 const buffer = await downloadMediaMessage(msg, 'buffer', {});
@@ -389,16 +544,7 @@ async function connectToWhatsApp() {
 
         if (!isGroup) {
             const textLower = rawMessageText.toLowerCase().trim();
-
-            // "send it announcement group", "post this to group", "group ekata yawanna"
-            // wage variations okkoma catch wenna, "send/post/yawa/dapan" wage word ekak
-            // + "group/එකට" wage word ekak eka message ekema thiyenawada balanawa,
-            // exact phrase ekakma match wenna one nathiwa.
-            const hasSendWord = /\b(send|post|share|yawa|yawanna|dapan|dan)\b/i.test(textLower)
-                || rawMessageText.includes("දාන්න") || rawMessageText.includes("දාපන්") || rawMessageText.includes("යවන්න");
-            const hasGroupWord = /\bgroup\b/i.test(textLower) || rawMessageText.includes("එකට") || rawMessageText.includes("ග්‍රුප්");
-
-            const isPostRequest = hasSendWord && hasGroupWord;
+            const isPostRequest = isGroupPostRequest(rawMessageText);
 
             if (isPostRequest) {
                 const isAdmin = isSenderAdmin(sender);
