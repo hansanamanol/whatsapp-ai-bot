@@ -22,6 +22,11 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 const ADMIN_PHONE_NUMBER = "94762513957";
 const ADMIN_LID = "17848192627279";
 
+// "whoami" command eken labena EXACT JID string eka methanata add karanna —
+// self-chat, multi-device, LID mismatch wage cases walata mekamai reliable
+// fix eka. Example: ADMIN_JIDS = ["94762513957@s.whatsapp.net"]
+const ADMIN_JIDS = [];
+
 // 📢 GROUP IDs (ANNOUNCEMENT & GENERAL)
 const ANNOUNCEMENT_GROUP_ID = "120363425513397101@g.us";
 const GENERAL_GROUP_ID = "120363409747625255@g.us";
@@ -100,6 +105,7 @@ function markProcessed(id) {
 // ======================================================================
 function isSenderAdmin(sender) {
     const normalized = jidNormalizedUser(sender) || sender;
+    if (ADMIN_JIDS.includes(sender) || ADMIN_JIDS.includes(normalized)) return true;
     const isPhoneMatch = normalized === `${ADMIN_PHONE_NUMBER}@s.whatsapp.net`;
     const isLidMatch = ADMIN_LID && (normalized === `${ADMIN_LID}@lid` || sender.includes(ADMIN_LID));
     return isPhoneMatch || isLidMatch || sender.includes(ADMIN_PHONE_NUMBER);
@@ -544,6 +550,21 @@ async function connectToWhatsApp() {
 
         if (!isGroup) {
             const textLower = rawMessageText.toLowerCase().trim();
+
+            // 🆔 SELF-DIAGNOSTIC: "whoami" type kalata, ohage exact JID eka
+            // (raw + normalized) reply karanawa. Admin check eka pass wenne
+            // nathnam, mekedi labena JID eka copy karala ADMIN_JIDS array
+            // ekata danna — eka thamai ekma-100%-wada karana fix eka.
+            if (textLower === 'whoami' || textLower === 'my id' || textLower === 'myid') {
+                const normalized = jidNormalizedUser(sender) || sender;
+                await sock.sendMessage(
+                    sender,
+                    { text: `🆔 *ඔයාගේ WhatsApp ID*\n\nRaw: \`${sender}\`\nNormalized: \`${normalized}\`\n\nMe eka ADMIN_JIDS array ekata danna admin access denna.` },
+                    { quoted: msg }
+                );
+                return;
+            }
+
             const isPostRequest = isGroupPostRequest(rawMessageText);
 
             if (isPostRequest) {
