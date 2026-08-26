@@ -25,11 +25,42 @@ const ADMIN_LID = "17848192627279";
 // "whoami" command eken labena EXACT JID string eka methanata add karanna —
 // self-chat, multi-device, LID mismatch wage cases walata mekamai reliable
 // fix eka. Example: ADMIN_JIDS = ["94762513957@s.whatsapp.net"]
-const ADMIN_JIDS = ["178481912627279@lid"];
+const ADMIN_JIDS = [];
 
-// 📢 GROUP IDs (ANNOUNCEMENT & GENERAL)
-const ANNOUNCEMENT_GROUP_ID = "120363425513397101@g.us";
-const GENERAL_GROUP_ID = "120363409747625255@g.us";
+// ======================================================================
+// 📚 CUSTOM KNOWLEDGE BASE (persistent, file-backed)
+// Admin (Monal) dena info tika methanata save wenawa (knowledge.json file
+// ekata), server restart unath persist wenawa. Student kenek questions
+// ahuwwama, mek info tika Gemini ta context ekak widiyata dila answer
+// karanna use karanawa.
+// ======================================================================
+const KNOWLEDGE_FILE = path.join(__dirname, 'knowledge.json');
+let knowledgeBase = [];
+
+try {
+    if (fs.existsSync(KNOWLEDGE_FILE)) {
+        knowledgeBase = JSON.parse(fs.readFileSync(KNOWLEDGE_FILE, 'utf8'));
+    }
+} catch (err) {
+    console.error('Error loading knowledge.json, starting with empty knowledge base:', err);
+    knowledgeBase = [];
+}
+
+function saveKnowledgeBase() {
+    try {
+        fs.writeFileSync(KNOWLEDGE_FILE, JSON.stringify(knowledgeBase, null, 2));
+    } catch (err) {
+        console.error('Error saving knowledge.json:', err);
+    }
+}
+
+// Gemini ekata yawana ANY prompt ekakata (text/image/pdf/audio) mek helper
+// eken saved knowledge base eka context widiyata add karanawa.
+function buildPromptWithKnowledge(basePrompt) {
+    if (knowledgeBase.length === 0) return basePrompt;
+    const knowledgeText = knowledgeBase.map((k, i) => `${i + 1}. ${k}`).join('\n');
+    return `${basePrompt}\n\n[BATCH-SPECIFIC KNOWLEDGE — Batch Rep (Monal) saved this info. If it's relevant to the user's question, prioritize using it over general knowledge:]\n${knowledgeText}`;
+}
 
 // ======================================================================
 // 🧵 CONCURRENCY QUEUE
@@ -109,28 +140,6 @@ function isSenderAdmin(sender) {
     const isPhoneMatch = normalized === `${ADMIN_PHONE_NUMBER}@s.whatsapp.net`;
     const isLidMatch = ADMIN_LID && (normalized === `${ADMIN_LID}@lid` || sender.includes(ADMIN_LID));
     return isPhoneMatch || isLidMatch || sender.includes(ADMIN_PHONE_NUMBER);
-}
-
-// "send it announcement group", "post this to group", "group ekata yawanna" wage
-// variations okkoma catch wenna, "send/post/yawa/dapan" wage word ekak +
-// "group/එකට" wage word ekak eka text ekema thiyenawada balanawa (exact phrase
-// match wenna one nathiwa). Text broadcast ekatath, image-to-group ekatath
-// dekatama share karana helper ekak.
-function isGroupPostRequest(rawText) {
-    const lower = rawText.toLowerCase().trim();
-    const hasSendWord = /\b(send|post|share|yawa|yawanna|dapan|dan)\b/i.test(lower)
-        || rawText.includes("දාන්න") || rawText.includes("දාපන්") || rawText.includes("යවන්න");
-    const hasGroupWord = /\bgroup\b/i.test(lower) || rawText.includes("එකට") || rawText.includes("ග්‍රුප්");
-    return hasSendWord && hasGroupWord;
-}
-
-function stripPostCommandWords(rawText) {
-    let cleaned = rawText;
-    const wordsToStrip = ["send", "post", "share", "yawa", "yawanna", "dapan", "dan", "group", "general", "chat", "දාන්න", "දාපන්", "යවන්න", "එකට", "ග්‍රුප්"];
-    wordsToStrip.forEach((w) => {
-        cleaned = cleaned.replace(new RegExp(w, 'gi'), '');
-    });
-    return cleaned.replace(/\s+/g, ' ').trim();
 }
 
 // Express Web Server Setup
@@ -321,7 +330,10 @@ async function connectToWhatsApp() {
         const sender = msg.key.remoteJid;
         const isGroup = sender.endsWith('@g.us');
 
-        if (isGroup && sender !== ANNOUNCEMENT_GROUP_ID && sender !== GENERAL_GROUP_ID) return;
+        // Bot eka DM Q&A witharayi wada karanne — group message ekakata
+        // kisisethakma respond wenne na (announcement/general group check
+        // ain kara, siyalu groups ma skip wenawa).
+        if (isGroup) return;
 
         await sock.readMessages([msg.key]);
         await sock.sendPresenceUpdate('composing', sender);
@@ -347,9 +359,6 @@ async function connectToWhatsApp() {
                           quotedMsgObj?.extendedTextMessage?.text ||
                           quotedMsgObj?.imageMessage?.caption || "";
 
-        const quotedImageMsg = quotedMsgObj?.imageMessage;
-        const quotedDocMsg = quotedMsgObj?.documentMessage;
-
         const rawMessageText = msg.message.conversation ||
                                msg.message.extendedTextMessage?.text ||
                                imgMsg?.caption ||
@@ -360,60 +369,6 @@ async function connectToWhatsApp() {
             fullUserPrompt = `[Quoted/Referenced Text: "${quotedText}"]\nUser Action Requested: "${rawMessageText}"`;
         }
 
-        // 📤 QUOTE-REPLY POST TO GROUP (admin only, DM only)
-        // Admin kalin chat eke tibba image/PDF ekak (ayeth upload karanne nathuwa)
-        // reply/quote karala "send to group" kiwwoth, mek block eka handle karanawa.
-        // Current message ekatama image/doc ekak attach karala nam (imgMsg/docMsg),
-        // eka wenama direct-upload logic eken handle wenawa — ehema attachment ekak
-        // nathi, purana ekakata reply karapu welawe witharai mek block eka trigger wenne.
-        if (!isGroup && !imgMsg && !docMsg && (quotedImageMsg || quotedDocMsg) && isGroupPostRequest(rawMessageText)) {
-            const isAdmin = isSenderAdmin(sender);
-            if (!isAdmin) {
-                await sock.sendMessage(sender, { text: "❌ මචං, Group එකට දාන්න පුළුවන් Batch Rep (Monal) ට විතරයි!" }, { quoted: msg });
-                return;
-            }
-            try {
-                // downloadMediaMessage ekata purana media eka fetch karanna, eka
-                // pointa karana msg object ekak fake karala hadanawa — real WhatsApp
-                // request ekakadi Baileys wada karanne meka wagema.
-                const fakeQuotedMsg = {
-                    key: {
-                        remoteJid: sender,
-                        id: contextInfo?.stanzaId || msg.key.id,
-                        fromMe: false,
-                        participant: contextInfo?.participant
-                    },
-                    message: quotedMsgObj
-                };
-                const buffer = await downloadMediaMessage(fakeQuotedMsg, 'buffer', {});
-
-                const captionLower = rawMessageText.toLowerCase().trim();
-                let targetGroupId = ANNOUNCEMENT_GROUP_ID;
-                let groupName = "Announcement Group";
-                if (captionLower.includes("general") || captionLower.includes("chat")) {
-                    targetGroupId = GENERAL_GROUP_ID;
-                    groupName = "General Group";
-                }
-                const cleanCaption = stripPostCommandWords(rawMessageText);
-
-                if (quotedImageMsg) {
-                    await sock.sendMessage(targetGroupId, { image: buffer, caption: cleanCaption || undefined });
-                } else {
-                    await sock.sendMessage(targetGroupId, {
-                        document: buffer,
-                        mimetype: quotedDocMsg.mimetype || 'application/octet-stream',
-                        fileName: quotedDocMsg.fileName || 'document',
-                        caption: cleanCaption || undefined
-                    });
-                }
-                await sock.sendMessage(sender, { text: `✅ හරි මචං, ${quotedImageMsg ? 'Image' : 'Document'} එක කෙලින්ම *${groupName}* එකට දැම්මා! 🚀` }, { quoted: msg });
-            } catch (err) {
-                console.error('Error posting quoted media to group:', err);
-                await sock.sendMessage(sender, { text: "❌ Group එකට Post කිරීමේදී Error එකක් ආවා." }, { quoted: msg });
-            }
-            return;
-        }
-
         if (audioMsg) {
             try {
                 await sock.sendMessage(sender, { text: "🎙️ **Voice Note එක Process වෙමින් පවතියි...**" }, { quoted: msg });
@@ -421,7 +376,7 @@ async function connectToWhatsApp() {
                 const mp3Buffer = await convertAudioToWav(oggBuffer);
                 const base64Audio = mp3Buffer.toString('base64');
                 const audioPart = { inlineData: { data: base64Audio, mimeType: 'audio/mp3' } };
-                const prompt = "Listen carefully to this audio message. Reply clearly in friendly Singlish or Sinhala/English.";
+                const prompt = buildPromptWithKnowledge("Listen carefully to this audio message. Reply clearly in friendly Singlish or Sinhala/English.");
                 const result = await model.generateContent([prompt, audioPart]);
                 const reply = result.response.text();
                 await sock.sendMessage(sender, { text: reply }, { quoted: msg });
@@ -433,41 +388,6 @@ async function connectToWhatsApp() {
         }
 
         if (docMsg) {
-            // 📤 DOCUMENT POST TO GROUP (admin only, DM only, PDF or any file type)
-            // Direct upload karapu document ekakata "send to group" caption eka
-            // dammoth, Gemini analyze karanne nathuwa file ekama group ekata forward karanawa.
-            if (!isGroup && isGroupPostRequest(rawMessageText)) {
-                const isAdmin = isSenderAdmin(sender);
-                if (!isAdmin) {
-                    await sock.sendMessage(sender, { text: "❌ මචං, Group එකට Documents දාන්න පුළුවන් Batch Rep (Monal) ට විතරයි!" }, { quoted: msg });
-                    return;
-                }
-                try {
-                    const buffer = await downloadMediaMessage(msg, 'buffer', {});
-
-                    const captionLower = rawMessageText.toLowerCase().trim();
-                    let targetGroupId = ANNOUNCEMENT_GROUP_ID;
-                    let groupName = "Announcement Group";
-                    if (captionLower.includes("general") || captionLower.includes("chat")) {
-                        targetGroupId = GENERAL_GROUP_ID;
-                        groupName = "General Group";
-                    }
-                    const cleanCaption = stripPostCommandWords(rawMessageText);
-
-                    await sock.sendMessage(targetGroupId, {
-                        document: buffer,
-                        mimetype: docMsg.mimetype || 'application/octet-stream',
-                        fileName: docMsg.fileName || 'document',
-                        caption: cleanCaption || undefined
-                    });
-                    await sock.sendMessage(sender, { text: `✅ හරි මචං, Document එක කෙලින්ම *${groupName}* එකට දැම්මා! 🚀` }, { quoted: msg });
-                } catch (err) {
-                    console.error('Error posting document to group:', err);
-                    await sock.sendMessage(sender, { text: "❌ Document එක Group එකට Post කිරීමේදී Error එකක් ආවා." }, { quoted: msg });
-                }
-                return;
-            }
-
             // 🔍 Normal PDF analysis (Gemini reads/explains the PDF)
             try {
                 const mimeType = docMsg?.mimetype || '';
@@ -477,7 +397,7 @@ async function connectToWhatsApp() {
                     const base64Pdf = buffer.toString('base64');
                     const pdfPart = { inlineData: { data: base64Pdf, mimeType: 'application/pdf' } };
                     const captionPrompt = rawMessageText ? ` User instructions: "${rawMessageText}"` : "";
-                    const prompt = "Read this PDF document carefully and fulfill the user request in clear Singlish or simple English." + captionPrompt;
+                    const prompt = buildPromptWithKnowledge("Read this PDF document carefully and fulfill the user request in clear Singlish or simple English." + captionPrompt);
                     const result = await model.generateContent([prompt, pdfPart]);
                     const reply = result.response.text();
                     await sock.sendMessage(sender, { text: reply }, { quoted: msg });
@@ -490,45 +410,6 @@ async function connectToWhatsApp() {
         }
 
         if (imgMsg) {
-            // 🖼️ IMAGE POST TO GROUP (admin only, DM only)
-            // Admin ek image ekak DM ekaka "send to group" / "group එකට දාන්න" wage
-            // caption ekakin dammoth, ekama image eka (Gemini eken analyze karanne na)
-            // group ekatama forward karanawa — text broadcast eke wage logic ekama.
-            if (!isGroup) {
-                const captionLower = rawMessageText.toLowerCase().trim();
-                const isImagePostRequest = isGroupPostRequest(rawMessageText);
-
-                if (isImagePostRequest) {
-                    const isAdmin = isSenderAdmin(sender);
-                    if (!isAdmin) {
-                        await sock.sendMessage(sender, { text: "❌ මචං, Group එකට Images දාන්න පුළුවන් Batch Rep (Monal) ට විතරයි!" }, { quoted: msg });
-                        return;
-                    }
-                    try {
-                        const buffer = await downloadMediaMessage(msg, 'buffer', {});
-
-                        let targetGroupId = ANNOUNCEMENT_GROUP_ID;
-                        let groupName = "Announcement Group";
-                        if (captionLower.includes("general") || captionLower.includes("chat")) {
-                            targetGroupId = GENERAL_GROUP_ID;
-                            groupName = "General Group";
-                        }
-
-                        const cleanCaption = stripPostCommandWords(rawMessageText);
-
-                        await sock.sendMessage(targetGroupId, {
-                            image: buffer,
-                            caption: cleanCaption || undefined
-                        });
-                        await sock.sendMessage(sender, { text: `✅ හරි මචං, Image එක කෙලින්ම *${groupName}* එකට දැම්මා! 🚀` }, { quoted: msg });
-                    } catch (err) {
-                        console.error('Error posting image to group:', err);
-                        await sock.sendMessage(sender, { text: "❌ Image එක Group එකට Post කිරීමේදී Error එකක් ආවා." }, { quoted: msg });
-                    }
-                    return;
-                }
-            }
-
             // 🔍 Normal image analysis (Gemini reads/explains the image)
             try {
                 await sock.sendMessage(sender, { text: "⏳ **Image එක Processing...**" }, { quoted: msg });
@@ -537,7 +418,7 @@ async function connectToWhatsApp() {
                 const mimeType = imgMsg.mimetype || 'image/jpeg';
                 const imagePart = { inlineData: { data: base64Image, mimeType: mimeType } };
                 const captionPrompt = rawMessageText ? ` User instructions: "${rawMessageText}"` : "";
-                const prompt = "Read all details in this screenshot/image. If requested, generate a clean and formatted announcement notice or answer the user's question clearly in simple English or Singlish." + captionPrompt;
+                const prompt = buildPromptWithKnowledge("Read all details in this screenshot/image. If requested, generate a clean and formatted announcement notice or answer the user's question clearly in simple English or Singlish." + captionPrompt);
                 const result = await model.generateContent([prompt, imagePart]);
                 const reply = result.response.text();
                 await sock.sendMessage(sender, { text: reply }, { quoted: msg });
@@ -550,6 +431,31 @@ async function connectToWhatsApp() {
 
         if (!isGroup) {
             const textLower = rawMessageText.toLowerCase().trim();
+
+            // 👋 FRIENDLY IDENTITY CHECK: "who am i" / "man kauda" wage
+            // natural language ekakin ahuwwama, technical JID ekak nathuwa,
+            // "ඔයා Batch Rep" kiyala friendly confirmation ekak denawa.
+            const isWhoAmIQuestion = /\bwho\s*am\s*i\b/i.test(textLower)
+                || textLower.includes('man kauda') || textLower.includes('mn kauda') || textLower.includes('mama kauda')
+                || rawMessageText.includes('මං කවුද') || rawMessageText.includes('මම කවුද');
+
+            if (isWhoAmIQuestion) {
+                const isAdmin = isSenderAdmin(sender);
+                if (isAdmin) {
+                    await sock.sendMessage(
+                        sender,
+                        { text: `👋 ඔයා තමයි *Monal Hansana* — SLIIT IT Y1S2 Batch Representative! ✅\n\nGroup එකට Announcements/Images/Documents post කරන්න පුළුවන් permission ඔයාට තියෙනවා.` },
+                        { quoted: msg }
+                    );
+                } else {
+                    await sock.sendMessage(
+                        sender,
+                        { text: `👤 ඔයා දැනට bot එකේ Batch Rep කෙනෙක් විදිහට recognize වෙන්නෙ නෑ — student/other user කෙනෙක් විදිහට තමයි recognize වෙන්නේ.` },
+                        { quoted: msg }
+                    );
+                }
+                return;
+            }
 
             // 🆔 SELF-DIAGNOSTIC: "whoami" type kalata, ohage exact JID eka
             // (raw + normalized) reply karanawa. Admin check eka pass wenne
@@ -565,46 +471,64 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            const isPostRequest = isGroupPostRequest(rawMessageText);
-
-            if (isPostRequest) {
+            // 📚 ADD INFO (admin only, DM only): "add info: <text>" wage command
+            // ekakin, Monal denna info eka knowledge.json ekata permanently save
+            // wenawa. Students ahuwwama, mek info eka Gemini ta context ekak
+            // widiyata dila answer karanna use karanawa (buildPromptWithKnowledge).
+            if (/^(add info|info add|save info)\b/i.test(textLower)) {
                 const isAdmin = isSenderAdmin(sender);
-
                 if (!isAdmin) {
-                    await sock.sendMessage(sender, { text: "❌ මචං, Group එකට Announcements දාන්න පුළුවන් Batch Rep (Monal) ට විතරයි!" }, { quoted: msg });
+                    await sock.sendMessage(sender, { text: "❌ මචං, Info Add කරන්න පුළුවන් Batch Rep (Monal) ට විතරයි!" }, { quoted: msg });
                     return;
                 }
-                try {
-                    let textToPost = quotedText || rawMessageText;
-
-                    if (!textToPost || (textToPost === rawMessageText && isPostRequest && !quotedText)) {
-                        await sock.sendMessage(sender, { text: "⚠️ මචං, Group එකට දාන්න ඕන Message එකට Reply (Quote) කරලා 'Send to group' කියලා එවන්න!" }, { quoted: msg });
-                        return;
-                    }
-
-                    let targetGroupId = ANNOUNCEMENT_GROUP_ID;
-                    let groupName = "Announcement Group";
-
-                    if (textLower.includes("general") || textLower.includes("chat")) {
-                        targetGroupId = GENERAL_GROUP_ID;
-                        groupName = "General Group";
-                    }
-
-                    const finalMsg = `📢 *ANNOUNCEMENT*\n\n${textToPost}`;
-
-                    await sock.sendMessage(targetGroupId, { text: finalMsg });
-                    await sock.sendMessage(sender, { text: `✅ හරි මචං, මම ඒ Notice එක කෙලින්ම *${groupName}* එකට දැම්මා! 🚀` }, { quoted: msg });
-                    return;
-                } catch (err) {
-                    console.error('Error broadcasting admin message:', err);
-                    await sock.sendMessage(sender, { text: "❌ Group එකට Post කිරීමේදී Error එකක් ආවා." }, { quoted: msg });
+                const infoText = rawMessageText.replace(/^(add info|info add|save info)\s*:?\s*/i, '').trim();
+                if (!infoText) {
+                    await sock.sendMessage(sender, { text: `⚠️ මචං, info text එකත් එක්කම type කරන්න — e.g.\n"add info: Mid exam eka postpone una, aluth date eka Sept 15"` }, { quoted: msg });
                     return;
                 }
+                knowledgeBase.push(infoText);
+                saveKnowledgeBase();
+                await sock.sendMessage(sender, { text: `✅ Info එක save කළා! (Total: ${knowledgeBase.length})\n\nදැන් students ඇහුවොත් bot එකෙන් මේක use කරලා answer කරයි.` }, { quoted: msg });
+                return;
+            }
+
+            // 📋 LIST INFO (admin only) — saved info tika review karanna
+            if (textLower === 'list info' || textLower === 'show info') {
+                const isAdmin = isSenderAdmin(sender);
+                if (!isAdmin) {
+                    await sock.sendMessage(sender, { text: "❌ මචං, මේක බලන්න පුළුවන් Batch Rep ට විතරයි!" }, { quoted: msg });
+                    return;
+                }
+                if (knowledgeBase.length === 0) {
+                    await sock.sendMessage(sender, { text: "📭 දැනට info මොකවත් save කරලා නෑ." }, { quoted: msg });
+                } else {
+                    const list = knowledgeBase.map((k, i) => `${i + 1}. ${k}`).join('\n\n');
+                    await sock.sendMessage(sender, { text: `📚 *Saved Info (${knowledgeBase.length})*\n\n${list}` }, { quoted: msg });
+                }
+                return;
+            }
+
+            // 🗑️ REMOVE INFO (admin only) — "remove info 2" wage number ekakin
+            if (/^remove info\s+\d+/i.test(textLower)) {
+                const isAdmin = isSenderAdmin(sender);
+                if (!isAdmin) {
+                    await sock.sendMessage(sender, { text: "❌ මචං, මේක කරන්න පුළුවන් Batch Rep ට විතරයි!" }, { quoted: msg });
+                    return;
+                }
+                const idx = parseInt(textLower.replace(/^remove info\s+/i, ''), 10) - 1;
+                if (isNaN(idx) || idx < 0 || idx >= knowledgeBase.length) {
+                    await sock.sendMessage(sender, { text: "⚠️ Number එක වැරදියි. 'list info' කියලා type කරලා number එක check කරන්න." }, { quoted: msg });
+                    return;
+                }
+                const removed = knowledgeBase.splice(idx, 1);
+                saveKnowledgeBase();
+                await sock.sendMessage(sender, { text: `🗑️ ඉවත් කළා: "${removed[0]}"` }, { quoted: msg });
+                return;
             }
 
             if (rawMessageText) {
                 try {
-                    const result = await model.generateContent(fullUserPrompt);
+                    const result = await model.generateContent(buildPromptWithKnowledge(fullUserPrompt));
                     const replyText = result.response.text();
                     await sock.sendMessage(sender, { text: replyText }, { quoted: msg });
                 } catch (error) {
