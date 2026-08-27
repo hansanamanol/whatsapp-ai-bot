@@ -644,7 +644,7 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // ==================================================================
+                        // ==================================================================
             // 📝 REGISTER COMMAND (NEW)
             // ==================================================================
             if (/^register\s*:?\s*/.test(textLower)) {
@@ -672,7 +672,13 @@ async function connectToWhatsApp() {
                 const result = registerStudent(sender, name, phone);
                 if (result.success) {
                     await sock.sendMessage(sender, {
-                        text: `✅ *Registered!*\n👤 ${result.data.name}\n📱 ${formatPhoneForDisplay(result.data.phone)}`
+                        text: `✅ *Registered!*\n👤 ${result.data.name}\n📱 ${formatPhoneForDisplay(result.data.phone)}\n\n` +
+                              `🔄 *How to Swap Lab Groups:*\n` +
+                              `1️⃣ Type: \`swap: 1 to 2\` (if you're in Group 1 and want Group 2)\n` +
+                              `2️⃣ When match found, both confirm with \`yes\` or \`no\`\n` +
+                              `3️⃣ Cancel with \`no\` → \`undo\` within 5 minutes\n` +
+                              `4️⃣ Cancel pending request: \`cancel swap\`\n` +
+                              `5️⃣ Check profile: \`my profile\``
                     }, { quoted: msg });
                 } else {
                     await sock.sendMessage(sender, { text: `❌ ${result.error}` }, { quoted: msg });
