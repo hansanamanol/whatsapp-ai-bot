@@ -763,7 +763,6 @@ async function connectToWhatsApp() {
                 const normFrom = normalizeGroupLabel(rawFrom);
                 const normTo = normalizeGroupLabel(rawTo);
 
-                // Check registration
                 const studentInfo = getStudentInfo(sender);
                 if (!studentInfo) {
                     await sock.sendMessage(sender, {
@@ -783,7 +782,6 @@ async function connectToWhatsApp() {
                     return;
                 }
 
-                // Check if user already has a pending request
                 if (swapRequests[sender] && !swapRequests[sender].matched) {
                     await sock.sendMessage(sender, {
                         text: `⚠️ ඔබට දැනටමත් pending swap request එකක් තියෙනවා: ${swapRequests[sender].rawFrom} → ${swapRequests[sender].rawTo}\n\n` +
@@ -792,11 +790,12 @@ async function connectToWhatsApp() {
                     return;
                 }
 
-                // Save the request
                 swapRequests[sender] = {
                     fromGroup: normFrom,
                     toGroup: normTo,
                     rawFrom: rawFrom,
                     rawTo: rawTo,
                     name: studentInfo.name,
-                    phone: studentInfo.phone
+                    phone: studentInfo.phone,
+                    timestamp: Date.now(),
+                    matched:
