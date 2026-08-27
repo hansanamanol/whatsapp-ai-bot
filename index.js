@@ -63,6 +63,97 @@ function buildPromptWithKnowledge(basePrompt) {
 }
 
 // ======================================================================
+// 📋 STUDENT REGISTRATION SYSTEM (NEW)
+// ======================================================================
+const STUDENTS_FILE = path.join(__dirname, 'students.json');
+let studentsDB = {};
+
+try {
+    if (fs.existsSync(STUDENTS_FILE)) {
+        studentsDB = JSON.parse(fs.readFileSync(STUDENTS_FILE, 'utf8'));
+        console.log(`✅ Loaded ${Object.keys(studentsDB).length} registered students`);
+    }
+} catch (err) {
+    console.error('Error loading students.json:', err);
+    studentsDB = {};
+}
+
+function saveStudentsDB() {
+    try {
+        fs.writeFileSync(STUDENTS_FILE, JSON.stringify(studentsDB, null, 2));
+    } catch (err) {
+        console.error('Error saving students.json:', err);
+    }
+}
+
+function registerStudent(jid, name, phone) {
+    const cleanPhone = phone.replace(/[\s\+\-\(\)]/g, '');
+    
+    if (!cleanPhone.match(/^(\+?94|0)?7[0-9]{8}$/)) {
+        return { success: false, error: 'Invalid Sri Lankan phone number. Use format: 0771234567 or +94771234567' };
+    }
+    
+    let normalizedPhone = cleanPhone;
+    if (normalizedPhone.startsWith('94')) {
+        normalizedPhone = normalizedPhone.substring(2);
+    } else if (normalizedPhone.startsWith('0')) {
+        normalizedPhone = normalizedPhone.substring(1);
+    }
+    
+    const existingJid = Object.keys(studentsDB).find(
+        key => studentsDB[key].phone === normalizedPhone && key !== jid
+    );
+    if (existingJid) {
+        return { 
+            success: false, 
+            error: `This phone number is already registered by ${studentsDB[existingJid].name}.` 
+        };
+    }
+    
+    studentsDB[jid] = {
+        name: name.trim(),
+        phone: normalizedPhone,
+        registeredAt: new Date().toISOString()
+    };
+    saveStudentsDB();
+    
+    return { success: true, data: studentsDB[jid] };
+}
+
+function getStudentPhone(jid) {
+    const normalized = jidNormalizedUser(jid) || jid;
+    if (studentsDB[jid]) return studentsDB[jid].phone;
+    if (studentsDB[normalized]) return studentsDB[normalized].phone;
+    for (const [key, data] of Object.entries(studentsDB)) {
+        if (key.includes(jid) || jid.includes(key)) {
+            return data.phone;
+        }
+    }
+    return null;
+}
+
+function getStudentInfo(jid) {
+    const normalized = jidNormalizedUser(jid) || jid;
+    if (studentsDB[jid]) return studentsDB[jid];
+    if (studentsDB[normalized]) return studentsDB[normalized];
+    for (const [key, data] of Object.entries(studentsDB)) {
+        if (key.includes(jid) || jid.includes(key)) {
+            return data;
+        }
+    }
+    return null;
+}
+
+function formatPhoneForDisplay(phone) {
+    if (!phone) return 'Unknown';
+    const clean = phone.replace(/[^0-9]/g, '');
+    if (clean.length === 9) {
+        return `+94 ${clean.substring(0, 3)} ${clean.substring(3, 6)} ${clean.substring(6)}`;
+    }
+    return `+${clean}`;
+}
+
+// ======================================================================
 // 🔄 LAB GROUP SWAP MATCHER (persistent, mutual-swap request matching)
 // ======================================================================
 const SWAP_REQUESTS_FILE = path.join(__dirname, 'swap-requests.json');
@@ -82,6 +173,49 @@ function saveSwapRequests() {
         fs.writeFileSync(SWAP_REQUESTS_FILE, JSON.stringify(swapRequests, null, 2));
     } catch (err) {
         console.error('Error saving swap-requests.json:', err);
+    }
+}
+
+// ======================================================================
+// 🔄 SWAP SYSTEM WITH CONFIRMATION & UNDO (NEW)
+// ======================================================================
+const SWAP_CONFIRMATIONS_FILE = path.join(__dirname, 'swap-confirmations.json');
+const SWAP_UNDO_FILE = path.join(__dirname, 'swap-undo.json');
+
+let pendingConfirmations = {};
+let undoData = {};
+
+try {
+    if (fs.existsSync(SWAP_CONFIRMATIONS_FILE)) {
+        pendingConfirmations = JSON.parse(fs.readFileSync(SWAP_CONFIRMATIONS_FILE, 'utf8'));
+    }
+} catch (err) {
+    console.error('Error loading swap-confirmations.json:', err);
+    pendingConfirmations = {};
+}
+
+try {
+    if (fs.existsSync(SWAP_UNDO_FILE)) {
+        undoData = JSON.parse(fs.readFileSync(SWAP_UNDO_FILE, 'utf8'));
+    }
+} catch (err) {
+    console.error('Error loading swap-undo.json:', err);
+    undoData = {};
+}
+
+function savePendingConfirmations() {
+    try {
+        fs.writeFileSync(SWAP_CONFIRMATIONS_FILE, JSON.stringify(pendingConfirmations, null, 2));
+    } catch (err) {
+        console.error('Error saving swap-confirmations.json:', err);
+    }
+}
+
+function saveUndoData() {
+    try {
+        fs.writeFileSync(SWAP_UNDO_FILE, JSON.stringify(undoData, null, 2));
+    } catch (err) {
+        console.error('Error saving swap-undo.json:', err);
     }
 }
 
@@ -509,95 +643,464 @@ async function connectToWhatsApp() {
                 );
                 return;
             }
-                // 🔄 LAB GROUP SWAP REQUEST (open to ALL students, DM only)
-const swapMatch = rawMessageText.match(/^swap\s*:?\s*(.+?)\s+(?:to|->|dakwa)\s+(.+)$/i);
-if (swapMatch) {
-    const rawFrom = swapMatch[1].trim();
-    const rawTo = swapMatch[2].trim();
-    const normFrom = normalizeGroupLabel(rawFrom);
-    const normTo = normalizeGroupLabel(rawTo);
 
-    if (!normFrom || !normTo) {
-        await sock.sendMessage(sender, { text: `⚠️ Format එක: "swap: 1 to 2" වගේ දෙන්න (current group → ඕන group).` }, { quoted: msg });
-        return;
-    }
+            // ==================================================================
+            // 📝 REGISTER COMMAND (NEW)
+            // ==================================================================
+            if (/^register\s*:?\s*/.test(textLower)) {
+                const parts = rawMessageText.replace(/^register\s*:?\s*/i, '').trim();
+                
+                let name, phone;
+                const commaMatch = parts.match(/^(.+?)\s*[,|]\s*(\d+)$/);
+                if (commaMatch) {
+                    name = commaMatch[1].trim();
+                    phone = commaMatch[2].trim();
+                } else {
+                    const words = parts.split(/\s+/);
+                    const lastWord = words[words.length - 1];
+                    if (lastWord.match(/^[\+\d]{10,15}$/)) {
+                        name = words.slice(0, -1).join(' ');
+                        phone = lastWord;
+                    } else {
+                        await sock.sendMessage(sender, {
+                            text: `⚠️ *Format:*\n\`register: Your Name, 0771234567\``
+                        }, { quoted: msg });
+                        return;
+                    }
+                }
+                
+                const result = registerStudent(sender, name, phone);
+                if (result.success) {
+                    await sock.sendMessage(sender, {
+                        text: `✅ *Registered!*\n👤 ${result.data.name}\n📱 ${formatPhoneForDisplay(result.data.phone)}`
+                    }, { quoted: msg });
+                } else {
+                    await sock.sendMessage(sender, { text: `❌ ${result.error}` }, { quoted: msg });
+                }
+                return;
+            }
 
-    swapRequests[sender] = {
-        fromGroup: normFrom,
-        toGroup: normTo,
-        rawFrom,
-        rawTo,
-        name: msg.pushName || 'Unknown',
-        timestamp: Date.now(),
-        matched: false,
-        matchedWith: null
-    };
+            // ==================================================================
+            // 👤 MY PROFILE (NEW)
+            // ==================================================================
+            if (textLower === 'my profile' || textLower === 'profile') {
+                const info = getStudentInfo(sender);
+                if (info) {
+                    await sock.sendMessage(sender, {
+                        text: `👤 *Your Profile*\nName: ${info.name}\nPhone: ${formatPhoneForDisplay(info.phone)}\nRegistered: ${new Date(info.registeredAt).toLocaleString()}`
+                    }, { quoted: msg });
+                } else {
+                    await sock.sendMessage(sender, {
+                        text: `⚠️ ඔබ තවම register වෙලා නෑ.\nRegister: \`register: Your Name, 0771234567\``
+                    }, { quoted: msg });
+                }
+                return;
+            }
 
-    const matchEntry = Object.entries(swapRequests).find(
-        ([jid, req]) => jid !== sender && !req.matched && req.fromGroup === normTo && req.toGroup === normFrom
-    );
+            // ==================================================================
+            // 📋 LIST STUDENTS (admin only) (NEW)
+            // ==================================================================
+            if (textLower === 'list students' || textLower === 'students') {
+                const isAdmin = isSenderAdmin(sender);
+                if (!isAdmin) {
+                    await sock.sendMessage(sender, { text: "❌ Batch Rep ට විතරයි!" }, { quoted: msg });
+                    return;
+                }
+                const entries = Object.entries(studentsDB);
+                if (entries.length === 0) {
+                    await sock.sendMessage(sender, { text: "📭 Students නෑ." }, { quoted: msg });
+                } else {
+                    const list = entries.map(([jid, data], i) => 
+                        `${i + 1}. ${data.name} - ${formatPhoneForDisplay(data.phone)}`
+                    ).join('\n');
+                    await sock.sendMessage(sender, {
+                        text: `📋 *Registered Students (${entries.length})*\n${list}`
+                    }, { quoted: msg });
+                }
+                return;
+            }
 
-    if (matchEntry) {
-        const [matchedJid, matchedReq] = matchEntry;
-        swapRequests[sender].matched = true;
-        swapRequests[sender].matchedWith = matchedJid;
-        matchedReq.matched = true;
-        matchedReq.matchedWith = sender;
-        saveSwapRequests();
+            // ==================================================================
+            // 👑 ADMIN REGISTER (admin only) (NEW)
+            // ==================================================================
+            if (/^admin register\s*:?\s*/.test(textLower)) {
+                const isAdmin = isSenderAdmin(sender);
+                if (!isAdmin) {
+                    await sock.sendMessage(sender, { text: "❌ Batch Rep ට විතරයි!" }, { quoted: msg });
+                    return;
+                }
+                const parts = rawMessageText.replace(/^admin register\s*:?\s*/i, '').trim();
+                const match = parts.match(/^(.+?)\s*,\s*(.+?)\s*,\s*(\d+)$/);
+                if (!match) {
+                    await sock.sendMessage(sender, {
+                        text: `⚠️ Format: \`admin register: JID, Name, 0771234567\``
+                    }, { quoted: msg });
+                    return;
+                }
+                const targetJid = match[1].trim();
+                const name = match[2].trim();
+                const phone = match[3].trim();
+                const result = registerStudent(targetJid, name, phone);
+                await sock.sendMessage(sender, {
+                    text: result.success ? `✅ Registered ${name}` : `❌ ${result.error}`
+                }, { quoted: msg });
+                return;
+            }
 
-        const myPhone = extractPhoneDisplay(sender);
-        const otherPhone = extractPhoneDisplay(matchedJid);
+            // ==================================================================
+            // ❌ CANCEL SWAP (NEW)
+            // ==================================================================
+            if (textLower === 'cancel swap' || textLower === 'cancel my swap') {
+                if (swapRequests[sender] && !swapRequests[sender].matched) {
+                    const req = swapRequests[sender];
+                    delete swapRequests[sender];
+                    saveSwapRequests();
+                    await sock.sendMessage(sender, {
+                        text: `🗑️ Swap cancelled: ${req.rawFrom} → ${req.rawTo}`
+                    }, { quoted: msg });
+                } else {
+                    await sock.sendMessage(sender, {
+                        text: `⚠️ ඔබට active swap request එකක් නෑ.`
+                    }, { quoted: msg });
+                }
+                return;
+            }
 
-        await sock.sendMessage(
-            sender,
-            { text: `🎉 Match හම්බුනා! *${matchedReq.name}* (${otherPhone}) ට ඔයාට ${matchedReq.rawFrom} → ${matchedReq.rawTo} (opposite direction) swap කරන්න ඕන.\n\nඑයාව contact කරලා, "Lab Group Change Request Form" එකට **එක කෙනෙක් විතරක්** fill කරලා Friday 28 Aug 11:59 AM ට කලින් submit කරන්න! ✅` },
-            { quoted: msg }
-        );
-        await sock.sendMessage(matchedJid, {
-            text: `🎉 Match හම්බුනා! *${swapRequests[sender].name}* (${myPhone}) ට ඔයාට ${rawFrom} → ${rawTo} (opposite direction) swap කරන්න ඕන.\n\nඑයාව contact කරලා, "Lab Group Change Request Form" එකට **එක කෙනෙක් විතරක්** fill කරලා Friday 28 Aug 11:59 AM ට කලින් submit කරන්න! ✅`
-        });
-    } else {
-        saveSwapRequests();
-        await sock.sendMessage(
-            sender,
-            { text: `✅ Request save කළා: Group ${rawFrom} → Group ${rawTo}.\n\nඅනිත් direction එකේ (Group ${rawTo} → Group ${rawFrom}) swap ඕන කෙනෙක් register වුනු ගමන්, ඔයාට automatic ලෙස notify කරන්නම්! 🔔` },
-            { quoted: msg }
-        );
-    }
-    return;
-}
+            // ==================================================================
+            // ✅ YES CONFIRMATION (NEW)
+            // ==================================================================
+            if (textLower === 'yes') {
+                let matchId = null;
+                let pendingMatch = null;
+                for (const [id, data] of Object.entries(pendingConfirmations)) {
+                    if (data.studentA === sender || data.studentB === sender) {
+                        matchId = id;
+                        pendingMatch = data;
+                        break;
+                    }
+                }
+                if (!pendingMatch) {
+                    await sock.sendMessage(sender, { text: `⚠️ Pending confirmation නෑ.` }, { quoted: msg });
+                    return;
+                }
+                if (pendingMatch.confirmed[sender] === true) {
+                    await sock.sendMessage(sender, { text: `✅ ඔබ දැනටමත් confirm කරලා.` }, { quoted: msg });
+                    return;
+                }
 
-// 📋 LIST SWAPS (admin only)
-if (textLower === 'list swaps' || textLower === 'show swaps') {
-    const isAdmin = isSenderAdmin(sender);
-    if (!isAdmin) {
-        await sock.sendMessage(sender, { text: "❌ මචං, මේක බලන්න පුළුවන් Batch Rep ට විතරයි!" }, { quoted: msg });
-        return;
-    }
-    const entries = Object.entries(swapRequests);
-    if (entries.length === 0) {
-        await sock.sendMessage(sender, { text: "📭 දැනට swap requests නෑ." }, { quoted: msg });
-    } else {
-        const list = entries
-            .map(([jid, req], i) => `${i + 1}. ${req.name} (${extractPhoneDisplay(jid)}): ${req.rawFrom} → ${req.rawTo} ${req.matched ? '✅ Matched' : '⏳ Waiting'}`)
-            .join('\n');
-        await sock.sendMessage(sender, { text: `🔄 *Swap Requests (${entries.length})*\n\n${list}` }, { quoted: msg });
-    }
-    return;
-}
+                pendingMatch.confirmed[sender] = true;
+                savePendingConfirmations();
 
-// 🗑️ CLEAR SWAPS (admin only)
-if (textLower === 'clear swaps') {
-    const isAdmin = isSenderAdmin(sender);
-    if (!isAdmin) {
-        await sock.sendMessage(sender, { text: "❌ මචං, මේක කරන්න පුළුවන් Batch Rep ට විතරයි!" }, { quoted: msg });
-        return;
-    }
-    swapRequests = {};
-    saveSwapRequests();
-    await sock.sendMessage(sender, { text: "🗑️ Swap requests ඔක්කොම clear කළා." }, { quoted: msg });
-    return;
-}
+                const bothConfirmed = pendingMatch.confirmed[pendingMatch.studentA] && pendingMatch.confirmed[pendingMatch.studentB];
+
+                if (bothConfirmed) {
+                    const displayPhoneA = formatPhoneForDisplay(pendingMatch.studentAPhone);
+                    const displayPhoneB = formatPhoneForDisplay(pendingMatch.studentBPhone);
+
+                    await sock.sendMessage(pendingMatch.studentA, {
+                        text: `🎉 *SWAP CONFIRMED!*\n👤 ${pendingMatch.studentBName}\n📱 ${displayPhoneB}\n\n📋 Contact them and submit the form by Friday 28 Aug 11:59 AM! ✅`
+                    });
+                    await sock.sendMessage(pendingMatch.studentB, {
+                        text: `🎉 *SWAP CONFIRMED!*\n👤 ${pendingMatch.studentAName}\n📱 ${displayPhoneA}\n\n📋 Contact them and submit the form by Friday 28 Aug 11:59 AM! ✅`
+                    });
+
+                    for (const [jid, req] of Object.entries(swapRequests)) {
+                        if (jid === pendingMatch.studentA || jid === pendingMatch.studentB) {
+                            req.matched = true;
+                            req.matchedWith = jid === pendingMatch.studentA ? pendingMatch.studentB : pendingMatch.studentA;
+                        }
+                    }
+                    saveSwapRequests();
+                    delete pendingConfirmations[matchId];
+                    savePendingConfirmations();
+                } else {
+                    const otherJid = pendingMatch.studentA === sender ? pendingMatch.studentB : pendingMatch.studentA;
+                    const otherName = pendingMatch.studentA === sender ? pendingMatch.studentBName : pendingMatch.studentAName;
+                    await sock.sendMessage(sender, {
+                        text: `✅ You confirmed!\n⏳ Waiting for ${otherName}...`
+                    }, { quoted: msg });
+                    await sock.sendMessage(otherJid, {
+                        text: `🔔 ${pendingMatch.studentA === sender ? pendingMatch.studentAName : pendingMatch.studentBName} confirmed!\nType \`yes\` හෝ \`no\``
+                    }, { quoted: msg });
+                }
+                return;
+            }
+
+            // ==================================================================
+            // ❌ NO CONFIRMATION WITH UNDO (NEW)
+            // ==================================================================
+            if (textLower === 'no') {
+                let matchId = null;
+                let pendingMatch = null;
+                for (const [id, data] of Object.entries(pendingConfirmations)) {
+                    if (data.studentA === sender || data.studentB === sender) {
+                        matchId = id;
+                        pendingMatch = data;
+                        break;
+                    }
+                }
+                if (!pendingMatch) {
+                    await sock.sendMessage(sender, { text: `⚠️ Pending confirmation නෑ.` }, { quoted: msg });
+                    return;
+                }
+                if (pendingMatch.confirmed[sender] === true) {
+                    await sock.sendMessage(sender, { text: `⚠️ ඔබ දැනටමත් confirm කරලා.` }, { quoted: msg });
+                    return;
+                }
+                const otherJid = pendingMatch.studentA === sender ? pendingMatch.studentB : pendingMatch.studentA;
+                const otherName = pendingMatch.studentA === sender ? pendingMatch.studentBName : pendingMatch.studentAName;
+                const myName = pendingMatch.studentA === sender ? pendingMatch.studentAName : pendingMatch.studentBName;
+
+                const undoId = `${sender}_${Date.now()}`;
+                undoData[undoId] = {
+                    matchId: matchId,
+                    studentA: pendingMatch.studentA,
+                    studentB: pendingMatch.studentB,
+                    studentAName: pendingMatch.studentAName,
+                    studentBName: pendingMatch.studentBName,
+                    studentAPhone: pendingMatch.studentAPhone,
+                    studentBPhone: pendingMatch.studentBPhone,
+                    fromGroup: pendingMatch.fromGroup,
+                    toGroup: pendingMatch.toGroup,
+                    timestamp: Date.now(),
+                    expiresAt: Date.now() + (5 * 60 * 1000),
+                    cancelledBy: sender
+                };
+                saveUndoData();
+
+                await sock.sendMessage(sender, {
+                    text: `❌ *Swap Cancelled*\n↩️ Undo available for 5 minutes!\nType \`undo\``
+                }, { quoted: msg });
+                await sock.sendMessage(otherJid, {
+                    text: `❌ *${myName}* cancelled the swap.`
+                }, { quoted: msg });
+
+                delete swapRequests[pendingMatch.studentA];
+                delete swapRequests[pendingMatch.studentB];
+                delete pendingConfirmations[matchId];
+                saveSwapRequests();
+                savePendingConfirmations();
+
+                setTimeout(() => {
+                    if (undoData[undoId]) {
+                        delete undoData[undoId];
+                        saveUndoData();
+                    }
+                }, 5 * 60 * 1000);
+                return;
+            }
+
+            // ==================================================================
+            // ↩️ UNDO (NEW)
+            // ==================================================================
+            if (textLower === 'undo') {
+                let undoId = null;
+                let undoItem = null;
+                for (const [id, data] of Object.entries(undoData)) {
+                    if (data.cancelledBy === sender && data.expiresAt > Date.now()) {
+                        undoId = id;
+                        undoItem = data;
+                        break;
+                    }
+                }
+                if (!undoItem) {
+                    await sock.sendMessage(sender, { text: `⚠️ Undo available නෑ.` }, { quoted: msg });
+                    return;
+                }
+
+                const matchId = undoItem.matchId;
+                const studentA = undoItem.studentA;
+                const studentB = undoItem.studentB;
+
+                swapRequests[studentA] = {
+                    fromGroup: undoItem.fromGroup,
+                    toGroup: undoItem.toGroup,
+                    rawFrom: undoItem.fromGroup,
+                    rawTo: undoItem.toGroup,
+                    name: undoItem.studentAName,
+                    phone: undoItem.studentAPhone,
+                    timestamp: Date.now(),
+                    matched: false,
+                    matchedWith: null
+                };
+                swapRequests[studentB] = {
+                    fromGroup: undoItem.toGroup,
+                    toGroup: undoItem.fromGroup,
+                    rawFrom: undoItem.toGroup,
+                    rawTo: undoItem.fromGroup,
+                    name: undoItem.studentBName,
+                    phone: undoItem.studentBPhone,
+                    timestamp: Date.now(),
+                    matched: false,
+                    matchedWith: null
+                };
+                pendingConfirmations[matchId] = {
+                    studentA: studentA,
+                    studentB: studentB,
+                    studentAName: undoItem.studentAName,
+                    studentBName: undoItem.studentBName,
+                    studentAPhone: undoItem.studentAPhone,
+                    studentBPhone: undoItem.studentBPhone,
+                    fromGroup: undoItem.fromGroup,
+                    toGroup: undoItem.toGroup,
+                    timestamp: Date.now(),
+                    confirmed: { [studentA]: false, [studentB]: false }
+                };
+                delete undoData[undoId];
+                saveSwapRequests();
+                savePendingConfirmations();
+                saveUndoData();
+
+                await sock.sendMessage(sender, {
+                    text: `↩️ *Swap Restored!*\nType \`yes\` හෝ \`no\``
+                }, { quoted: msg });
+                await sock.sendMessage(studentB, {
+                    text: `↩️ *Swap Restored!*\nType \`yes\` හෝ \`no\``
+                }, { quoted: msg });
+                return;
+            }
+
+            // ==================================================================
+            // 🆕 UNDO STATUS (NEW)
+            // ==================================================================
+            if (textLower === 'undo status' || textLower === 'check undo') {
+                let hasUndo = false;
+                for (const [id, data] of Object.entries(undoData)) {
+                    if (data.cancelledBy === sender) {
+                        const remaining = Math.floor((data.expiresAt - Date.now()) / 1000);
+                        if (remaining > 0) {
+                            hasUndo = true;
+                            await sock.sendMessage(sender, {
+                                text: `↩️ *Undo Available*\n⏰ ${Math.floor(remaining / 60)}m ${remaining % 60}s\nType \`undo\``
+                            }, { quoted: msg });
+                            break;
+                        }
+                    }
+                }
+                if (!hasUndo) {
+                    await sock.sendMessage(sender, { text: `ℹ️ Undo available නෑ.` }, { quoted: msg });
+                }
+                return;
+            }
+
+            // ==================================================================
+            // 🔄 LAB GROUP SWAP REQUEST (UPDATED with registration & confirmation)
+            // ==================================================================
+            const swapMatch = rawMessageText.match(/^swap\s*:?\s*(.+?)\s+(?:to|->|dakwa)\s+(.+)$/i);
+            if (swapMatch) {
+                const rawFrom = swapMatch[1].trim();
+                const rawTo = swapMatch[2].trim();
+                const normFrom = normalizeGroupLabel(rawFrom);
+                const normTo = normalizeGroupLabel(rawTo);
+
+                // Check registration
+                const studentInfo = getStudentInfo(sender);
+                if (!studentInfo) {
+                    await sock.sendMessage(sender, {
+                        text: `⚠️ *Register first!*\n\`register: Your Name, 0771234567\``
+                    }, { quoted: msg });
+                    return;
+                }
+
+                if (!normFrom || !normTo) {
+                    await sock.sendMessage(sender, { 
+                        text: `⚠️ Format: "swap: 1 to 2"` 
+                    }, { quoted: msg });
+                    return;
+                }
+
+                // Check pending request
+                if (swapRequests[sender] && !swapRequests[sender].matched) {
+                    await sock.sendMessage(sender, {
+                        text: `⚠️ Pending: ${swapRequests[sender].rawFrom} → ${swapRequests[sender].rawTo}\nCancel: \`cancel swap\``
+                    }, { quoted: msg });
+                    return;
+                }
+
+                swapRequests[sender] = {
+                    fromGroup: normFrom,
+                    toGroup: normTo,
+                    rawFrom: rawFrom,
+                    rawTo: rawTo,
+                    name: studentInfo.name,
+                    phone: studentInfo.phone,
+                    timestamp: Date.now(),
+                    matched: false,
+                    matchedWith: null
+                };
+                saveSwapRequests();
+
+                const matchEntry = Object.entries(swapRequests).find(
+                    ([jid, req]) => 
+                        jid !== sender && 
+                        !req.matched && 
+                        req.fromGroup === normTo && 
+                        req.toGroup === normFrom
+                );
+
+                if (matchEntry) {
+                    const [matchedJid, matchedReq] = matchEntry;
+                    const matchId = `${sender}_${matchedJid}_${Date.now()}`;
+                    
+                    pendingConfirmations[matchId] = {
+                        studentA: sender,
+                        studentB: matchedJid,
+                        studentAName: studentInfo.name,
+                        studentBName: matchedReq.name,
+                        studentAPhone: studentInfo.phone,
+                        studentBPhone: matchedReq.phone,
+                        fromGroup: rawFrom,
+                        toGroup: rawTo,
+                        timestamp: Date.now(),
+                        confirmed: { [sender]: false, [matchedJid]: false }
+                    };
+                    savePendingConfirmations();
+
+                    await sock.sendMessage(sender, {
+                        text: `🎯 *Match Found!*\n👤 ${matchedReq.name}\n📱 ${formatPhoneForDisplay(matchedReq.phone)}\n\n✅ Confirm? Type \`yes\` හෝ \`no\``
+                    }, { quoted: msg });
+                    await sock.sendMessage(matchedJid, {
+                        text: `🎯 *Match Found!*\n👤 ${studentInfo.name}\n📱 ${formatPhoneForDisplay(studentInfo.phone)}\n\n✅ Confirm? Type \`yes\` හෝ \`no\``
+                    }, { quoted: msg });
+                } else {
+                    await sock.sendMessage(sender, {
+                        text: `✅ *Request saved:* ${rawFrom} → ${rawTo}\n🔍 Waiting for match...`
+                    }, { quoted: msg });
+                }
+                return;
+            }
+
+            // 📋 LIST SWAPS (admin only)
+            if (textLower === 'list swaps' || textLower === 'show swaps') {
+                const isAdmin = isSenderAdmin(sender);
+                if (!isAdmin) {
+                    await sock.sendMessage(sender, { text: "❌ මචං, මේක බලන්න පුළුවන් Batch Rep ට විතරයි!" }, { quoted: msg });
+                    return;
+                }
+                const entries = Object.entries(swapRequests);
+                if (entries.length === 0) {
+                    await sock.sendMessage(sender, { text: "📭 දැනට swap requests නෑ." }, { quoted: msg });
+                } else {
+                    const list = entries
+                        .map(([jid, req], i) => `${i + 1}. ${req.name} (${extractPhoneDisplay(jid)}): ${req.rawFrom} → ${req.rawTo} ${req.matched ? '✅ Matched' : '⏳ Waiting'}`)
+                        .join('\n');
+                    await sock.sendMessage(sender, { text: `🔄 *Swap Requests (${entries.length})*\n\n${list}` }, { quoted: msg });
+                }
+                return;
+            }
+
+            // 🗑️ CLEAR SWAPS (admin only)
+            if (textLower === 'clear swaps') {
+                const isAdmin = isSenderAdmin(sender);
+                if (!isAdmin) {
+                    await sock.sendMessage(sender, { text: "❌ මචං, මේක කරන්න පුළුවන් Batch Rep ට විතරයි!" }, { quoted: msg });
+                    return;
+                }
+                swapRequests = {};
+                saveSwapRequests();
+                await sock.sendMessage(sender, { text: "🗑️ Swap requests ඔක්කොම clear කළා." }, { quoted: msg });
+                return;
+            }
             
 
             // 📚 ADD INFO (admin only, DM only): "add info: <text>" wage command
