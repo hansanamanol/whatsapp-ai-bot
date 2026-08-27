@@ -797,4 +797,6 @@ async function connectToWhatsApp() {
                     fromGroup: normFrom,
                     toGroup: normTo,
                     rawFrom: rawFrom,
-                    rawTo:
+                    rawTo: rawTo,
+                    name: studentInfo.name,
+                    phone: studentInfo.phone
