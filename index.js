@@ -21,18 +21,10 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 // 👑 ADMIN / BATCH REP IDENTIFICATION
 const ADMIN_PHONE_NUMBER = "94762513957";
 const ADMIN_LID = "17848192627279";
-
-// "whoami" command eken labena EXACT JID string eka methanata add karanna —
-// self-chat, multi-device, LID mismatch wage cases walata mekamai reliable
-// fix eka. Example: ADMIN_JIDS = ["94762513957@s.whatsapp.net"]
 const ADMIN_JIDS = ["178481912627279@lid"];
 
 // ======================================================================
 // 📚 CUSTOM KNOWLEDGE BASE (persistent, file-backed)
-// Admin (Monal) dena info tika methanata save wenawa (knowledge.json file
-// ekata), server restart unath persist wenawa. Student kenek questions
-// ahuwwama, mek info tika Gemini ta context ekak widiyata dila answer
-// karanna use karanawa.
 // ======================================================================
 const KNOWLEDGE_FILE = path.join(__dirname, 'knowledge.json');
 let knowledgeBase = [];
@@ -54,8 +46,6 @@ function saveKnowledgeBase() {
     }
 }
 
-// Gemini ekata yawana ANY prompt ekakata (text/image/pdf/audio) mek helper
-// eken saved knowledge base eka context widiyata add karanawa.
 function buildPromptWithKnowledge(basePrompt) {
     if (knowledgeBase.length === 0) return basePrompt;
     const knowledgeText = knowledgeBase.map((k, i) => `${i + 1}. ${k}`).join('\n');
@@ -63,18 +53,139 @@ function buildPromptWithKnowledge(basePrompt) {
 }
 
 // ======================================================================
-// 🔄 LAB GROUP SWAP MATCHER (persistent, mutual-swap request matching)
+// 📋 STUDENT REGISTRATION SYSTEM (100% reliable phone numbers)
+// ======================================================================
+const STUDENTS_FILE = path.join(__dirname, 'students.json');
+let studentsDB = {};
+
+try {
+    if (fs.existsSync(STUDENTS_FILE)) {
+        studentsDB = JSON.parse(fs.readFileSync(STUDENTS_FILE, 'utf8'));
+        console.log(`✅ Loaded ${Object.keys(studentsDB).length} registered students`);
+    }
+} catch (err) {
+    console.error('Error loading students.json:', err);
+    studentsDB = {};
+}
+
+function saveStudentsDB() {
+    try {
+        fs.writeFileSync(STUDENTS_FILE, JSON.stringify(studentsDB, null, 2));
+    } catch (err) {
+        console.error('Error saving students.json:', err);
+    }
+}
+
+function registerStudent(jid, name, phone) {
+    const cleanPhone = phone.replace(/[\s\+\-\(\)]/g, '');
+    
+    if (!cleanPhone.match(/^(\+?94|0)?7[0-9]{8}$/)) {
+        return { success: false, error: 'Invalid Sri Lankan phone number. Use format: 0771234567 or +94771234567' };
+    }
+    
+    let normalizedPhone = cleanPhone;
+    if (normalizedPhone.startsWith('94')) {
+        normalizedPhone = normalizedPhone.substring(2);
+    } else if (normalizedPhone.startsWith('0')) {
+        normalizedPhone = normalizedPhone.substring(1);
+    }
+    
+    const existingJid = Object.keys(studentsDB).find(
+        key => studentsDB[key].phone === normalizedPhone && key !== jid
+    );
+    if (existingJid) {
+        return { 
+            success: false, 
+            error: `This phone number is already registered by ${studentsDB[existingJid].name}. Please use a different number.` 
+        };
+    }
+    
+    studentsDB[jid] = {
+        name: name.trim(),
+        phone: normalizedPhone,
+        registeredAt: new Date().toISOString()
+    };
+    saveStudentsDB();
+    
+    return { 
+        success: true, 
+        data: studentsDB[jid] 
+    };
+}
+
+function getStudentPhone(jid) {
+    const normalized = jidNormalizedUser(jid) || jid;
+    
+    if (studentsDB[jid]) return studentsDB[jid].phone;
+    if (studentsDB[normalized]) return studentsDB[normalized].phone;
+    
+    for (const [key, data] of Object.entries(studentsDB)) {
+        if (key.includes(jid) || jid.includes(key)) {
+            return data.phone;
+        }
+    }
+    return null;
+}
+
+function getStudentInfo(jid) {
+    const normalized = jidNormalizedUser(jid) || jid;
+    
+    if (studentsDB[jid]) return studentsDB[jid];
+    if (studentsDB[normalized]) return studentsDB[normalized];
+    
+    for (const [key, data] of Object.entries(studentsDB)) {
+        if (key.includes(jid) || jid.includes(key)) {
+            return data;
+        }
+    }
+    return null;
+}
+
+function formatPhoneForDisplay(phone) {
+    if (!phone) return 'Unknown';
+    const clean = phone.replace(/[^0-9]/g, '');
+    if (clean.length === 9) {
+        return `+94 ${clean.substring(0, 3)} ${clean.substring(3, 6)} ${clean.substring(6)}`;
+    }
+    return `+${clean}`;
+}
+
+// ======================================================================
+// 🔄 SWAP SYSTEM WITH CONFIRMATION & UNDO
 // ======================================================================
 const SWAP_REQUESTS_FILE = path.join(__dirname, 'swap-requests.json');
-let swapRequests = {}; // key: sender JID, value: { fromGroup, toGroup, rawFrom, rawTo, name, timestamp, matched, matchedWith }
+const SWAP_CONFIRMATIONS_FILE = path.join(__dirname, 'swap-confirmations.json');
+const SWAP_UNDO_FILE = path.join(__dirname, 'swap-undo.json');
+
+let swapRequests = {};
+let pendingConfirmations = {};
+let undoData = {};
 
 try {
     if (fs.existsSync(SWAP_REQUESTS_FILE)) {
         swapRequests = JSON.parse(fs.readFileSync(SWAP_REQUESTS_FILE, 'utf8'));
     }
 } catch (err) {
-    console.error('Error loading swap-requests.json, starting empty:', err);
+    console.error('Error loading swap-requests.json:', err);
     swapRequests = {};
+}
+
+try {
+    if (fs.existsSync(SWAP_CONFIRMATIONS_FILE)) {
+        pendingConfirmations = JSON.parse(fs.readFileSync(SWAP_CONFIRMATIONS_FILE, 'utf8'));
+    }
+} catch (err) {
+    console.error('Error loading swap-confirmations.json:', err);
+    pendingConfirmations = {};
+}
+
+try {
+    if (fs.existsSync(SWAP_UNDO_FILE)) {
+        undoData = JSON.parse(fs.readFileSync(SWAP_UNDO_FILE, 'utf8'));
+    }
+} catch (err) {
+    console.error('Error loading swap-undo.json:', err);
+    undoData = {};
 }
 
 function saveSwapRequests() {
@@ -85,27 +196,38 @@ function saveSwapRequests() {
     }
 }
 
+function savePendingConfirmations() {
+    try {
+        fs.writeFileSync(SWAP_CONFIRMATIONS_FILE, JSON.stringify(pendingConfirmations, null, 2));
+    } catch (err) {
+        console.error('Error saving swap-confirmations.json:', err);
+    }
+}
+
+function saveUndoData() {
+    try {
+        fs.writeFileSync(SWAP_UNDO_FILE, JSON.stringify(undoData, null, 2));
+    } catch (err) {
+        console.error('Error saving swap-undo.json:', err);
+    }
+}
+
 function normalizeGroupLabel(raw) {
     return raw.toLowerCase().replace(/group|grp|lab/gi, '').trim();
 }
 
-function extractPhoneDisplay(jid) {
-    const normalized = jidNormalizedUser(jid) || jid;
-    const match = normalized.match(/^(\d+)@/);
-    return match ? `+${match[1]}` : normalized;
+function isSenderAdmin(sender) {
+    const normalized = jidNormalizedUser(sender) || sender;
+    if (ADMIN_JIDS.includes(sender) || ADMIN_JIDS.includes(normalized)) return true;
+    const isPhoneMatch = normalized === `${ADMIN_PHONE_NUMBER}@s.whatsapp.net`;
+    const isLidMatch = ADMIN_LID && (normalized === `${ADMIN_LID}@lid` || sender.includes(ADMIN_LID));
+    return isPhoneMatch || isLidMatch || sender.includes(ADMIN_PHONE_NUMBER);
 }
-
-
 
 // ======================================================================
 // 🧵 CONCURRENCY QUEUE
-// Godak students ekaparata message dammoth, siyaluma Gemini/ffmpeg calls
-// ekawaraama fire wenawa nam, API rate limits වදින්න, ffmpeg processes
-// ගොඩගැහෙන්න, RAM/CPU spike එකකින් bot එක crash වෙන්නත් පුළුවන්.
-// මේ queue එකෙන් එකවර process වෙන message ගණන limit කරනවා (MAX_CONCURRENT),
-// ඉතුරු ඒවා queue එකේ රැඳිලා, එකින් එක slot එකක් available වෙනකොට process වෙනවා.
 // ======================================================================
-const MAX_CONCURRENT = 3; // Test කරලා ඔයාගේ server/API quota එකට ගැලපෙන ලෙස වෙනස් කරන්න
+const MAX_CONCURRENT = 3;
 
 class ConcurrencyQueue {
     constructor(concurrency) {
@@ -114,9 +236,6 @@ class ConcurrencyQueue {
         this.queue = [];
     }
 
-    // onQueued(position) is called ONLY when the task cannot start immediately
-    // (i.e. all MAX_CONCURRENT slots are busy) — position is this task's place
-    // in line (1 = next up). Use it to tell the sender "please wait".
     add(task, onQueued) {
         return new Promise((resolve, reject) => {
             const willWait = this.running >= this.concurrency;
@@ -146,9 +265,6 @@ const messageQueue = new ConcurrencyQueue(MAX_CONCURRENT);
 
 // ======================================================================
 // 🔁 MESSAGE DEDUP
-// Baileys reconnect වෙනකොට sometimes same message event දෙපාරක් fire
-// වෙන්න පුළුවන් (network hiccup, resync). මේ Set එකෙන් message.id track
-// කරලා, දැනටමත් process කරපු message එකක් ආයෙත් process කරන එක නවත්තනවා.
 // ======================================================================
 const processedMessages = new Set();
 const MAX_TRACKED_MESSAGES = 1000;
@@ -162,22 +278,8 @@ function markProcessed(id) {
 }
 
 // ======================================================================
-// 🔒 ADMIN CHECK (safer version)
-// Original code eke `sender.includes(...)` කියන්නේ substring match එකක්.
-// Practically risk අඩුයි, ඒත් jidNormalizedUser() එකෙන් JID එක normalize
-// කරලා exact compare කරන එකයි Baileys ගේ recommended approach එක.
-// ⚠️ Test කරලා බලන්න: ඔයාගේ Baileys version එකේ LID JIDs ලියෙන්නේ
-// "<lid>@lid" විදිහටද කියලා. එහෙම නැත්නම් suffix එක වෙනස් කරන්න.
+// 🚀 EXPRESS WEB SERVER
 // ======================================================================
-function isSenderAdmin(sender) {
-    const normalized = jidNormalizedUser(sender) || sender;
-    if (ADMIN_JIDS.includes(sender) || ADMIN_JIDS.includes(normalized)) return true;
-    const isPhoneMatch = normalized === `${ADMIN_PHONE_NUMBER}@s.whatsapp.net`;
-    const isLidMatch = ADMIN_LID && (normalized === `${ADMIN_LID}@lid` || sender.includes(ADMIN_LID));
-    return isPhoneMatch || isLidMatch || sender.includes(ADMIN_PHONE_NUMBER);
-}
-
-// Express Web Server Setup
 const app = express();
 const PORT = process.env.PORT || 3000;
 let latestQR = "";
@@ -213,7 +315,9 @@ app.listen(PORT, () => {
     console.log(`Web server running on port ${PORT}`);
 });
 
-// Gemini API Setup
+// ======================================================================
+// 🤖 GEMINI API SETUP
+// ======================================================================
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 if (!GEMINI_API_KEY) {
     console.error('❌ GEMINI_API_KEY environment variable eka set karala nathnam bot ekata Gemini call ganna barinawa. Process eka nawaththanawa.');
@@ -286,9 +390,9 @@ const model = genAI.getGenerativeModel({
     systemInstruction: systemInstruction
 });
 
-// convertAudioToWav actually converts to mp3 (kept name for compatibility with earlier code).
-// Uses crypto.randomUUID() now instead of Date.now() so two students sending voice notes
-// at the exact same millisecond never collide on the same temp filename.
+// ======================================================================
+// 🎵 AUDIO CONVERSION
+// ======================================================================
 function convertAudioToWav(inputBuffer) {
     return new Promise((resolve, reject) => {
         const uniqueId = crypto.randomUUID();
@@ -318,6 +422,9 @@ function convertAudioToWav(inputBuffer) {
     });
 }
 
+// ======================================================================
+// 💬 MAIN MESSAGE PROCESSING
+// ======================================================================
 async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
 
@@ -356,18 +463,13 @@ async function connectToWhatsApp() {
         }
     });
 
-    // ------------------------------------------------------------------
-    // 🧠 Actual per-message processing logic (unchanged behaviour),
-    // now wrapped as a standalone function so it can be handed to the
-    // concurrency queue instead of running unbounded in a tight loop.
-    // ------------------------------------------------------------------
+    // ======================================================================
+    // 📩 PROCESS MESSAGE FUNCTION
+    // ======================================================================
     async function processMessage(sock, msg) {
         const sender = msg.key.remoteJid;
         const isGroup = sender.endsWith('@g.us');
 
-        // Bot eka DM Q&A witharayi wada karanne — group message ekakata
-        // kisisethakma respond wenne na (announcement/general group check
-        // ain kara, siyalu groups ma skip wenawa).
         if (isGroup) return;
 
         await sock.readMessages([msg.key]);
@@ -404,6 +506,9 @@ async function connectToWhatsApp() {
             fullUserPrompt = `[Quoted/Referenced Text: "${quotedText}"]\nUser Action Requested: "${rawMessageText}"`;
         }
 
+        // ======================================================================
+        // 🎵 AUDIO MESSAGE HANDLING
+        // ======================================================================
         if (audioMsg) {
             try {
                 await sock.sendMessage(sender, { text: "🎙️ **Voice Note එක Process වෙමින් පවතියි...**" }, { quoted: msg });
@@ -422,8 +527,10 @@ async function connectToWhatsApp() {
             return;
         }
 
+        // ======================================================================
+        // 📄 PDF DOCUMENT HANDLING
+        // ======================================================================
         if (docMsg) {
-            // 🔍 Normal PDF analysis (Gemini reads/explains the PDF)
             try {
                 const mimeType = docMsg?.mimetype || '';
                 if (mimeType === 'application/pdf') {
@@ -444,8 +551,10 @@ async function connectToWhatsApp() {
             return;
         }
 
+        // ======================================================================
+        // 🖼️ IMAGE HANDLING
+        // ======================================================================
         if (imgMsg) {
-            // 🔍 Normal image analysis (Gemini reads/explains the image)
             try {
                 await sock.sendMessage(sender, { text: "⏳ **Image එක Processing...**" }, { quoted: msg });
                 const buffer = await downloadMediaMessage(msg, 'buffer', {});
@@ -464,12 +573,15 @@ async function connectToWhatsApp() {
             return;
         }
 
+        // ======================================================================
+        // 💬 TEXT MESSAGE HANDLING
+        // ======================================================================
         if (!isGroup) {
             const textLower = rawMessageText.toLowerCase().trim();
 
-            // 👋 FRIENDLY IDENTITY CHECK: "who am i" / "man kauda" wage
-            // natural language ekakin ahuwwama, technical JID ekak nathuwa,
-            // "ඔයා Batch Rep" kiyala friendly confirmation ekak denawa.
+            // ==================================================================
+            // 👋 IDENTITY CHECK
+            // ==================================================================
             const isWhoAmIQuestion = /\bwho\s*am\s*i\b/i.test(textLower)
                 || textLower.includes('man kauda') || textLower.includes('mn kauda') || textLower.includes('mama kauda')
                 || rawMessageText.includes('මං කවුද') || rawMessageText.includes('මම කවුද');
@@ -492,10 +604,9 @@ async function connectToWhatsApp() {
                 return;
             }
             
-            // 🆔 SELF-DIAGNOSTIC: "whoami" type kalata, ohage exact JID eka
-            // (raw + normalized) reply karanawa. Admin check eka pass wenne
-            // nathnam, mekedi labena JID eka copy karala ADMIN_JIDS array
-            // ekata danna — eka thamai ekma-100%-wada karana fix eka.
+            // ==================================================================
+            // 🆔 WHOAMI
+            // ==================================================================
             if (textLower === 'whoami' || textLower === 'my id' || textLower === 'myid') {
                 const normalized = jidNormalizedUser(sender) || sender;
                 await sock.sendMessage(
@@ -505,197 +616,185 @@ async function connectToWhatsApp() {
                 );
                 return;
             }
-                // 🔄 LAB GROUP SWAP REQUEST (open to ALL students, DM only)
-const swapMatch = rawMessageText.match(/^swap\s*:?\s*(.+?)\s+(?:to|->|dakwa)\s+(.+)$/i);
-if (swapMatch) {
-    const rawFrom = swapMatch[1].trim();
-    const rawTo = swapMatch[2].trim();
-    const normFrom = normalizeGroupLabel(rawFrom);
-    const normTo = normalizeGroupLabel(rawTo);
 
-    if (!normFrom || !normTo) {
-        await sock.sendMessage(sender, { text: `⚠️ Format එක: "swap: 1 to 2" වගේ දෙන්න (current group → ඕන group).` }, { quoted: msg });
-        return;
-    }
-
-    swapRequests[sender] = {
-        fromGroup: normFrom,
-        toGroup: normTo,
-        rawFrom,
-        rawTo,
-        name: msg.pushName || 'Unknown',
-        timestamp: Date.now(),
-        matched: false,
-        matchedWith: null
-    };
-
-    const matchEntry = Object.entries(swapRequests).find(
-        ([jid, req]) => jid !== sender && !req.matched && req.fromGroup === normTo && req.toGroup === normFrom
-    );
-
-    if (matchEntry) {
-        const [matchedJid, matchedReq] = matchEntry;
-        swapRequests[sender].matched = true;
-        swapRequests[sender].matchedWith = matchedJid;
-        matchedReq.matched = true;
-        matchedReq.matchedWith = sender;
-        saveSwapRequests();
-
-        const myPhone = extractPhoneDisplay(sender);
-        const otherPhone = extractPhoneDisplay(matchedJid);
-
-        await sock.sendMessage(
-            sender,
-            { text: `🎉 Match හම්බුනා! *${matchedReq.name}* (${otherPhone}) ට ඔයාට ${matchedReq.rawFrom} → ${matchedReq.rawTo} (opposite direction) swap කරන්න ඕන.\n\nඑයාව contact කරලා, "Lab Group Change Request Form" එකට **එක කෙනෙක් විතරක්** fill කරලා Friday 28 Aug 11:59 AM ට කලින් submit කරන්න! ✅` },
-            { quoted: msg }
-        );
-        await sock.sendMessage(matchedJid, {
-            text: `🎉 Match හම්බුනා! *${swapRequests[sender].name}* (${myPhone}) ට ඔයාට ${rawFrom} → ${rawTo} (opposite direction) swap කරන්න ඕන.\n\nඑයාව contact කරලා, "Lab Group Change Request Form" එකට **එක කෙනෙක් විතරක්** fill කරලා Friday 28 Aug 11:59 AM ට කලින් submit කරන්න! ✅`
-        });
-    } else {
-        saveSwapRequests();
-        await sock.sendMessage(
-            sender,
-            { text: `✅ Request save කළා: Group ${rawFrom} → Group ${rawTo}.\n\nඅනිත් direction එකේ (Group ${rawTo} → Group ${rawFrom}) swap ඕන කෙනෙක් register වුනු ගමන්, ඔයාට automatic ලෙස notify කරන්නම්! 🔔` },
-            { quoted: msg }
-        );
-    }
-    return;
-}
-
-// 📋 LIST SWAPS (admin only)
-if (textLower === 'list swaps' || textLower === 'show swaps') {
-    const isAdmin = isSenderAdmin(sender);
-    if (!isAdmin) {
-        await sock.sendMessage(sender, { text: "❌ මචං, මේක බලන්න පුළුවන් Batch Rep ට විතරයි!" }, { quoted: msg });
-        return;
-    }
-    const entries = Object.entries(swapRequests);
-    if (entries.length === 0) {
-        await sock.sendMessage(sender, { text: "📭 දැනට swap requests නෑ." }, { quoted: msg });
-    } else {
-        const list = entries
-            .map(([jid, req], i) => `${i + 1}. ${req.name} (${extractPhoneDisplay(jid)}): ${req.rawFrom} → ${req.rawTo} ${req.matched ? '✅ Matched' : '⏳ Waiting'}`)
-            .join('\n');
-        await sock.sendMessage(sender, { text: `🔄 *Swap Requests (${entries.length})*\n\n${list}` }, { quoted: msg });
-    }
-    return;
-}
-
-// 🗑️ CLEAR SWAPS (admin only)
-if (textLower === 'clear swaps') {
-    const isAdmin = isSenderAdmin(sender);
-    if (!isAdmin) {
-        await sock.sendMessage(sender, { text: "❌ මචං, මේක කරන්න පුළුවන් Batch Rep ට විතරයි!" }, { quoted: msg });
-        return;
-    }
-    swapRequests = {};
-    saveSwapRequests();
-    await sock.sendMessage(sender, { text: "🗑️ Swap requests ඔක්කොම clear කළා." }, { quoted: msg });
-    return;
-}
-            
-
-            // 📚 ADD INFO (admin only, DM only): "add info: <text>" wage command
-            // ekakin, Monal denna info eka knowledge.json ekata permanently save
-            // wenawa. Students ahuwwama, mek info eka Gemini ta context ekak
-            // widiyata dila answer karanna use karanawa (buildPromptWithKnowledge).
-            if (/^(add info|info add|save info)\b/i.test(textLower)) {
-                const isAdmin = isSenderAdmin(sender);
-                if (!isAdmin) {
-                    await sock.sendMessage(sender, { text: "❌ මචං, Info Add කරන්න පුළුවන් Batch Rep (Monal) ට විතරයි!" }, { quoted: msg });
-                    return;
-                }
-                const infoText = rawMessageText.replace(/^(add info|info add|save info)\s*:?\s*/i, '').trim();
-                if (!infoText) {
-                    await sock.sendMessage(sender, { text: `⚠️ මචං, info text එකත් එක්කම type කරන්න — e.g.\n"add info: Mid exam eka postpone una, aluth date eka Sept 15"` }, { quoted: msg });
-                    return;
-                }
-                knowledgeBase.push(infoText);
-                saveKnowledgeBase();
-                await sock.sendMessage(sender, { text: `✅ Info එක save කළා! (Total: ${knowledgeBase.length})\n\nදැන් students ඇහුවොත් bot එකෙන් මේක use කරලා answer කරයි.` }, { quoted: msg });
-                return;
-            }
-
-            // 📋 LIST INFO (admin only) — saved info tika review karanna
-            if (textLower === 'list info' || textLower === 'show info') {
-                const isAdmin = isSenderAdmin(sender);
-                if (!isAdmin) {
-                    await sock.sendMessage(sender, { text: "❌ මචං, මේක බලන්න පුළුවන් Batch Rep ට විතරයි!" }, { quoted: msg });
-                    return;
-                }
-                if (knowledgeBase.length === 0) {
-                    await sock.sendMessage(sender, { text: "📭 දැනට info මොකවත් save කරලා නෑ." }, { quoted: msg });
+            // ==================================================================
+            // 📝 REGISTER COMMAND
+            // ==================================================================
+            if (/^register\s*:?\s*/.test(textLower)) {
+                const parts = rawMessageText.replace(/^register\s*:?\s*/i, '').trim();
+                
+                let name, phone;
+                const commaMatch = parts.match(/^(.+?)\s*[,|]\s*(\d+)$/);
+                if (commaMatch) {
+                    name = commaMatch[1].trim();
+                    phone = commaMatch[2].trim();
                 } else {
-                    const list = knowledgeBase.map((k, i) => `${i + 1}. ${k}`).join('\n\n');
-                    await sock.sendMessage(sender, { text: `📚 *Saved Info (${knowledgeBase.length})*\n\n${list}` }, { quoted: msg });
-                }
-                return;
-            }
-
-            // 🗑️ REMOVE INFO (admin only) — "remove info 2" wage number ekakin
-            if (/^remove info\s+\d+/i.test(textLower)) {
-                const isAdmin = isSenderAdmin(sender);
-                if (!isAdmin) {
-                    await sock.sendMessage(sender, { text: "❌ මචං, මේක කරන්න පුළුවන් Batch Rep ට විතරයි!" }, { quoted: msg });
-                    return;
-                }
-                const idx = parseInt(textLower.replace(/^remove info\s+/i, ''), 10) - 1;
-                if (isNaN(idx) || idx < 0 || idx >= knowledgeBase.length) {
-                    await sock.sendMessage(sender, { text: "⚠️ Number එක වැරදියි. 'list info' කියලා type කරලා number එක check කරන්න." }, { quoted: msg });
-                    return;
-                }
-                const removed = knowledgeBase.splice(idx, 1);
-                saveKnowledgeBase();
-                await sock.sendMessage(sender, { text: `🗑️ ඉවත් කළා: "${removed[0]}"` }, { quoted: msg });
-                return;
-            }
-
-            if (rawMessageText) {
-                try {
-                    const result = await model.generateContent(buildPromptWithKnowledge(fullUserPrompt));
-                    const replyText = result.response.text();
-                    await sock.sendMessage(sender, { text: replyText }, { quoted: msg });
-                } catch (error) {
-                    console.error('Error generating AI response:', error);
-                }
-            }
-        }
-    }
-
-    sock.ev.on('messages.upsert', async ({ messages, type }) => {
-        if (type !== 'notify') return;
-
-        for (const msg of messages) {
-            if (!msg.message || msg.key.fromMe) continue;
-
-            // Dedup: monawahari duplicate event ekak nam skip karanawa
-            if (processedMessages.has(msg.key.id)) continue;
-            markProcessed(msg.key.id);
-
-            // Godak students ekaparata message dammoth, wada eka queue ekakata
-            // dala, MAX_CONCURRENT ekata adu wenna process karanawa.
-            // Ekak fail unath anith messages wala processing eka nawathinne na.
-            // Kenek ge message eka anith kenage nisa waiting nam, ohata
-            // "please wait" notice ekak yawanawa (once, queue eke welawe witharai).
-            messageQueue.add(
-                () => processMessage(sock, msg),
-                async (position) => {
-                    try {
-                        await sock.sendMessage(
-                            msg.key.remoteJid,
-                            { text: `⏳ මචං, ටිකක් ඉන්න! දැනට කලින් message(s) ටිකක් process වෙමින් තියෙනවා (queue: ${position}). ඉක්මනටම reply කරන්නම්! 🙏` },
-                            { quoted: msg }
-                        );
-                    } catch (e) {
-                        console.error('Failed to send queued notice:', e);
+                    const words = parts.split(/\s+/);
+                    const lastWord = words[words.length - 1];
+                    if (lastWord.match(/^[\+\d]{10,15}$/)) {
+                        name = words.slice(0, -1).join(' ');
+                        phone = lastWord;
+                    } else {
+                        await sock.sendMessage(sender, {
+                            text: `⚠️ *Format එක හරියට දෙන්න:*\n\n` +
+                                  `\`register: Your Name, 0771234567\`\n` +
+                                  `\`register Your Name 0771234567\`\n\n` +
+                                  `📱 Example: \`register Kasun Perera, 0762513957\``
+                        }, { quoted: msg });
+                        return;
                     }
                 }
-            ).catch((err) => {
-                console.error('Queued message processing failed:', err);
-            });
-        }
-    });
-}
+                
+                const result = registerStudent(sender, name, phone);
+                
+                if (result.success) {
+                    const displayPhone = formatPhoneForDisplay(result.data.phone);
+                    await sock.sendMessage(sender, {
+                        text: `✅ *Registration Successful!*\n\n` +
+                              `👤 Name: ${result.data.name}\n` +
+                              `📱 Phone: ${displayPhone}\n\n` +
+                              `🔄 දැන් ඔබගේ real phone number එක swap matches වලට use වෙයි!`
+                    }, { quoted: msg });
+                } else {
+                    await sock.sendMessage(sender, {
+                        text: `❌ ${result.error}`
+                    }, { quoted: msg });
+                }
+                return;
+            }
 
-connectToWhatsApp();
+            // ==================================================================
+            // 👤 MY PROFILE
+            // ==================================================================
+            if (textLower === 'my profile' || textLower === 'profile') {
+                const info = getStudentInfo(sender);
+                if (info) {
+                    const displayPhone = formatPhoneForDisplay(info.phone);
+                    await sock.sendMessage(sender, {
+                        text: `👤 *Your Profile*\n\n` +
+                              `Name: ${info.name}\n` +
+                              `Phone: ${displayPhone}\n` +
+                              `Registered: ${new Date(info.registeredAt).toLocaleString()}\n\n` +
+                              `📝 To update: \`register: New Name, 0771234567\``
+                    }, { quoted: msg });
+                } else {
+                    await sock.sendMessage(sender, {
+                        text: `⚠️ ඔබ තවම register වෙලා නෑ.\n\n` +
+                              `Register වෙන්න: \`register: Your Name, 0771234567\``
+                    }, { quoted: msg });
+                }
+                return;
+            }
+
+            // ==================================================================
+            // 📋 LIST STUDENTS (admin only)
+            // ==================================================================
+            if (textLower === 'list students' || textLower === 'students') {
+                const isAdmin = isSenderAdmin(sender);
+                if (!isAdmin) {
+                    await sock.sendMessage(sender, { 
+                        text: "❌ මේක බලන්න පුළුවන් Batch Rep ට විතරයි!" 
+                    }, { quoted: msg });
+                    return;
+                }
+                
+                const entries = Object.entries(studentsDB);
+                if (entries.length === 0) {
+                    await sock.sendMessage(sender, { 
+                        text: "📭 තවම student කෙනෙක් register වෙලා නෑ." 
+                    }, { quoted: msg });
+                } else {
+                    const list = entries.map(([jid, data], i) => 
+                        `${i + 1}. ${data.name} - ${formatPhoneForDisplay(data.phone)}`
+                    ).join('\n');
+                    await sock.sendMessage(sender, {
+                        text: `📋 *Registered Students (${entries.length})*\n\n${list}`
+                    }, { quoted: msg });
+                }
+                return;
+            }
+
+            // ==================================================================
+            // 👑 ADMIN REGISTER (admin only)
+            // ==================================================================
+            if (/^admin register\s*:?\s*/.test(textLower)) {
+                const isAdmin = isSenderAdmin(sender);
+                if (!isAdmin) {
+                    await sock.sendMessage(sender, { 
+                        text: "❌ මේක කරන්න පුළුවන් Batch Rep ට විතරයි!" 
+                    }, { quoted: msg });
+                    return;
+                }
+                
+                const parts = rawMessageText.replace(/^admin register\s*:?\s*/i, '').trim();
+                const match = parts.match(/^(.+?)\s*,\s*(.+?)\s*,\s*(\d+)$/);
+                
+                if (!match) {
+                    await sock.sendMessage(sender, {
+                        text: `⚠️ Format: \`admin register: JID, Name, 0771234567\``
+                    }, { quoted: msg });
+                    return;
+                }
+                
+                const targetJid = match[1].trim();
+                const name = match[2].trim();
+                const phone = match[3].trim();
+                
+                const result = registerStudent(targetJid, name, phone);
+                if (result.success) {
+                    await sock.sendMessage(sender, {
+                        text: `✅ Admin registration successful for ${name}`
+                    }, { quoted: msg });
+                } else {
+                    await sock.sendMessage(sender, {
+                        text: `❌ ${result.error}`
+                    }, { quoted: msg });
+                }
+                return;
+            }
+
+            // ==================================================================
+            // 🔄 SWAP REQUEST
+            // ==================================================================
+            const swapMatch = rawMessageText.match(/^swap\s*:?\s*(.+?)\s+(?:to|->|dakwa)\s+(.+)$/i);
+            if (swapMatch) {
+                const rawFrom = swapMatch[1].trim();
+                const rawTo = swapMatch[2].trim();
+                const normFrom = normalizeGroupLabel(rawFrom);
+                const normTo = normalizeGroupLabel(rawTo);
+
+                // Check registration
+                const studentInfo = getStudentInfo(sender);
+                if (!studentInfo) {
+                    await sock.sendMessage(sender, {
+                        text: `⚠️ *ඔයා තවම register වෙලා නෑ!*\n\n` +
+                              `🙏 කරුණාකරලා මුලින්ම register වෙන්න:\n` +
+                              `\`register: Your Full Name, 0771234567\`\n\n` +
+                              `📝 Example: \`register: Kasun Perera, 0762513957\`\n\n` +
+                              `ඊට පස්සේ නැවත swap request එක කරන්න.`
+                    }, { quoted: msg });
+                    return;
+                }
+
+                if (!normFrom || !normTo) {
+                    await sock.sendMessage(sender, {
+                        text: `⚠️ Format එක: "swap: 1 to 2" වගේ දෙන්න (current group → ඕන group).`
+                    }, { quoted: msg });
+                    return;
+                }
+
+                // Check if user already has a pending request
+                if (swapRequests[sender] && !swapRequests[sender].matched) {
+                    await sock.sendMessage(sender, {
+                        text: `⚠️ ඔබට දැනටමත් pending swap request එකක් තියෙනවා: ${swapRequests[sender].rawFrom} → ${swapRequests[sender].rawTo}\n\n` +
+                              `Cancel කරන්න: \`cancel swap\``
+                    }, { quoted: msg });
+                    return;
+                }
+
+                // Save the request
+                swapRequests[sender] = {
+                    fromGroup: normFrom,
+                    toGroup: normTo,
+                    rawFrom: rawFrom,
+                    rawTo:
