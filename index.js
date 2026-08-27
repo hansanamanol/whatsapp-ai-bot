@@ -63,6 +63,41 @@ function buildPromptWithKnowledge(basePrompt) {
 }
 
 // ======================================================================
+// 🔄 LAB GROUP SWAP MATCHER (persistent, mutual-swap request matching)
+// ======================================================================
+const SWAP_REQUESTS_FILE = path.join(__dirname, 'swap-requests.json');
+let swapRequests = {}; // key: sender JID, value: { fromGroup, toGroup, rawFrom, rawTo, name, timestamp, matched, matchedWith }
+
+try {
+    if (fs.existsSync(SWAP_REQUESTS_FILE)) {
+        swapRequests = JSON.parse(fs.readFileSync(SWAP_REQUESTS_FILE, 'utf8'));
+    }
+} catch (err) {
+    console.error('Error loading swap-requests.json, starting empty:', err);
+    swapRequests = {};
+}
+
+function saveSwapRequests() {
+    try {
+        fs.writeFileSync(SWAP_REQUESTS_FILE, JSON.stringify(swapRequests, null, 2));
+    } catch (err) {
+        console.error('Error saving swap-requests.json:', err);
+    }
+}
+
+function normalizeGroupLabel(raw) {
+    return raw.toLowerCase().replace(/group|grp|lab/gi, '').trim();
+}
+
+function extractPhoneDisplay(jid) {
+    const normalized = jidNormalizedUser(jid) || jid;
+    const match = normalized.match(/^(\d+)@/);
+    return match ? `+${match[1]}` : normalized;
+}
+
+
+
+// ======================================================================
 // 🧵 CONCURRENCY QUEUE
 // Godak students ekaparata message dammoth, siyaluma Gemini/ffmpeg calls
 // ekawaraama fire wenawa nam, API rate limits වදින්න, ffmpeg processes
@@ -456,7 +491,7 @@ async function connectToWhatsApp() {
                 }
                 return;
             }
-
+            
             // 🆔 SELF-DIAGNOSTIC: "whoami" type kalata, ohage exact JID eka
             // (raw + normalized) reply karanawa. Admin check eka pass wenne
             // nathnam, mekedi labena JID eka copy karala ADMIN_JIDS array
@@ -470,6 +505,96 @@ async function connectToWhatsApp() {
                 );
                 return;
             }
+                // 🔄 LAB GROUP SWAP REQUEST (open to ALL students, DM only)
+const swapMatch = rawMessageText.match(/^swap\s*:?\s*(.+?)\s+(?:to|->|dakwa)\s+(.+)$/i);
+if (swapMatch) {
+    const rawFrom = swapMatch[1].trim();
+    const rawTo = swapMatch[2].trim();
+    const normFrom = normalizeGroupLabel(rawFrom);
+    const normTo = normalizeGroupLabel(rawTo);
+
+    if (!normFrom || !normTo) {
+        await sock.sendMessage(sender, { text: `⚠️ Format එක: "swap: 1 to 2" වගේ දෙන්න (current group → ඕන group).` }, { quoted: msg });
+        return;
+    }
+
+    swapRequests[sender] = {
+        fromGroup: normFrom,
+        toGroup: normTo,
+        rawFrom,
+        rawTo,
+        name: msg.pushName || 'Unknown',
+        timestamp: Date.now(),
+        matched: false,
+        matchedWith: null
+    };
+
+    const matchEntry = Object.entries(swapRequests).find(
+        ([jid, req]) => jid !== sender && !req.matched && req.fromGroup === normTo && req.toGroup === normFrom
+    );
+
+    if (matchEntry) {
+        const [matchedJid, matchedReq] = matchEntry;
+        swapRequests[sender].matched = true;
+        swapRequests[sender].matchedWith = matchedJid;
+        matchedReq.matched = true;
+        matchedReq.matchedWith = sender;
+        saveSwapRequests();
+
+        const myPhone = extractPhoneDisplay(sender);
+        const otherPhone = extractPhoneDisplay(matchedJid);
+
+        await sock.sendMessage(
+            sender,
+            { text: `🎉 Match හම්බුනා! *${matchedReq.name}* (${otherPhone}) ට ඔයාට ${matchedReq.rawFrom} → ${matchedReq.rawTo} (opposite direction) swap කරන්න ඕන.\n\nඑයාව contact කරලා, "Lab Group Change Request Form" එකට **එක කෙනෙක් විතරක්** fill කරලා Friday 28 Aug 11:59 AM ට කලින් submit කරන්න! ✅` },
+            { quoted: msg }
+        );
+        await sock.sendMessage(matchedJid, {
+            text: `🎉 Match හම්බුනා! *${swapRequests[sender].name}* (${myPhone}) ට ඔයාට ${rawFrom} → ${rawTo} (opposite direction) swap කරන්න ඕන.\n\nඑයාව contact කරලා, "Lab Group Change Request Form" එකට **එක කෙනෙක් විතරක්** fill කරලා Friday 28 Aug 11:59 AM ට කලින් submit කරන්න! ✅`
+        });
+    } else {
+        saveSwapRequests();
+        await sock.sendMessage(
+            sender,
+            { text: `✅ Request save කළා: Group ${rawFrom} → Group ${rawTo}.\n\nඅනිත් direction එකේ (Group ${rawTo} → Group ${rawFrom}) swap ඕන කෙනෙක් register වුනු ගමන්, ඔයාට automatic ලෙස notify කරන්නම්! 🔔` },
+            { quoted: msg }
+        );
+    }
+    return;
+}
+
+// 📋 LIST SWAPS (admin only)
+if (textLower === 'list swaps' || textLower === 'show swaps') {
+    const isAdmin = isSenderAdmin(sender);
+    if (!isAdmin) {
+        await sock.sendMessage(sender, { text: "❌ මචං, මේක බලන්න පුළුවන් Batch Rep ට විතරයි!" }, { quoted: msg });
+        return;
+    }
+    const entries = Object.entries(swapRequests);
+    if (entries.length === 0) {
+        await sock.sendMessage(sender, { text: "📭 දැනට swap requests නෑ." }, { quoted: msg });
+    } else {
+        const list = entries
+            .map(([jid, req], i) => `${i + 1}. ${req.name} (${extractPhoneDisplay(jid)}): ${req.rawFrom} → ${req.rawTo} ${req.matched ? '✅ Matched' : '⏳ Waiting'}`)
+            .join('\n');
+        await sock.sendMessage(sender, { text: `🔄 *Swap Requests (${entries.length})*\n\n${list}` }, { quoted: msg });
+    }
+    return;
+}
+
+// 🗑️ CLEAR SWAPS (admin only)
+if (textLower === 'clear swaps') {
+    const isAdmin = isSenderAdmin(sender);
+    if (!isAdmin) {
+        await sock.sendMessage(sender, { text: "❌ මචං, මේක කරන්න පුළුවන් Batch Rep ට විතරයි!" }, { quoted: msg });
+        return;
+    }
+    swapRequests = {};
+    saveSwapRequests();
+    await sock.sendMessage(sender, { text: "🗑️ Swap requests ඔක්කොම clear කළා." }, { quoted: msg });
+    return;
+}
+            
 
             // 📚 ADD INFO (admin only, DM only): "add info: <text>" wage command
             // ekakin, Monal denna info eka knowledge.json ekata permanently save
