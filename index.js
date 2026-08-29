@@ -467,7 +467,12 @@ async function connectToWhatsApp() {
         });
 
         async function processMessage(sock, msg) {
-            const sender = msg.key.remoteJid;
+             console.log('📩 [DEBUG] Message arrived!');
+            console.log('📩 JID:', msg.key.remoteJid);
+            console.log('📩 Is Group:', msg.key.remoteJid?.endsWith('@g.us'));
+            console.log('📩 Message Type:', Object.keys(msg.message || {}))
+            
+             const sender = msg.key.remoteJid;
             const isGroup = sender.endsWith('@g.us');
 
             if (isGroup) return;
@@ -938,9 +943,13 @@ https://calendar.google.com/calendar/u/0?cid=Y2EwYjM4ZDE3MjcyOTIzMTY1N2FiZmMzNGY
         }
 
         sock.ev.on('messages.upsert', async ({ messages, type }) => {
+            console.log('📨 messages.upsert triggered! Type:', type);
             if (type !== 'notify') return;
             for (const msg of messages) {
                 if (!msg.message || msg.key.fromMe) continue;
+                // 🟢 මෙතනට Add කරන්න!
+                console.log('🟢 Processing message ID:', msg.key.id)
+                
                 if (processedMessages.has(msg.key.id)) continue;
                 markProcessed(msg.key.id);
                 messageQueue.add(
