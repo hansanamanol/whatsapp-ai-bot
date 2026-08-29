@@ -467,15 +467,17 @@ async function connectToWhatsApp() {
         });
 
         async function processMessage(sock, msg) {
-             console.log('📩 [DEBUG] Message arrived!');
-            console.log('📩 JID:', msg.key.remoteJid);
-            console.log('📩 Is Group:', msg.key.remoteJid?.endsWith('@g.us'));
-            console.log('📩 Message Type:', Object.keys(msg.message || {}))
-            
-             const sender = msg.key.remoteJid;
-            const isGroup = sender.endsWith('@g.us');
+            console.log('📩 [DEBUG] processMessage START');
 
-            if (isGroup) return;
+            const sender = msg.key.remoteJid;
+            const isGroup = sender.endsWith('@g.us');
+            console.log('📩 [DEBUG] Sender:', sender);
+            console.log('📩 [DEBUG] Is Group:', isGroup);
+
+            if (isGroup) {
+                console.log('⏭️ [DEBUG] Skipping - Group message');
+                return;
+            }
 
             await sock.readMessages([msg.key]);
             await sock.sendPresenceUpdate('composing', sender);
@@ -506,15 +508,19 @@ async function connectToWhatsApp() {
                                    imgMsg?.caption ||
                                    docMsg?.caption || "";
 
+            console.log('📝 [DEBUG] rawMessageText:', rawMessageText);
+
             let fullUserPrompt = rawMessageText;
             if (quotedText) {
                 fullUserPrompt = `[Quoted/Referenced Text: "${quotedText}"]\nUser Action Requested: "${rawMessageText}"`;
+                console.log('📝 [DEBUG] fullUserPrompt (with quoted):', fullUserPrompt);
             }
 
             // ======================================================================
             // AUDIO
             // ======================================================================
             if (audioMsg) {
+                console.log('🎵 [DEBUG] Audio message detected');
                 try {
                     await sock.sendMessage(sender, { text: "🎙️ **Voice Note Process වෙමින්...**" }, { quoted: msg });
                     const oggBuffer = await downloadMediaMessage(msg, 'buffer', {});
@@ -525,6 +531,7 @@ async function connectToWhatsApp() {
                     const result = await model.generateContent([prompt, audioPart]);
                     const reply = result.response.text();
                     await sock.sendMessage(sender, { text: reply }, { quoted: msg });
+                    console.log('✅ [DEBUG] Audio reply sent');
                 } catch (err) {
                     console.error('Error processing Audio:', err);
                     await sock.sendMessage(sender, { text: "❌ Voice Message එක තේරුම් ගන්න බැරි වුණා." }, { quoted: msg });
@@ -536,6 +543,7 @@ async function connectToWhatsApp() {
             // PDF - ADD FILE (Admin)
             // ======================================================================
             if (docMsg && /^add file\b/i.test(rawMessageText.toLowerCase().trim())) {
+                console.log('📁 [DEBUG] Add file command detected');
                 const isAdmin = isSenderAdmin(sender);
                 if (!isAdmin) {
                     await sock.sendMessage(sender, { text: "❌ මචං, File Add කරන්න පුළුවන් Batch Rep ට විතරයි!" }, { quoted: msg });
@@ -561,6 +569,7 @@ async function connectToWhatsApp() {
                     saveFileRegistry();
 
                     await sock.sendMessage(sender, { text: `✅ File එක save කළා! Keyword: "${keyword}"\n\nදැන් student කෙනෙක් "${keyword}" කියලා type කළොත් file එක automatic ලෙස එවනවා.` }, { quoted: msg });
+                    console.log('✅ [DEBUG] File saved successfully');
                 } catch (err) {
                     console.error('Error saving file:', err);
                     await sock.sendMessage(sender, { text: "❌ File එක save කිරීමේදී Error එකක් ආවා." }, { quoted: msg });
@@ -572,6 +581,7 @@ async function connectToWhatsApp() {
             // PDF ANALYSIS
             // ======================================================================
             if (docMsg) {
+                console.log('📄 [DEBUG] PDF document detected');
                 try {
                     const mimeType = docMsg?.mimetype || '';
                     if (mimeType === 'application/pdf') {
@@ -584,6 +594,7 @@ async function connectToWhatsApp() {
                         const result = await model.generateContent([prompt, pdfPart]);
                         const reply = result.response.text();
                         await sock.sendMessage(sender, { text: reply }, { quoted: msg });
+                        console.log('✅ [DEBUG] PDF analysis reply sent');
                     }
                 } catch (err) {
                     console.error('Error processing PDF:', err);
@@ -596,6 +607,7 @@ async function connectToWhatsApp() {
             // IMAGE
             // ======================================================================
             if (imgMsg) {
+                console.log('🖼️ [DEBUG] Image detected');
                 try {
                     await sock.sendMessage(sender, { text: "⏳ **Image එක Processing...**" }, { quoted: msg });
                     const buffer = await downloadMediaMessage(msg, 'buffer', {});
@@ -607,6 +619,7 @@ async function connectToWhatsApp() {
                     const result = await model.generateContent([prompt, imagePart]);
                     const reply = result.response.text();
                     await sock.sendMessage(sender, { text: reply }, { quoted: msg });
+                    console.log('✅ [DEBUG] Image reply sent');
                 } catch (err) {
                     console.error('Error processing Image:', err);
                     await sock.sendMessage(sender, { text: "❌ Image එක කියවගන්න බැරි වුණා." }, { quoted: msg });
@@ -618,7 +631,9 @@ async function connectToWhatsApp() {
             // TEXT MESSAGES
             // ======================================================================
             if (!isGroup) {
+                console.log('✅ [DEBUG] Inside !isGroup block');
                 const textLower = rawMessageText.toLowerCase().trim();
+                console.log('📝 [DEBUG] textLower:', textLower);
 
                 // ---------- WHO AM I ----------
                 const isWhoAmIQuestion = /\bwho\s*am\s*i\b/i.test(textLower)
@@ -626,24 +641,29 @@ async function connectToWhatsApp() {
                     || rawMessageText.includes('මං කවුද') || rawMessageText.includes('මම කවුද');
 
                 if (isWhoAmIQuestion) {
+                    console.log('👤 [DEBUG] Who am I question detected');
                     const isAdmin = isSenderAdmin(sender);
                     if (isAdmin) {
                         await sock.sendMessage(sender, { text: `👋 ඔයා තමයි *Monal Hansana* — SLIIT IT Y1S2 Batch Representative! ✅` }, { quoted: msg });
                     } else {
                         await sock.sendMessage(sender, { text: `👤 ඔයා student කෙනෙක්.` }, { quoted: msg });
                     }
+                    console.log('✅ [DEBUG] Who am I reply sent');
                     return;
                 }
 
                 // ---------- WHOAMI ----------
                 if (textLower === 'whoami' || textLower === 'my id' || textLower === 'myid') {
+                    console.log('🆔 [DEBUG] whoami command detected');
                     const normalized = jidNormalizedUser(sender) || sender;
                     await sock.sendMessage(sender, { text: `🆔 *ඔයාගේ WhatsApp ID*\nRaw: \`${sender}\`\nNormalized: \`${normalized}\`` }, { quoted: msg });
+                    console.log('✅ [DEBUG] whoami reply sent');
                     return;
                 }
 
                 // ---------- TODAY CLASSES ----------
                 if (textLower === 'today classes' || textLower === 'today timetable' || textLower === 'today schedule' || textLower === 'today') {
+                    console.log('📅 [DEBUG] today command detected');
                     const events = await getTodaysEvents();
                     if (events.length === 0) {
                         await sock.sendMessage(sender, { text: `📅 *Today's Schedule*\n\n🎉 No classes scheduled for today!` }, { quoted: msg });
@@ -658,11 +678,13 @@ async function connectToWhatsApp() {
                         });
                         await sock.sendMessage(sender, { text: message }, { quoted: msg });
                     }
+                    console.log('✅ [DEBUG] today reply sent');
                     return;
                 }
 
                 // ---------- NEXT CLASS ----------
                 if (textLower === 'next class' || textLower === 'next lecture' || textLower === 'next') {
+                    console.log('📅 [DEBUG] next class command detected');
                     const event = await getNextEvent();
                     if (!event) {
                         await sock.sendMessage(sender, { text: `📅 *Next Class*\n\n🎉 No upcoming classes found.` }, { quoted: msg });
@@ -674,12 +696,14 @@ async function connectToWhatsApp() {
                         if (location) message += `${location}\n`;
                         await sock.sendMessage(sender, { text: message }, { quoted: msg });
                     }
+                    console.log('✅ [DEBUG] next class reply sent');
                     return;
                 }
 
                 // ---------- CHECK DATE ----------
                 const dateMatch = rawMessageText.match(/^check date\s+(\d{4}-\d{2}-\d{2})$/i);
                 if (dateMatch) {
+                    console.log('📅 [DEBUG] check date command detected');
                     const dateStr = dateMatch[1];
                     const events = await getEventsForDate(dateStr);
                     if (events === null) {
@@ -694,11 +718,13 @@ async function connectToWhatsApp() {
                         });
                         await sock.sendMessage(sender, { text: message }, { quoted: msg });
                     }
+                    console.log('✅ [DEBUG] check date reply sent');
                     return;
                 }
 
                 // ---------- CALENDAR LINK ----------
                 if (textLower === 'calendar' || textLower === 'timetable' || textLower === 'time table' || textLower === 'time' || textLower === 'calender') {
+                    console.log('📅 [DEBUG] calendar link command detected');
                     await sock.sendMessage(sender, {
                         text: `📅 *SLIIT Timetable එක ඔබගේ Phone එකට Add කරගන්න*
 
@@ -712,11 +738,13 @@ https://calendar.google.com/calendar/u/0?cid=Y2EwYjM4ZDE3MjcyOTIzMTY1N2FiZmMzNGY
 
 ⚠️ *පෙන්නන්නේ නැත්නම්:* "Other calendars" එක Check කරලා Auto-Sync ON කරන්න.`
                     }, { quoted: msg });
+                    console.log('✅ [DEBUG] calendar link reply sent');
                     return;
                 }
 
                 // ---------- CALENDAR HELP ----------
                 if (textLower === 'calendar help' || textLower === 'calendar not showing' || textLower === 'sync calendar') {
+                    console.log('📅 [DEBUG] calendar help command detected');
                     await sock.sendMessage(sender, {
                         text: `📅 *Calendar Troubleshooting Guide*
 
@@ -733,12 +761,14 @@ https://calendar.google.com/calendar/u/0?cid=Y2EwYjM4ZDE3MjcyOTIzMTY1N2FiZmMzNGY
 
 📱 *Still not working?* Contact Batch Rep: +94 76 251 3957`
                     }, { quoted: msg });
+                    console.log('✅ [DEBUG] calendar help reply sent');
                     return;
                 }
 
                 // ---------- SWAP REQUEST ----------
                 const swapMatch = rawMessageText.match(/^swap\s*:?\s*(.+?)\s+(?:to|->|dakwa)\s+(.+)$/i);
                 if (swapMatch) {
+                    console.log('🔄 [DEBUG] swap command detected');
                     const rawFrom = swapMatch[1].trim();
                     const rawTo = swapMatch[2].trim();
                     const normFrom = normalizeGroupLabel(rawFrom);
@@ -794,11 +824,13 @@ https://calendar.google.com/calendar/u/0?cid=Y2EwYjM4ZDE3MjcyOTIzMTY1N2FiZmMzNGY
                             text: `✅ Request save කළා: Group ${rawFrom} → Group ${rawTo}.\n\nඅනිත් direction එකේ (Group ${rawTo} → Group ${rawFrom}) swap ඕන කෙනෙක් register වුනු ගමන්, ඔයාට automatic ලෙස notify කරන්නම්! 🔔`
                         }, { quoted: msg });
                     }
+                    console.log('✅ [DEBUG] swap reply sent');
                     return;
                 }
 
                 // ---------- LIST SWAPS (Admin) ----------
                 if (textLower === 'list swaps' || textLower === 'show swaps') {
+                    console.log('📋 [DEBUG] list swaps command detected');
                     if (!isSenderAdmin(sender)) {
                         await sock.sendMessage(sender, { text: "❌ මේක බලන්න පුළුවන් Batch Rep ට විතරයි!" }, { quoted: msg });
                         return;
@@ -812,11 +844,13 @@ https://calendar.google.com/calendar/u/0?cid=Y2EwYjM4ZDE3MjcyOTIzMTY1N2FiZmMzNGY
                         ).join('\n');
                         await sock.sendMessage(sender, { text: `🔄 *Swap Requests (${entries.length})*\n\n${list}` }, { quoted: msg });
                     }
+                    console.log('✅ [DEBUG] list swaps reply sent');
                     return;
                 }
 
                 // ---------- CLEAR SWAPS (Admin) ----------
                 if (textLower === 'clear swaps') {
+                    console.log('🗑️ [DEBUG] clear swaps command detected');
                     if (!isSenderAdmin(sender)) {
                         await sock.sendMessage(sender, { text: "❌ මේක කරන්න පුළුවන් Batch Rep ට විතරයි!" }, { quoted: msg });
                         return;
@@ -824,11 +858,13 @@ https://calendar.google.com/calendar/u/0?cid=Y2EwYjM4ZDE3MjcyOTIzMTY1N2FiZmMzNGY
                     swapRequests = {};
                     saveSwapRequests();
                     await sock.sendMessage(sender, { text: "🗑️ Swap requests ඔක්කොම clear කළා." }, { quoted: msg });
+                    console.log('✅ [DEBUG] clear swaps reply sent');
                     return;
                 }
 
                 // ---------- LIST FILES (Admin) ----------
                 if (textLower === 'list files' || textLower === 'show files') {
+                    console.log('📁 [DEBUG] list files command detected');
                     if (!isSenderAdmin(sender)) {
                         await sock.sendMessage(sender, { text: "❌ මේක බලන්න පුළුවන් Batch Rep ට විතරයි!" }, { quoted: msg });
                         return;
@@ -839,11 +875,13 @@ https://calendar.google.com/calendar/u/0?cid=Y2EwYjM4ZDE3MjcyOTIzMTY1N2FiZmMzNGY
                         const list = fileRegistry.map((f, i) => `${i+1}. "${f.keyword}" → ${f.fileName}`).join('\n');
                         await sock.sendMessage(sender, { text: `📁 *Saved Files (${fileRegistry.length})*\n\n${list}` }, { quoted: msg });
                     }
+                    console.log('✅ [DEBUG] list files reply sent');
                     return;
                 }
 
                 // ---------- REMOVE FILE (Admin) ----------
                 if (/^remove file\s+\d+/i.test(textLower)) {
+                    console.log('🗑️ [DEBUG] remove file command detected');
                     if (!isSenderAdmin(sender)) {
                         await sock.sendMessage(sender, { text: "❌ මේක කරන්න පුළුවන් Batch Rep ට විතරයි!" }, { quoted: msg });
                         return;
@@ -860,12 +898,14 @@ https://calendar.google.com/calendar/u/0?cid=Y2EwYjM4ZDE3MjcyOTIzMTY1N2FiZmMzNGY
                         if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
                     } catch (e) { console.error('Error deleting file:', e); }
                     await sock.sendMessage(sender, { text: `🗑️ ඉවත් කළා: "${removedFile.keyword}" (${removedFile.fileName})` }, { quoted: msg });
+                    console.log('✅ [DEBUG] remove file reply sent');
                     return;
                 }
 
                 // ---------- FILE DELIVERY ----------
                 const matchedFile = fileRegistry.find((f) => textLower.includes(f.keyword));
                 if (matchedFile) {
+                    console.log('📤 [DEBUG] File delivery triggered for keyword:', matchedFile.keyword);
                     try {
                         const buffer = fs.readFileSync(path.join(FILES_DIR, matchedFile.storedFileName));
                         await sock.sendMessage(sender, {
@@ -873,6 +913,7 @@ https://calendar.google.com/calendar/u/0?cid=Y2EwYjM4ZDE3MjcyOTIzMTY1N2FiZmMzNGY
                             mimetype: matchedFile.mimetype,
                             fileName: matchedFile.fileName
                         }, { quoted: msg });
+                        console.log('✅ [DEBUG] File delivered');
                     } catch (err) {
                         console.error('Error sending file:', err);
                         await sock.sendMessage(sender, { text: "❌ File එක එවීමේදී Error එකක් ආවා." }, { quoted: msg });
@@ -882,6 +923,7 @@ https://calendar.google.com/calendar/u/0?cid=Y2EwYjM4ZDE3MjcyOTIzMTY1N2FiZmMzNGY
 
                 // ---------- ADD INFO (Admin) ----------
                 if (/^(add info|info add|save info)\b/i.test(textLower)) {
+                    console.log('📝 [DEBUG] add info command detected');
                     if (!isSenderAdmin(sender)) {
                         await sock.sendMessage(sender, { text: "❌ මේක කරන්න පුළුවන් Batch Rep ට විතරයි!" }, { quoted: msg });
                         return;
@@ -894,11 +936,13 @@ https://calendar.google.com/calendar/u/0?cid=Y2EwYjM4ZDE3MjcyOTIzMTY1N2FiZmMzNGY
                     knowledgeBase.push(infoText);
                     saveKnowledgeBase();
                     await sock.sendMessage(sender, { text: `✅ Info එක save කළා! (Total: ${knowledgeBase.length})` }, { quoted: msg });
+                    console.log('✅ [DEBUG] add info reply sent');
                     return;
                 }
 
                 // ---------- LIST INFO (Admin) ----------
                 if (textLower === 'list info' || textLower === 'show info') {
+                    console.log('📚 [DEBUG] list info command detected');
                     if (!isSenderAdmin(sender)) {
                         await sock.sendMessage(sender, { text: "❌ මේක බලන්න පුළුවන් Batch Rep ට විතරයි!" }, { quoted: msg });
                         return;
@@ -909,11 +953,13 @@ https://calendar.google.com/calendar/u/0?cid=Y2EwYjM4ZDE3MjcyOTIzMTY1N2FiZmMzNGY
                         const list = knowledgeBase.map((k, i) => `${i+1}. ${k}`).join('\n\n');
                         await sock.sendMessage(sender, { text: `📚 *Saved Info (${knowledgeBase.length})*\n\n${list}` }, { quoted: msg });
                     }
+                    console.log('✅ [DEBUG] list info reply sent');
                     return;
                 }
 
                 // ---------- REMOVE INFO (Admin) ----------
                 if (/^remove info\s+\d+/i.test(textLower)) {
+                    console.log('🗑️ [DEBUG] remove info command detected');
                     if (!isSenderAdmin(sender)) {
                         await sock.sendMessage(sender, { text: "❌ මේක කරන්න පුළුවන් Batch Rep ට විතරයි!" }, { quoted: msg });
                         return;
@@ -926,31 +972,47 @@ https://calendar.google.com/calendar/u/0?cid=Y2EwYjM4ZDE3MjcyOTIzMTY1N2FiZmMzNGY
                     const removed = knowledgeBase.splice(idx, 1);
                     saveKnowledgeBase();
                     await sock.sendMessage(sender, { text: `🗑️ ඉවත් කළා: "${removed[0]}"` }, { quoted: msg });
+                    console.log('✅ [DEBUG] remove info reply sent');
                     return;
                 }
 
                 // ---------- AI RESPONSE ----------
                 if (rawMessageText) {
+                    console.log('🤖 [DEBUG] Sending to Gemini...');
+                    console.log('📝 [DEBUG] fullUserPrompt:', fullUserPrompt);
                     try {
                         const result = await model.generateContent(buildPromptWithKnowledge(fullUserPrompt));
                         const reply = result.response.text();
+                        console.log('✅ [DEBUG] Gemini reply received:', reply.substring(0, 100) + '...');
                         await sock.sendMessage(sender, { text: reply }, { quoted: msg });
+                        console.log('✅ [DEBUG] Reply sent!');
                     } catch (error) {
-                        console.error('Error generating AI response:', error);
+                        console.error('❌ [DEBUG] Gemini error:', error);
                     }
+                } else {
+                    console.log('⚠️ [DEBUG] rawMessageText is empty, skipping AI response');
                 }
             }
         }
 
         sock.ev.on('messages.upsert', async ({ messages, type }) => {
-            console.log('📨 messages.upsert triggered! Type:', type);
-            if (type !== 'notify') return;
+            console.log('📨 [DEBUG] messages.upsert triggered! Type:', type);
+            if (type !== 'notify') {
+                console.log('⏭️ [DEBUG] Skipping - type is not notify');
+                return;
+            }
+            console.log('📨 [DEBUG] Messages count:', messages.length);
             for (const msg of messages) {
-                if (!msg.message || msg.key.fromMe) continue;
-                // 🟢 මෙතනට Add කරන්න!
-                console.log('🟢 Processing message ID:', msg.key.id)
+                if (!msg.message || msg.key.fromMe) {
+                    console.log('⏭️ [DEBUG] Skipping - no message or fromMe');
+                    continue;
+                }
+                console.log('🟢 [DEBUG] Processing message ID:', msg.key.id);
                 
-                if (processedMessages.has(msg.key.id)) continue;
+                if (processedMessages.has(msg.key.id)) {
+                    console.log('⏭️ [DEBUG] Duplicate message, skipping');
+                    continue;
+                }
                 markProcessed(msg.key.id);
                 messageQueue.add(
                     () => processMessage(sock, msg),
