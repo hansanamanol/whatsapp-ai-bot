@@ -419,7 +419,7 @@ async function connectToWhatsApp() {
 
     const sock = makeWASocket({
         auth: state,
-        printQRInTerminal: false,
+        printQRInTerminal: true,
         logger: pino({ level: 'silent' }),
         syncFullHistory: false,
         markOnlineOnConnect: true,
