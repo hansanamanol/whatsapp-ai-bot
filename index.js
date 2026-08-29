@@ -179,6 +179,10 @@ function markProcessed(id) {
 // ======================================================================
 // 📅 GOOGLE CALENDAR API SETUP
 // ======================================================================
+if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET || !process.env.GOOGLE_REFRESH_TOKEN) {
+    console.warn('⚠️ Google Calendar env vars set karala na — calendar commands wada karanne na.');
+}
+
 const oauth2Client = new google.auth.OAuth2(
     process.env.GOOGLE_CLIENT_ID,
     process.env.GOOGLE_CLIENT_SECRET,
@@ -215,7 +219,7 @@ async function getTodaysEvents() {
 
         return response.data.items || [];
     } catch (error) {
-        console.error('Error fetching today\'s events:', error.message);
+        console.error("Error fetching today's events:", error.message);
         return [];
     }
 }
@@ -241,7 +245,7 @@ async function getEventsForDate(dateStr) {
     try {
         const date = new Date(dateStr);
         if (isNaN(date.getTime())) return null;
-        
+
         const startOfDay = new Date(date);
         startOfDay.setHours(0, 0, 0, 0);
         const endOfDay = new Date(date);
@@ -370,10 +374,10 @@ ACADEMIC & UNIVERSITY RULES:
 - Lab Group Switching: Requires prior LIC approval or valid medical reason.
 
 IMPORTANT LINKS & PORTALS:
-1. Timetable / Calendar: https://calendar.google.com/calendar/u/0?cid=...
+1. Timetable / Calendar: https://calendar.google.com/calendar/u/0?cid=Y2EwYjM4ZDE3MjcyOTIzMTY1N2FiZmMzNGYxYzdmZGJmOGVhMzMwNTBmZTZmNDYyM2Y1ZmFiODhjMGQzNDYzM0Bncm91cC5jYWxlbmRhci5nb29nbGUuY29t
 2. Courseweb (LMS): https://courseweb.sliit.lk/
 3. Eduscope (Lecture Recordings): https://eduscope.sliit.lk/
-4. Issue Reporting Form: https://docs.google.com/forms/d/e/...
+4. Issue Reporting Form: https://docs.google.com/forms/d/e/1FAIpQLSfOUJnkMp8Tdig0C187WDOgU5AZmtPh3ayBZ-_z9xd23K3Zgw/viewform?usp=publish-editor
 5. SLIIT Support Desk: https://ask.sliit.lk/
 
 CRITICAL — NEVER CLAIM TO HAVE SENT/POSTED SOMETHING:
@@ -381,10 +385,34 @@ CRITICAL — NEVER CLAIM TO HAVE SENT/POSTED SOMETHING:
 - NEVER say things like "I've sent this to the group" or "yawanawa" / "දැම්මා" as if the action already happened.
 
 CRITICAL — NO LATEX, USE UNICODE MATH SYMBOLS DIRECTLY:
-- WhatsApp text messages CANNOT render LaTeX. NEVER write $\cup$, \cap, \in, $$...$$, \( \), or \frac{a}{b}.
+- WhatsApp text messages CANNOT render LaTeX. NEVER write $\\cup$, \\cap, \\in, $$...$$, \\( \\), or \\frac{a}{b}.
 - Always use Unicode symbols directly: ∪, ∩, ∈, ∉, ⊂, ⊆, ⊃, ⊇, ∅, ∀, ∃, ≤, ≥, ≠, ≈, ×, ÷, ±, √, π, ∞, →, ⇒, ⇔, Σ, ∫.
 - For fractions, write "a/b" or "a ÷ b".
 `;
+
+// Safety net: Gemini's system instruction tells it to avoid LaTeX, but if it
+// slips into LaTeX anyway, this converts common math commands to Unicode
+// symbols before the reply reaches WhatsApp.
+function formatMathForWhatsApp(text) {
+    if (!text) return text;
+    const replacements = [
+        [/\\cup/g, '∪'], [/\\cap/g, '∩'], [/\\in\b/g, '∈'], [/\\notin\b/g, '∉'],
+        [/\\subseteq/g, '⊆'], [/\\subset/g, '⊂'], [/\\supseteq/g, '⊇'], [/\\supset/g, '⊃'],
+        [/\\emptyset/g, '∅'], [/\\varnothing/g, '∅'], [/\\forall/g, '∀'], [/\\exists/g, '∃'],
+        [/\\leq/g, '≤'], [/\\geq/g, '≥'], [/\\neq/g, '≠'], [/\\approx/g, '≈'],
+        [/\\times/g, '×'], [/\\div/g, '÷'], [/\\pm/g, '±'], [/\\sqrt/g, '√'],
+        [/\\infty/g, '∞'], [/\\rightarrow/g, '→'], [/\\to\b/g, '→'],
+        [/\\Rightarrow/g, '⇒'], [/\\Leftrightarrow/g, '⇔'], [/\\sum/g, 'Σ'], [/\\int/g, '∫'],
+        [/\\pi\b/g, 'π'], [/\\theta\b/g, 'θ'], [/\\alpha\b/g, 'α'], [/\\beta\b/g, 'β'],
+        [/\\frac\{([^}]*)\}\{([^}]*)\}/g, '$1/$2'],
+        [/\$\$?/g, ''], [/\\\(/g, ''], [/\\\)/g, ''], [/\\\[/g, ''], [/\\\]/g, '']
+    ];
+    let result = text;
+    for (const [pattern, symbol] of replacements) {
+        result = result.replace(pattern, symbol);
+    }
+    return result;
+}
 
 const model = genAI.getGenerativeModel({
     model: "gemini-3.5-flash-lite",
@@ -424,18 +452,26 @@ function convertAudioToWav(inputBuffer) {
 // ======================================================================
 async function connectToWhatsApp() {
     try {
+        console.log('🔄 Loading auth state...');
         const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+        console.log('📂 Auth state loaded. Creating WhatsApp socket...');
 
         const sock = makeWASocket({
             auth: state,
-            printQRInTerminal: true,
-            logger: pino({ level: 'info' }),
+            printQRInTerminal: false,
+            logger: pino({ level: 'silent' }),
             syncFullHistory: false,
             markOnlineOnConnect: true,
             generateHighQualityLinkPreview: true,
             badSessionDeleteHistory: true,
-            retryRequestDelayMs: 2000
+            retryRequestDelayMs: 2000,
+            // "init queries" (blocklist/privacy settings) — bot ekata use wenne
+            // nathi nisa, ema queries ma fire wenna epa kiyala off karanawa —
+            // mekenma "unexpected error in 'init queries'" timeout eka ain wenawa.
+            fireInitQueries: false,
+            defaultQueryTimeoutMs: 60000
         });
+        console.log('🔌 Socket created, waiting for connection.update events...');
 
         sock.ev.on('creds.update', saveCreds);
 
@@ -452,9 +488,17 @@ async function connectToWhatsApp() {
             if (connection === 'close') {
                 isConnected = false;
                 const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
+                // Reconnect welawe, mek dead socket ekata connect wela hitiya
+                // listeners tika explicitly ain karanawa — memory leak wenna
+                // idata dena listeners tika accumulate wena eka nawaththanna.
+                sock.ev.removeAllListeners();
                 if (shouldReconnect) {
-                    console.log('🔄 Reconnecting...');
-                    setTimeout(() => connectToWhatsApp(), 3000);
+                    console.log('🔄 Reconnecting in 3s...');
+                    setTimeout(() => {
+                        connectToWhatsApp().catch((err) => {
+                            console.error('❌ Reconnect attempt failed:', err);
+                        });
+                    }, 3000);
                 } else {
                     console.log('Logged out. Restarting...');
                     process.exit(1);
@@ -529,7 +573,7 @@ async function connectToWhatsApp() {
                     const audioPart = { inlineData: { data: base64Audio, mimeType: 'audio/mp3' } };
                     const prompt = buildPromptWithKnowledge("Listen carefully to this audio message. Reply clearly.");
                     const result = await model.generateContent([prompt, audioPart]);
-                    const reply = result.response.text();
+                    const reply = formatMathForWhatsApp(result.response.text());
                     await sock.sendMessage(sender, { text: reply }, { quoted: msg });
                     console.log('✅ [DEBUG] Audio reply sent');
                 } catch (err) {
@@ -592,7 +636,7 @@ async function connectToWhatsApp() {
                         const captionPrompt = rawMessageText ? ` User instructions: "${rawMessageText}"` : "";
                         const prompt = buildPromptWithKnowledge("Read this PDF document carefully and fulfill the user request." + captionPrompt);
                         const result = await model.generateContent([prompt, pdfPart]);
-                        const reply = result.response.text();
+                        const reply = formatMathForWhatsApp(result.response.text());
                         await sock.sendMessage(sender, { text: reply }, { quoted: msg });
                         console.log('✅ [DEBUG] PDF analysis reply sent');
                     }
@@ -617,7 +661,7 @@ async function connectToWhatsApp() {
                     const captionPrompt = rawMessageText ? ` User instructions: "${rawMessageText}"` : "";
                     const prompt = buildPromptWithKnowledge("Read all details in this screenshot/image. Answer clearly." + captionPrompt);
                     const result = await model.generateContent([prompt, imagePart]);
-                    const reply = result.response.text();
+                    const reply = formatMathForWhatsApp(result.response.text());
                     await sock.sendMessage(sender, { text: reply }, { quoted: msg });
                     console.log('✅ [DEBUG] Image reply sent');
                 } catch (err) {
@@ -839,7 +883,7 @@ https://calendar.google.com/calendar/u/0?cid=Y2EwYjM4ZDE3MjcyOTIzMTY1N2FiZmMzNGY
                     if (entries.length === 0) {
                         await sock.sendMessage(sender, { text: "📭 දැනට swap requests නෑ." }, { quoted: msg });
                     } else {
-                        const list = entries.map(([jid, req], i) => 
+                        const list = entries.map(([jid, req], i) =>
                             `${i+1}. ${req.name} (${extractPhoneDisplay(jid) || 'LID account'}): ${req.rawFrom} → ${req.rawTo} ${req.matched ? '✅ Matched' : '⏳ Waiting'}`
                         ).join('\n');
                         await sock.sendMessage(sender, { text: `🔄 *Swap Requests (${entries.length})*\n\n${list}` }, { quoted: msg });
@@ -982,7 +1026,7 @@ https://calendar.google.com/calendar/u/0?cid=Y2EwYjM4ZDE3MjcyOTIzMTY1N2FiZmMzNGY
                     console.log('📝 [DEBUG] fullUserPrompt:', fullUserPrompt);
                     try {
                         const result = await model.generateContent(buildPromptWithKnowledge(fullUserPrompt));
-                        const reply = result.response.text();
+                        const reply = formatMathForWhatsApp(result.response.text());
                         console.log('✅ [DEBUG] Gemini reply received:', reply.substring(0, 100) + '...');
                         await sock.sendMessage(sender, { text: reply }, { quoted: msg });
                         console.log('✅ [DEBUG] Reply sent!');
@@ -1008,7 +1052,7 @@ https://calendar.google.com/calendar/u/0?cid=Y2EwYjM4ZDE3MjcyOTIzMTY1N2FiZmMzNGY
                     continue;
                 }
                 console.log('🟢 [DEBUG] Processing message ID:', msg.key.id);
-                
+
                 if (processedMessages.has(msg.key.id)) {
                     console.log('⏭️ [DEBUG] Duplicate message, skipping');
                     continue;
