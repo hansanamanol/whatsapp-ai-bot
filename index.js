@@ -120,6 +120,37 @@ const PORT = process.env.PORT || 3000;
 let latestQR = "";
 let isConnected = false;
 
+// ================================================================
+//  🛡️ RATE LIMIT & ANTI-SPAM
+// ================================================================
+const rateLimitMap = {}; 
+
+function checkRateLimit(userId) {
+    const now = Date.now();
+    const user = rateLimitMap[userId] || { count: 0, startTime: now, blockedUntil: 0 };
+
+    if (now < user.blockedUntil) {
+        return { allowed: false, reason: `⚠️ Spam එක නවත්තන්න! තත්පර ${Math.ceil((user.blockedUntil - now) / 1000)}ක් ඉන්න.` };
+    }
+
+    if (now - user.startTime > 5000) { // 5 seconds window
+        user.count = 0;
+        user.startTime = now;
+    }
+
+    user.count++;
+    rateLimitMap[userId] = user;
+
+    if (user.count > 5) { // Max 5 messages per 5 seconds
+        user.blockedUntil = now + 60000; // Block for 60 seconds
+        rateLimitMap[userId] = user;
+        return { allowed: false, reason: "⚠️ ඕනෑවට වඩා ඉක්මනට Messages යවනවා. තත්පර 60ක් රැඳී සිටින්න." };
+    }
+
+    return { allowed: true, reason: "" };
+}
+
+
 app.get('/', async (req, res) => {
     if (isConnected) {
         return res.send(`<html><head><title>HansanaBot — Connected</title><meta http-equiv="refresh" content="30"></head>
@@ -514,6 +545,29 @@ async function connectToWhatsApp() {
                 } else {
                     await sock.sendMessage(sender, { text: `👤 ඔයා student කෙනෙක්.` }, { quoted: msg });
                 }
+                return;
+            }
+                            // ---------- HELP MENU ----------
+            if (textLower === 'help' || textLower === '/help' || textLower === 'menu' || textLower === '/menu' || textLower === 'start' || textLower === '/start' || textLower === 'commands') {
+                const helpText = `👋 *HansanaBot Help Menu* 🤖
+
+*General Commands:*
+📌 *help* - මේ Menu එක පෙන්නනවා
+
+
+*📅 Timetable & Calendar:*
+🗓️ *calendar* - අද / හෙට / ඉදිරි දවස් වල Classes බලන්න
+📅 *tomorrow* / *heta* - හෙට තියෙන Classes බලන්න
+📅 *today* / *ada* - අද තියෙන Classes බලන්න
+📅 *monday*, *tuesday*, *wednesday* etc. - ඒ දවසේ Classes බලන්න
+
+*📁 Files & Documents:*
+📂 *handbook*, *course outline* etc. - Save කරලා තියෙන Files ලබා ගන්න
+
+*📞 Support:*
+Contact Batch Rep: +94 76 251 3957
+`;
+                await sock.sendMessage(sender, { text: helpText }, { quoted: msg });
                 return;
             }
 
