@@ -99,6 +99,28 @@ class ConcurrencyQueue {
 const messageQueue = new ConcurrencyQueue(MAX_CONCURRENT);
 
 // ================================================================
+//  🧠 CONVERSATION MEMORY (කලින් ප්‍රශ්න මතක තියාගන්න)
+// ================================================================
+const userMemory = {};
+
+function getRecentContext(userId) {
+    const history = userMemory[userId];
+    if (!history || history.length === 0) return "";
+    return history.map(msg => `${msg.role}: ${msg.text}`).join("\n");
+}
+
+function addToMemory(userId, role, text) {
+    if (!userMemory[userId]) userMemory[userId] = [];
+    userMemory[userId].push({ role, text });
+    
+    // මතකය වැඩි වුනොත් අන්තිම 5ක් විතරක් තියාගන්න (API Limit ඉතිරි කරන්න)
+    if (userMemory[userId].length > 10) { 
+        userMemory[userId].shift();
+    }
+}
+
+
+// ================================================================
 //  🔁 MESSAGE DEDUP
 // ================================================================
 const processedMessages = new Set();
@@ -807,11 +829,25 @@ ${JSON.stringify(knowledgeBase)}`;
                 return;
             }
 
-            // ---------- GENERAL AI RESPONSE ----------
+                      // ---------- GENERAL AI RESPONSE (මතකය සමඟ) ----------
             if (rawMessageText) {
                 try {
-                    const result = await model.generateContent(buildPromptWithKnowledge(fullUserPrompt));
+                    // කලින් ප්‍රශ්න මතකයෙන් අදිනවා
+                    const history = getRecentContext(sender);
+                    
+                    // මතකය තියෙනවා නම් prompt එකට එකතු කරනවා
+                    let promptToSend = fullUserPrompt;
+                    if (history) {
+                        promptToSend = `පෙර සංවාදය:\n${history}\n\nවත්මන් ප්‍රශ්නය: ${fullUserPrompt}`;
+                    }
+
+                    const result = await model.generateContent(buildPromptWithKnowledge(promptToSend));
                     const reply = formatMathForWhatsApp(result.response.text());
+                    
+                    // අලුත් ප්‍රශ්නය සහ උත්තරය මතකයට දානවා
+                    addToMemory(sender, 'User', fullUserPrompt);
+                    addToMemory(sender, 'Bot', reply);
+
                     await sock.sendMessage(sender, { text: reply }, { quoted: msg });
                 } catch (error) {
                     console.error('Gemini error:', error);
