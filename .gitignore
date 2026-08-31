@@ -1,0 +1,9 @@
+node_modules/
+.env
+auth_info_baileys/
+knowledge.json
+files-registry.json
+swap-requests.json
+students.json
+resources/
+*.log
