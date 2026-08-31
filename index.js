@@ -554,7 +554,40 @@ async function connectToWhatsApp() {
                 return;
             }
                             // ---------- HELP MENU ----------
-            if (textLower === 'help' || textLower === '/help' || textLower === 'menu' || textLower === '/menu' || textLower === 'start' || textLower === '/start' || textLower === 'commands') {
+                        // ---------- HELP MENU ----------
+            if (textLower === 'help' || textLower === '/help' || textLower === 'menu' || textLower === '/menu' || textLower === 'start' || textLower === '/start' || textLower === 'commands' || textLower === 'hi' || textLower === 'hello' || textLower === 'hey' || textLower === 'hii' || textLower === 'hlo' || textLower === 'hi there' || textLower === 'good morning' || textLower === 'good night' || textLower === 'suba') {
+                const helpText = `👋 *HansanaBot Help Menu* 🤖
+
+*General Commands:*
+📌 *help* - මේ Menu එක පෙන්නනවා
+🆔 *whoami* - ඔයාගේ ID එක බලන්න
+👤 *who am i* - Adminද Studentද කියලා බලන්න
+
+*📅 Timetable & Calendar:*
+🗓️ *calendar* - අද / හෙට / ඉදිරි දවස් වල Classes බලන්න
+📅 *tomorrow* / *heta* - හෙට තියෙන Classes බලන්න
+📅 *today* / *ada* - අද තියෙන Classes බලන්න
+📅 *monday*, *tuesday*, *wednesday* etc. - ඒ දවසේ Classes බලන්න
+
+*📁 Files & Documents:*
+📂 *handbook*, *course outline* etc. - Save කරලා තියෙන Files ලබා ගන්න
+📋 *list files* (Admin) - Save කරලා තියෙන Files ටික බලන්න
+
+*ℹ️ Knowledge Base (Admin Only):*
+📝 *add info: [text]* - අලුත් තොරතුරු save කරන්න
+📚 *list info* (Admin) - Save කරලා තියෙන Info ටික බලන්න
+🗑️ *remove info [number]* (Admin) - Info එකක් අයින් කරන්න
+
+*📁 File Management (Admin Only):*
+📤 *add file: [keyword]* - PDF/Image එකක් save කරන්න
+🗑️ *remove file [number]* (Admin) - File එකක් අයින් කරන්න
+
+*📞 Support:*
+Contact Batch Rep: +94 76 251 3957
+`;
+                await sock.sendMessage(sender, { text: helpText }, { quoted: msg });
+                return;
+            }
                 const helpText = `👋 *HansanaBot Help Menu* 🤖
 
 *General Commands:*
@@ -612,6 +645,11 @@ Contact Batch Rep: +94 76 251 3957
                         msgText += `\n`;
                         // ⬆️ ඉවරයි
                     });
+                        // 👇 මේ අලුත් කොටස තමයි Quiz එකට යොමු කරන Instruction එක
+                    const firstModuleName = events[0]?.summary || 'Module';
+                    msgText += `\n💡 *Tip:* ඔයාට අද/හෙට *${firstModuleName}* class එක තියෙනවා. Class එකට යන්න කලින් පොඩි quiz එකක් try කරන්න ඕනද?\n\n👉 Type කරන්න: *quiz*  (Knowledge base එකෙන් ප්‍රශ්න අහනවා)\n`;
+                    // 👆 ඉවරයි
+                        
                     msgText += `🔗 *Full Calendar:* https://calendar.google.com/calendar/u/0?cid=${encodeURIComponent(CALENDAR_ID)}`;
                     await sock.sendMessage(sender, { text: msgText }, { quoted: msg });
                 } else {
