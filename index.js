@@ -553,7 +553,7 @@ async function connectToWhatsApp() {
                 }
                 return;
             }
-                            // ---------- HELP MENU ----------
+                        
                         // ---------- HELP MENU ----------
             if (textLower === 'help' || textLower === '/help' || textLower === 'menu' || textLower === '/menu' || textLower === 'start' || textLower === '/start' || textLower === 'commands' || textLower === 'hi' || textLower === 'hello' || textLower === 'hey' || textLower === 'hii' || textLower === 'hlo' || textLower === 'hi there' || textLower === 'good morning' || textLower === 'good night' || textLower === 'suba') {
                 const helpText = `👋 *HansanaBot Help Menu* 🤖
