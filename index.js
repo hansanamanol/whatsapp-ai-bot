@@ -422,6 +422,12 @@ async function connectToWhatsApp() {
         // ----------------------------------------------------------------
         async function processMessage(sock, msg) {
             const sender = msg.key.remoteJid;
+                         // ---------- RATE LIMIT CHECK ----------
+            const rateCheck = checkRateLimit(sender);
+            if (!rateCheck.allowed) {
+                await sock.sendMessage(sender, { text: rateCheck.reason }, { quoted: msg });
+                return;
+            }   
             const isGroup = sender.endsWith('@g.us');
             if (isGroup) return;
 
