@@ -179,7 +179,7 @@ app.get('/', async (req, res) => {
 app.listen(PORT, () => console.log(`✅ Web server running on port ${PORT}`));
 
 // ================================================================
-//  🤖 GEMINI SETUP (අලුත් Prompt එක)
+//  🤖 GEMINI SETUP
 // ================================================================
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 if (!GEMINI_API_KEY) {
@@ -249,7 +249,7 @@ CRITICAL CODE & TUTORIAL ANALYSIS RULES:
 `;
 
 const model = genAI.getGenerativeModel({
-    model: "gemini-3.1-flash-lite", // ⚠️ අනිවාර්යයෙන්ම මේ නම තියෙන්න ඕනේ!
+    model: "gemini-3.1-flash-lite", 
     systemInstruction: systemInstruction
 });
 
@@ -273,24 +273,53 @@ function formatMathForWhatsApp(text) {
 }
 
 // ================================================================
-//  📅 CALENDAR READER
+//  📅 CALENDAR READER (අලුත් කරපු logic එක)
 // ================================================================
 const CALENDAR_API_KEY = process.env.CALENDAR_API_KEY;
 const CALENDAR_ID = process.env.CALENDAR_ID || 'ca0b38d172729231657abfc34f1c7fdb8ea33050fe6f4623f5fab88cd0d4633@group.calendar.google.com';
 
-async function getCalendarEvents() {
+// අද, හෙට, සඳුදා වගේ කියවලා දවස තෝරගන්න function එක
+function getTargetDateRange(text) {
+    const now = new Date();
+    const targetDate = new Date(now);
+    const lowerText = text.toLowerCase();
+
+    if (lowerText.includes('tomorrow') || lowerText.includes('heta') || lowerText.includes('හෙට')) {
+        targetDate.setDate(now.getDate() + 1);
+    } else if (lowerText.includes('today') || lowerText.includes('ada') || lowerText.includes('අද')) {
+        // default to today
+    } else {
+        // Specific days (Monday, Tuesday, etc.)
+        const days = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+        const sinhalaDays = ['ඉරිදා','සඳුදා','අඟහරුවාදා','බදාදා','බ්‍රහස්පතින්දා','සිකුරාදා','සෙනසුරාදා'];
+        for(let i=0; i<7; i++){
+            if(lowerText.includes(days[i]) || lowerText.includes(sinhalaDays[i])){
+                const diff = (i - now.getDay() + 7) % 7;
+                targetDate.setDate(now.getDate() + diff);
+                break;
+            }
+        }
+    }
+
+    const start = new Date(targetDate);
+    start.setHours(0,0,0,0);
+    const end = new Date(targetDate);
+    end.setHours(23,59,59,999);
+
+    return { start, end };
+}
+
+async function getCalendarEvents(start, end) {
     if (!CALENDAR_API_KEY) {
         console.warn('⚠️ CALENDAR_API_KEY not set. Calendar will not work.');
         return null;
     }
     const calendar = google.calendar({ version: 'v3', auth: CALENDAR_API_KEY });
-    const now = new Date().toISOString();
-    const weekLater = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
     try {
         const response = await calendar.events.list({
             calendarId: CALENDAR_ID,
-            timeMin: now,
-            timeMax: weekLater,
+            timeMin: start.toISOString(),
+            timeMax: end.toISOString(),
             maxResults: 20,
             singleEvents: true,
             orderBy: 'startTime',
@@ -361,11 +390,10 @@ async function connectToWhatsApp() {
             }
             if (connection === 'close') {
                 isConnected = false;
-                // ⬇️ මේ lines ටික add කරන්න (ඇත්තම error එක බලන්න)
+                // ඇත්තම error එක බලන්න
                 const statusCode = (lastDisconnect?.error)?.output?.statusCode;
                 console.error("❌ WhatsApp Connection Closed! Status Code:", statusCode);
                 console.error("❌ Full Error:", lastDisconnect?.error);
-                // ⬆️ ඉවරයි
 
                 const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
                 sock.ev.removeAllListeners();
@@ -521,24 +549,22 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // 📅 CALENDAR (with events)
-            if (textLower === 'calendar' || textLower === 'timetable' || textLower === 'time' || textLower === 'calender') {
-                const events = await getCalendarEvents();
+            // 📅 CALENDAR (දැන් අද/හෙට/සතිය බලලා උත්තර දෙනවා)
+            if (textLower === 'calendar' || textLower === 'timetable' || textLower === 'time' || textLower === 'calender' || textLower.includes('lecture') || textLower.includes('lab') || textLower.includes('class') || textLower.includes('eta')) {
+                const { start, end } = getTargetDateRange(textLower);
+                const events = await getCalendarEvents(start, end);
+
                 if (events && events.length > 0) {
-                    let msgText = '📅 *ඉදිරි සතියේ Timetable:*\n\n';
+                    let msgText = '📅 *ඒ දවසේ Classes:*\n\n';
                     events.forEach((ev, idx) => {
-                        const start = ev.start?.dateTime || ev.start?.date || '?';
-                        const end = ev.end?.dateTime || ev.end?.date || '?';
-                        const startTime = new Date(start).toLocaleString('en-LK', { timeZone: 'Asia/Colombo' });
-                        const endTime = new Date(end).toLocaleString('en-LK', { timeZone: 'Asia/Colombo' });
+                        const startTime = new Date(ev.start?.dateTime || ev.start?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute:'2-digit' });
+                        const endTime = new Date(ev.end?.dateTime || ev.end?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute:'2-digit' });
                         msgText += `${idx+1}. *${ev.summary || 'Untitled'}*\n   🕒 ${startTime} – ${endTime}\n\n`;
                     });
                     msgText += `🔗 *Full Calendar:* https://calendar.google.com/calendar/u/0?cid=${encodeURIComponent(CALENDAR_ID)}`;
                     await sock.sendMessage(sender, { text: msgText }, { quoted: msg });
                 } else {
-                    await sock.sendMessage(sender, {
-                        text: `📅 *SLIIT Timetable Link:*\nhttps://calendar.google.com/calendar/u/0?cid=${encodeURIComponent(CALENDAR_ID)}`
-                    }, { quoted: msg });
+                    await sock.sendMessage(sender, { text: "🎉 ඒ දවසට විතරක් classes නෑ! (No lectures/labs for that day)." }, { quoted: msg });
                 }
                 return;
             }
