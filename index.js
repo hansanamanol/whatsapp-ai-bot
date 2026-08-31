@@ -68,31 +68,6 @@ function saveFileRegistry() {
     try { fs.writeFileSync(FILE_REGISTRY_PATH, JSON.stringify(fileRegistry, null, 2)); } catch (e) { console.error(e); }
 }
 
-// ================================================================
-//  🔄 SWAP SYSTEM
-// ================================================================
-const SWAP_REQUESTS_FILE = path.join(__dirname, 'swap-requests.json');
-let swapRequests = {};
-try {
-    if (fs.existsSync(SWAP_REQUESTS_FILE)) swapRequests = JSON.parse(fs.readFileSync(SWAP_REQUESTS_FILE, 'utf8'));
-} catch (e) { console.error('Error loading swap-requests.json:', e); }
-
-function saveSwapRequests() {
-    try { fs.writeFileSync(SWAP_REQUESTS_FILE, JSON.stringify(swapRequests, null, 2)); } catch (e) { console.error(e); }
-}
-
-function normalizeGroupLabel(raw) {
-    return raw.toLowerCase().replace(/group|grp|lab/gi, '').trim();
-}
-
-function extractPhoneDisplay(jid) {
-    const normalized = jidNormalizedUser(jid) || jid;
-    if (normalized.endsWith('@s.whatsapp.net')) {
-        const match = normalized.match(/^(\d+)@/);
-        return match ? `+${match[1]}` : normalized;
-    }
-    return null;
-}
 
 // ================================================================
 //  🧵 CONCURRENCY QUEUE
@@ -549,7 +524,7 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // 📅 CALENDAR (දැන් අද/හෙට/සතිය බලලා උත්තර දෙනවා)
+                        // 📅 CALENDAR (දැන් අද/හෙට/සතිය බලලා උත්තර දෙනවා)
             if (textLower === 'calendar' || textLower === 'timetable' || textLower === 'time' || textLower === 'calender' || textLower === 'class' || textLower === 'lab' || textLower === 'eta' || textLower.startsWith('today') || textLower.startsWith('tomorrow') || textLower.startsWith('heta') || textLower.startsWith('ada') || textLower.startsWith('monday') || textLower.startsWith('tuesday') || textLower.startsWith('wednesday') || textLower.startsWith('thursday') || textLower.startsWith('friday')) {
                 const { start, end } = getTargetDateRange(textLower);
                 const events = await getCalendarEvents(start, end);
@@ -559,7 +534,23 @@ async function connectToWhatsApp() {
                     events.forEach((ev, idx) => {
                         const startTime = new Date(ev.start?.dateTime || ev.start?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute:'2-digit' });
                         const endTime = new Date(ev.end?.dateTime || ev.end?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute:'2-digit' });
-                        msgText += `${idx+1}. *${ev.summary || 'Untitled'}*\n   🕒 ${startTime} – ${endTime}\n\n`;
+                        
+                        // ⬇️ මේ අලුත් lines ටික add කරලා තියෙනවා (Location & Description)
+                        const location = ev.location || '';
+                        const description = ev.description || '';
+
+                        msgText += `${idx+1}. *${ev.summary || 'Untitled'}*\n`;
+                        msgText += `   🕒 ${startTime} – ${endTime}\n`;
+                        
+                        if (location) {
+                            msgText += `   📍 *ස්ථානය (Location):* ${location}\n`;
+                        }
+                        if (description) {
+                            // ⬇️ සම්පූර්ණ Description එකම පෙන්නනවා (කපන්නේ නෑ)
+                            msgText += `   📝 *විස්තරය (Details):* ${description}\n`;
+                        }
+                        msgText += `\n`;
+                        // ⬆️ ඉවරයි
                     });
                     msgText += `🔗 *Full Calendar:* https://calendar.google.com/calendar/u/0?cid=${encodeURIComponent(CALENDAR_ID)}`;
                     await sock.sendMessage(sender, { text: msgText }, { quoted: msg });
@@ -577,81 +568,7 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // SWAP
-            const swapMatch = rawMessageText.match(/^swap\s*:?\s*(.+?)\s+(?:to|->|dakwa)\s+(.+)$/i);
-            if (swapMatch) {
-                const rawFrom = swapMatch[1].trim();
-                const rawTo = swapMatch[2].trim();
-                const normFrom = normalizeGroupLabel(rawFrom);
-                const normTo = normalizeGroupLabel(rawTo);
-                if (!normFrom || !normTo) {
-                    await sock.sendMessage(sender, { text: `⚠️ Format: "swap: 1 to 2"` }, { quoted: msg });
-                    return;
-                }
-                swapRequests[sender] = {
-                    fromGroup: normFrom, toGroup: normTo, rawFrom, rawTo,
-                    name: msg.pushName || 'Unknown',
-                    timestamp: Date.now(),
-                    matched: false,
-                    matchedWith: null
-                };
-                const matchEntry = Object.entries(swapRequests).find(
-                    ([jid, req]) => jid !== sender && !req.matched && req.fromGroup === normTo && req.toGroup === normFrom
-                );
-                if (matchEntry) {
-                    const [matchedJid, matchedReq] = matchEntry;
-                    swapRequests[sender].matched = true;
-                    swapRequests[sender].matchedWith = matchedJid;
-                    matchedReq.matched = true;
-                    matchedReq.matchedWith = sender;
-                    saveSwapRequests();
-                    const myPhone = extractPhoneDisplay(sender);
-                    const otherPhone = extractPhoneDisplay(matchedJid);
-                    const otherLine = otherPhone ? `📱 Contact: ${otherPhone}` : `📱 Contact: *${matchedReq.name}* in group.`;
-                    const myLine = myPhone ? `📱 Contact: ${myPhone}` : `📱 Contact: *${swapRequests[sender].name}* in group.`;
-                    await sock.sendMessage(sender, {
-                        text: `🎉 Match! *${matchedReq.name}* wants ${matchedReq.rawFrom}→${matchedReq.rawTo}.\n${otherLine}\nContact and submit Lab Change Form by Friday 28 Aug 11:59 AM.`
-                    }, { quoted: msg });
-                    await sock.sendMessage(matchedJid, {
-                        text: `🎉 Match! *${swapRequests[sender].name}* wants ${rawFrom}→${rawTo}.\n${myLine}\nContact and submit form by Friday 28 Aug 11:59 AM.`
-                    });
-                } else {
-                    saveSwapRequests();
-                    await sock.sendMessage(sender, {
-                        text: `✅ Request saved: ${rawFrom} → ${rawTo}. Will notify when a match appears.`
-                    }, { quoted: msg });
-                }
-                return;
-            }
-
-            // LIST SWAPS (Admin)
-            if (textLower === 'list swaps' || textLower === 'show swaps') {
-                if (!isSenderAdmin(sender)) {
-                    await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
-                    return;
-                }
-                const entries = Object.entries(swapRequests);
-                if (entries.length === 0) await sock.sendMessage(sender, { text: "📭 No swap requests." }, { quoted: msg });
-                else {
-                    const list = entries.map(([jid, req], i) =>
-                        `${i+1}. ${req.name} (${extractPhoneDisplay(jid) || 'LID'}): ${req.rawFrom}→${req.rawTo} ${req.matched ? '✅ Matched' : '⏳ Waiting'}`
-                    ).join('\n');
-                    await sock.sendMessage(sender, { text: `🔄 *Swap Requests (${entries.length})*\n\n${list}` }, { quoted: msg });
-                }
-                return;
-            }
-
-            // CLEAR SWAPS (Admin)
-            if (textLower === 'clear swaps') {
-                if (!isSenderAdmin(sender)) {
-                    await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
-                    return;
-                }
-                swapRequests = {};
-                saveSwapRequests();
-                await sock.sendMessage(sender, { text: "🗑️ All swap requests cleared." }, { quoted: msg });
-                return;
-            }
+            
 
             // LIST FILES (Admin)
             if (textLower === 'list files' || textLower === 'show files') {
