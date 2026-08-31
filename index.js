@@ -550,7 +550,7 @@ async function connectToWhatsApp() {
             }
 
             // 📅 CALENDAR (දැන් අද/හෙට/සතිය බලලා උත්තර දෙනවා)
-            if (textLower === 'calendar' || textLower === 'timetable' || textLower === 'time' || textLower === 'calender' || textLower.includes('lecture') || textLower.includes('lab') || textLower.includes('class') || textLower.includes('eta')) {
+            if (textLower === 'calendar' || textLower === 'timetable' || textLower === 'time' || textLower === 'calender' || textLower === 'class' || textLower === 'lab' || textLower === 'eta' || textLower.startsWith('today') || textLower.startsWith('tomorrow') || textLower.startsWith('heta') || textLower.startsWith('ada') || textLower.startsWith('monday') || textLower.startsWith('tuesday') || textLower.startsWith('wednesday') || textLower.startsWith('thursday') || textLower.startsWith('friday')) {
                 const { start, end } = getTargetDateRange(textLower);
                 const events = await getCalendarEvents(start, end);
 
