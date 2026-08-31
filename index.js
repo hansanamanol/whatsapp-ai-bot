@@ -249,7 +249,7 @@ CRITICAL CODE & TUTORIAL ANALYSIS RULES:
 `;
 
 const model = genAI.getGenerativeModel({
-    model: "gemini-1.5-flash", // ⚠️ අනිවාර්යයෙන්ම මේ නම තියෙන්න ඕනේ!
+    model: "gemini-3.1-flash-lite", // ⚠️ අනිවාර්යයෙන්ම මේ නම තියෙන්න ඕනේ!
     systemInstruction: systemInstruction
 });
 
