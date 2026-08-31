@@ -601,7 +601,7 @@ Contact Batch Rep: +94 76 251 3957`;
             }
 
             // 📅 CALENDAR
-            if (textLower === 'calendar' || textLower === 'timetable' || textLower === 'time' || textLower === 'calender' || textLower === 'class' || textLower === 'lab' || textLower === 'eta' || textLower.startsWith('today') || textLower.startsWith('tomorrow') || textLower.startsWith('heta') || textLower.startsWith('ada') || textLower.startsWith('monday') || textLower.startsWith('tuesday') || textLower.startsWith('wednesday') || textLower.startsWith('thursday') || textLower.startsWith('friday')) {
+            if (textLower === 'calendar' || textLower === 'timetable' || textLower === 'time' || textLower === 'calender' || textLower === 'class' || textLower === 'lab' || textLower === 'today' || textLower === 'tomorrow' || textLower === 'ada' || textLower === 'heta' || textLower === 'monday' || textLower === 'tuesday' || textLower === 'wednesday' || textLower === 'thursday' || textLower === 'friday' || textLower.includes('today class') || textLower.includes('today timetable') || textLower.includes('tomorrow class') || textLower.includes('tomorrow timetable') || textLower.includes('ada class') || textLower.includes('ada timetable') || textLower.includes('heta class') || textLower.includes('heta timetable')) {
                 const { start, end } = getTargetDateRange(textLower);
                 const events = await getCalendarEvents(start, end);
 
