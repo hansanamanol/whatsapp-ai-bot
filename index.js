@@ -54,26 +54,6 @@ function buildPromptWithKnowledge(basePrompt) {
 }
 
 // ================================================================
-//  ⚡ DIRECT KNOWLEDGE MATCH (Save Gemini API)
-// ================================================================
-function getDirectKnowledgeMatch(textLower) {
-    const lowerText = textLower.trim().toLowerCase();
-    if (!lowerText || lowerText.length < 3) return null;
-
-    for (let i = 0; i < knowledgeBase.length; i++) {
-        const itemText = knowledgeBase[i];
-        const lowerItem = itemText.toLowerCase();
-        const keywords = lowerItem.split(/[\s:,]+/).filter(w => w.length > 4);
-        for (const keyword of keywords) {
-            if (lowerText.includes(keyword)) {
-                return `👋 ඒ ගැන අහපු එකට මම පිළිතුරු දෙන්නම්!\n\n📌 *ඔන්න තියෙන තොරතුරු:*\n\n${itemText}\n\nමේ ගැන තව ප්‍රශ්න තියෙනවා නම් අහන්න! 😊`;
-            }
-        }
-    }
-    return null;
-}
-
-// ================================================================
 //  📁 FILE REGISTRY
 // ================================================================
 const FILES_DIR = path.join(__dirname, 'resources');
@@ -152,7 +132,7 @@ function checkRateLimit(userId) {
         return { allowed: false, reason: `⚠️ Spam එක නවත්තන්න! තත්පර ${Math.ceil((user.blockedUntil - now) / 1000)}ක් ඉන්න.` };
     }
 
-    if (now - user.startTime > 5000) { // 5 seconds window
+    if (now - user.startTime > 5000) {
         user.count = 0;
         user.startTime = now;
     }
@@ -160,8 +140,8 @@ function checkRateLimit(userId) {
     user.count++;
     rateLimitMap[userId] = user;
 
-    if (user.count > 5) { // Max 5 messages per 5 seconds
-        user.blockedUntil = now + 60000; // Block for 60 seconds
+    if (user.count > 5) {
+        user.blockedUntil = now + 60000;
         rateLimitMap[userId] = user;
         return { allowed: false, reason: "⚠️ ඕනෑවට වඩා ඉක්මනට Messages යවනවා. තත්පර 60ක් රැඳී සිටින්න." };
     }
@@ -213,51 +193,52 @@ if (!GEMINI_API_KEY) {
 const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 const systemInstruction = `
-You are HansanaBot, an intelligent Gemini AI assistant working for the SLIIT IT Batch Representative (Monal Hansana).
-YOUR IDENTITY & RESPONSIBILITIES:
-- Your Name: HansanaBot
-- You assist the Batch Rep, Monal (Hansana), by helping SLIIT students with their academic queries.
-- Answer student questions naturally in Singlish, Sinhala, or English based on the user's language.
-- Assist students with Timetable info, Calendar link, Issue forms, LMS links, Course Outlines, and LIC contacts.
-- Read images, voice notes, and PDFs provided by users accurately and explain them.
+You are HansanaBot, the official digital assistant representing the SLIIT IT Batch Representative, Monal Hansana.
+
+YOUR PERSONALITY & TONE:
+- Your tone must ALWAYS be professional, helpful, polite, and warm.
+- Address students respectfully (e.g., "ඔබට", "ඔයාට").
+- Provide neatly formatted answers (use bullet points and bold text).
+- NEVER give random, unrelated, or excessively long raw information. Always answer the specific question asked by the student.
+
+RULES FOR KNOWLEDGE BASE:
+- When you have information in your Knowledge Base (add info), give exactly the requested details in a structured, clean manner.
+- If the info is about Fees, Dates, LIC, or Links, present them clearly so the student understands instantly.
+
 BATCH REPRESENTATIVE (MONAL HANSANA) CONTACT DETAILS:
-- When students ask for Batch Rep's contact details, phone number, email, or how to contact Monal, provide the following details cleanly:
+- When students ask for Batch Rep's contact details, phone number, email, or how to contact Monal, provide these details cleanly:
   * Name: Monal Hansana (SLIIT IT Batch Representative)
   * Contact Number: +94 76 251 3957 (076 251 3957)
   * Official SLIIT Email: it26100930@my.sliit.lk
-Y1S2 MODULE DETAILS & LIC INFORMATION:
-1. IT1170 - Data Structures and Algorithms (DSA)
-   - LIC: Prof. Nathali Silva (nathali.s@sliit.lk)
-   - Focus: Time/space complexity (Big-O analysis), RAM model, arrays, linked lists, stacks, queues, trees, graphs, sorting and searching algorithms.
-2. IT1160 - Discrete Mathematics
-   - LIC: Ms. Nipuni Maleesha (nipuni.m@sliit.lk)
-   - Focus: Logic, sets, functions, relations, proof techniques, graph theory, combinatorics, and mathematical structures for computer science.
-3. SE1020 - Object Oriented Programming (OOP)
-   - LIC: Ms. Thilini Jayalath (thilini.j@sliit.lk)
-   - Focus: OOP concepts (Abstraction, Encapsulation, Inheritance, Polymorphism), Java/C++ implementations, design principles.
-4. IT1150 - Technical Writing
-   - LIC: Ms. Dinushika Jayathissa (dinushika.j@sliit.lk)
-   - Focus: Professional communication, writing technical documentation, research reports, email etiquette, presentation skills.
-5. IE1011 - Information Systems
-   - LIC: Ms. Chathurangika Kahandawarachchi (chathurangika.k@sliit.lk)
-   - Focus: Business information systems, enterprise resource planning (ERP), system architecture, database concepts in business contexts.
+
+Y1S2 MODULE DETAILS & LIC INFORMATION (Use this when asked):
+1. IT1170 - DSA -> LIC: Prof. Nathali Silva (nathali.s@sliit.lk)
+2. IT1160 - Discrete Math -> LIC: Ms. Nipuni Maleesha (nipuni.m@sliit.lk)
+3. SE1020 - OOP -> LIC: Ms. Thilini Jayalath (thilini.j@sliit.lk)
+4. IT1150 - Technical Writing -> LIC: Ms. Dinushika Jayathissa (dinushika.j@sliit.lk)
+5. IE1011 - Information Systems -> LIC: Ms. Chathurangika Kahandawarachchi (chathurangika.k@sliit.lk)
+
 ACADEMIC & UNIVERSITY RULES:
-- Attendance: Minimum 80% attendance is strictly required for labs and lectures to sit for final exams.
-- Assessments: Grade is based on Continuous Assessments (Quizzes, Mid-Exam, Lab Tests, Assignments) + Final Exam.
-- Lab Group Switching: Changing Lab groups (G1/G2/etc.) requires prior LIC approval or valid medical reason.
-IMPORTANT LINKS & PORTALS:
-1. Timetable / Calendar: https://calendar.google.com/calendar/u/0?cid=Y2EwYjM4ZDE3MjcyOTIzMTY1N2FiZmMzNGYxYzdmZGJmOGVhMzMwNTBmZTZmNDYyM2Y1ZmFiODhjMGQzNDYzM0Bncm91cC5jYWxlbmRhci5nb29nbGUuY29t
+- Minimum 80% attendance is strictly required to sit for final exams.
+- Grade is based on Continuous Assessments + Final Exam.
+- Lab Group Switching requires prior LIC approval.
+
+IMPORTANT LINKS:
+1. Timetable / Calendar: (Link)
 2. Courseweb (LMS): https://courseweb.sliit.lk/
 3. Eduscope (Lecture Recordings): https://eduscope.sliit.lk/
-4. Issue Reporting Form: https://docs.google.com/forms/d/e/1FAIpQLSfOUJnkMp8Tdig0C187WDOgU5AZmtPh3ayBZ-_z9xd23K3Zgw/viewform?usp=publish-editor
+4. Issue Reporting Form: (Link)
 5. SLIIT Support Desk: https://ask.sliit.lk/
+
 CRITICAL — NEVER CLAIM TO HAVE SENT/POSTED SOMETHING:
-- You CANNOT actually send messages, post announcements, or perform any action outside this chat reply. That is handled separately by the bot's code, not by you.
-- NEVER say things like "I've sent this to the group" or "yawanawa" / "දැම්මා" as if the action already happened. If a user asks you to post/send something to a group, simply explain that only the Batch Rep (Monal) can trigger that via a direct message with the correct phrasing, and do not simulate or pretend the action occurred.
+- You CANNOT actually send messages, post announcements, or perform any action outside this chat reply.
+- NEVER say things like "I've sent this to the group" or "yawanawa" / "දැම්මා".
+- If a user asks you to post/send something, explain that only the Batch Rep (Monal) can trigger that.
+
 CRITICAL CODE & TUTORIAL ANALYSIS RULES:
 - When analyzing code snippets or tutorials:
   1. Pay EXTREME attention to variable scope and re-initialization (e.g., whether 'j = 1' is initialized OUTSIDE or INSIDE an outer loop).
-  2. Distinguish clearly between Sequential/Consecutive loops and Nested loops. Do not multiply iterations unless one loop is strictly nested inside another.
+  2. Distinguish clearly between Sequential/Consecutive loops and Nested loops.
   3. Keep track of accurate question labeling (a, b, c, d, e) without swapping their code contents.
 `;
 
@@ -555,9 +536,10 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // ---------- HELP MENU ----------
+            // ---------- HELP MENU (Student & Admin) ----------
             if (textLower === 'help' || textLower === '/help' || textLower === 'menu' || textLower === '/menu' || textLower === 'start' || textLower === '/start' || textLower === 'commands' || textLower === 'hi' || textLower === 'hello' || textLower === 'hey' || textLower === 'hii' || textLower === 'hlo' || textLower === 'hi there' || textLower === 'good morning' || textLower === 'good night' || textLower === 'suba') {
-                const helpText = `👋 *HansanaBot Help Menu* 🤖
+                const isAdmin = isSenderAdmin(sender);
+                let helpText = `👋 *HansanaBot Help Menu* 🤖
 
 *General Commands:*
 📌 *help* - මේ Menu එක පෙන්නනවා
@@ -572,20 +554,22 @@ async function connectToWhatsApp() {
 
 *📁 Files & Documents:*
 📂 *handbook*, *course outline* etc. - Save කරලා තියෙන Files ලබා ගන්න
-📋 *list files* (Admin) - Save කරලා තියෙන Files ටික බලන්න
-
-*ℹ️ Knowledge Base (Admin Only):*
-📝 *add info: [text]* - අලුත් තොරතුරු save කරන්න
-📚 *list info* (Admin) - Save කරලා තියෙන Info ටික බලන්න
-🗑️ *remove info [number]* (Admin) - Info එකක් අයින් කරන්න
-
-*📁 File Management (Admin Only):*
-📤 *add file: [keyword]* - PDF/Image එකක් save කරන්න
-🗑️ *remove file [number]* (Admin) - File එකක් අයින් කරන්න
 
 *📞 Support:*
-Contact Batch Rep: +94 76 251 3957
-`;
+Contact Batch Rep: +94 76 251 3957`;
+
+                if (isAdmin) {
+                    helpText += `
+
+*🛠️ Admin Commands (Only for Batch Rep):*
+📝 *add info: [text]* - අලුත් තොරතුරු save කරන්න
+📚 *list info* - Save කරලා තියෙන Info ටික බලන්න
+🗑️ *remove info [number]* - Info එකක් අයින් කරන්න
+📤 *add file: [keyword]* - PDF/Image එකක් save කරන්න
+📋 *list files* - Save කරලා තියෙන Files ටික බලන්න
+🗑️ *remove file [number]* - File එකක් අයින් කරන්න`;
+                }
+                
                 await sock.sendMessage(sender, { text: helpText }, { quoted: msg });
                 return;
             }
@@ -597,7 +581,7 @@ Contact Batch Rep: +94 76 251 3957
                 return;
             }
 
-            // 📅 CALENDAR (දැන් අද/හෙට/සතිය බලලා උත්තර දෙනවා)
+            // 📅 CALENDAR
             if (textLower === 'calendar' || textLower === 'timetable' || textLower === 'time' || textLower === 'calender' || textLower === 'class' || textLower === 'lab' || textLower === 'eta' || textLower.startsWith('today') || textLower.startsWith('tomorrow') || textLower.startsWith('heta') || textLower.startsWith('ada') || textLower.startsWith('monday') || textLower.startsWith('tuesday') || textLower.startsWith('wednesday') || textLower.startsWith('thursday') || textLower.startsWith('friday')) {
                 const { start, end } = getTargetDateRange(textLower);
                 const events = await getCalendarEvents(start, end);
@@ -677,7 +661,7 @@ Contact Batch Rep: +94 76 251 3957
                 return;
             }
 
-            // FILE DELIVERY (strict word match)
+            // FILE DELIVERY
             const matchedFile = fileRegistry.find(f => new RegExp(`\\b${f.keyword}\\b`, 'i').test(textLower));
             if (matchedFile) {
                 try {
@@ -738,7 +722,7 @@ Contact Batch Rep: +94 76 251 3957
                 return;
             }
 
-            // ---------- SMART QUIZ GENERATOR (Timetable Based) ----------
+            // ---------- SMART QUIZ GENERATOR (PDF හෝ Info මත පදනම්ව) ----------
             if (textLower.includes('quiz') || textLower.includes('test me') || textLower.includes('practice') || textLower === 'test') {
                 const { start, end } = getTargetDateRange(textLower);
                 const events = await getCalendarEvents(start, end);
@@ -748,35 +732,57 @@ Contact Batch Rep: +94 76 251 3957
                     moduleName = events[0].summary || "General SLIIT IT Module";
                 }
 
-                const quizPrompt = `You are a strict but friendly tutor. 
+                // PDF එකක් හොයලා බලනවා (add file වලින් දාපු)
+                const matchedPDF = fileRegistry.find(f => 
+                    f.mimetype === 'application/pdf' && 
+                    new RegExp(`\\b${f.keyword}\\b`, 'i').test(textLower)
+                );
+
+                try {
+                    if (matchedPDF) {
+                        // PDF එකක් හම්බුනොත් ඒක read කරලා quiz එක හදනවා
+                        await sock.sendMessage(sender, { text: `📄 *${moduleName}* Quiz එක PDF *${matchedPDF.fileName}* එක මත පදනම්ව හදනවා... (ප්‍රශ්න 10යි)` }, { quoted: msg });
+
+                        const pdfBuffer = fs.readFileSync(path.join(FILES_DIR, matchedPDF.storedFileName));
+                        const base64Pdf = pdfBuffer.toString('base64');
+                        const pdfPart = { inlineData: { data: base64Pdf, mimeType: 'application/pdf' } };
+
+                        const pdfQuizPrompt = `You are a strict but friendly tutor. 
+Generate a 10-question quiz based *ONLY* on the content of the provided PDF file. 
+The module is "${moduleName}".
+Rules:
+1. Ask the questions ONE BY ONE (wait for the student's answer before asking the next).
+2. After the student answers, tell them if they are correct or incorrect.
+3. If the student says "I don't know" or "bari", explain the concept clearly before moving to the next question.
+4. At the end, give them a final score.`;
+
+                        const pdfResult = await model.generateContent([pdfQuizPrompt, pdfPart]);
+                        const pdfReply = formatMathForWhatsApp(pdfResult.response.text());
+                        await sock.sendMessage(sender, { text: pdfReply }, { quoted: msg });
+
+                    } else {
+                        // PDF එකක් නැත්නම් "add info" Text එකෙන් හදනවා
+                        await sock.sendMessage(sender, { text: `📝 ඔයාගේ *${moduleName}* Quiz එක Knowledge Base එකෙන් පටන් ගන්නවා! (ප්‍රශ්න 10යි)` }, { quoted: msg });
+
+                        const quizPrompt = `You are a strict but friendly tutor. 
 Generate a 10-question quiz specifically for the module "${moduleName}" based on the knowledge base provided below.
 Rules:
 1. Ask the questions ONE BY ONE (wait for the student's answer before asking the next).
 2. After the student answers, tell them if they are correct or incorrect.
-3. If the student says "I don't know" or "bari", or gets it wrong, explain the concept clearly in Singlish/Sinhala before moving to the next question.
+3. If the student says "I don't know" or "bari", explain the concept clearly before moving to the next question.
 4. At the end of the 10 questions, give them a final score.
 
 Knowledge Base:
-${JSON.stringify(knowledgeBase)}
+${JSON.stringify(knowledgeBase)}`;
 
-Make sure the questions are based only on what is in the Knowledge Base and the specific module.`;
-
-                try {
-                    await sock.sendMessage(sender, { text: `📝 ඔයාගේ *${moduleName}* Quiz එක පටන් ගන්නවා! (ප්‍රශ්න 10යි) \n\nමුල් ප්‍රශ්නය: ` }, { quoted: msg });
-                    const result = await model.generateContent(quizPrompt);
-                    const reply = formatMathForWhatsApp(result.response.text());
-                    await sock.sendMessage(sender, { text: reply }, { quoted: msg });
+                        const result = await model.generateContent(quizPrompt);
+                        const reply = formatMathForWhatsApp(result.response.text());
+                        await sock.sendMessage(sender, { text: reply }, { quoted: msg });
+                    }
                 } catch (error) {
                     console.error('Quiz error:', error);
                     await sock.sendMessage(sender, { text: "❌ Quiz generate කරන්න බැරි වුණා. ටිකකින් ආයේ try කරන්න." }, { quoted: msg });
                 }
-                return;
-            }
-
-            // ---------- DIRECT KNOWLEDGE MATCH (Auto-Reply for FAQs) ----------
-            const directMatch = getDirectKnowledgeMatch(textLower);
-            if (directMatch) {
-                await sock.sendMessage(sender, { text: directMatch }, { quoted: msg });
                 return;
             }
 
