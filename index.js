@@ -20,16 +20,16 @@ const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 ffmpeg.setFfmpegPath(ffmpegPath);
 
 // ================================================================
-//  👑 ADMIN CONFIG (FIXED)
+//  👑 ADMIN CONFIG
 // ================================================================
 const ADMIN_PHONE_NUMBER = "94762513957";
 const ADMIN_LID = "178481912627279";
-const ADMIN_JIDS = [`${ADMIN_LID}@lid`];  // ✅ backticks use කරන්න ඕන!
+const ADMIN_JIDS = [`${ADMIN_LID}@lid`];
 
 function isSenderAdmin(sender) {
     const normalized = jidNormalizedUser(sender) || sender;
     if (ADMIN_JIDS.includes(sender) || ADMIN_JIDS.includes(normalized)) return true;
-    if (normalized === `${ADMIN_PHONE_NUMBER}@s.whatsapp.net`) return true;  // ✅ backticks
+    if (normalized === `${ADMIN_PHONE_NUMBER}@s.whatsapp.net`) return true;
     if (ADMIN_LID && (normalized === `${ADMIN_LID}@lid` || sender.includes(ADMIN_LID))) return true;
     return sender.includes(ADMIN_PHONE_NUMBER);
 }
@@ -54,6 +54,26 @@ function buildPromptWithKnowledge(basePrompt) {
 }
 
 // ================================================================
+//  ⚡ DIRECT KNOWLEDGE MATCH (Save Gemini API)
+// ================================================================
+function getDirectKnowledgeMatch(textLower) {
+    const lowerText = textLower.trim().toLowerCase();
+    if (!lowerText || lowerText.length < 3) return null;
+
+    for (let i = 0; i < knowledgeBase.length; i++) {
+        const itemText = knowledgeBase[i];
+        const lowerItem = itemText.toLowerCase();
+        const keywords = lowerItem.split(/[\s:,]+/).filter(w => w.length > 4);
+        for (const keyword of keywords) {
+            if (lowerText.includes(keyword)) {
+                return `👋 ඒ ගැන අහපු එකට මම පිළිතුරු දෙන්නම්!\n\n📌 *ඔන්න තියෙන තොරතුරු:*\n\n${itemText}\n\nමේ ගැන තව ප්‍රශ්න තියෙනවා නම් අහන්න! 😊`;
+            }
+        }
+    }
+    return null;
+}
+
+// ================================================================
 //  📁 FILE REGISTRY
 // ================================================================
 const FILES_DIR = path.join(__dirname, 'resources');
@@ -67,7 +87,6 @@ try {
 function saveFileRegistry() {
     try { fs.writeFileSync(FILE_REGISTRY_PATH, JSON.stringify(fileRegistry, null, 2)); } catch (e) { console.error(e); }
 }
-
 
 // ================================================================
 //  🧵 CONCURRENCY QUEUE
@@ -150,7 +169,6 @@ function checkRateLimit(userId) {
     return { allowed: true, reason: "" };
 }
 
-
 app.get('/', async (req, res) => {
     if (isConnected) {
         return res.send(`<html><head><title>HansanaBot — Connected</title><meta http-equiv="refresh" content="30"></head>
@@ -196,57 +214,46 @@ const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 const systemInstruction = `
 You are HansanaBot, an intelligent Gemini AI assistant working for the SLIIT IT Batch Representative (Monal Hansana).
-
 YOUR IDENTITY & RESPONSIBILITIES:
 - Your Name: HansanaBot
 - You assist the Batch Rep, Monal (Hansana), by helping SLIIT students with their academic queries.
 - Answer student questions naturally in Singlish, Sinhala, or English based on the user's language.
 - Assist students with Timetable info, Calendar link, Issue forms, LMS links, Course Outlines, and LIC contacts.
 - Read images, voice notes, and PDFs provided by users accurately and explain them.
-
 BATCH REPRESENTATIVE (MONAL HANSANA) CONTACT DETAILS:
 - When students ask for Batch Rep's contact details, phone number, email, or how to contact Monal, provide the following details cleanly:
   * Name: Monal Hansana (SLIIT IT Batch Representative)
   * Contact Number: +94 76 251 3957 (076 251 3957)
   * Official SLIIT Email: it26100930@my.sliit.lk
-
 Y1S2 MODULE DETAILS & LIC INFORMATION:
 1. IT1170 - Data Structures and Algorithms (DSA)
    - LIC: Prof. Nathali Silva (nathali.s@sliit.lk)
    - Focus: Time/space complexity (Big-O analysis), RAM model, arrays, linked lists, stacks, queues, trees, graphs, sorting and searching algorithms.
-
 2. IT1160 - Discrete Mathematics
    - LIC: Ms. Nipuni Maleesha (nipuni.m@sliit.lk)
    - Focus: Logic, sets, functions, relations, proof techniques, graph theory, combinatorics, and mathematical structures for computer science.
-
 3. SE1020 - Object Oriented Programming (OOP)
    - LIC: Ms. Thilini Jayalath (thilini.j@sliit.lk)
    - Focus: OOP concepts (Abstraction, Encapsulation, Inheritance, Polymorphism), Java/C++ implementations, design principles.
-
 4. IT1150 - Technical Writing
    - LIC: Ms. Dinushika Jayathissa (dinushika.j@sliit.lk)
    - Focus: Professional communication, writing technical documentation, research reports, email etiquette, presentation skills.
-
 5. IE1011 - Information Systems
    - LIC: Ms. Chathurangika Kahandawarachchi (chathurangika.k@sliit.lk)
    - Focus: Business information systems, enterprise resource planning (ERP), system architecture, database concepts in business contexts.
-
 ACADEMIC & UNIVERSITY RULES:
 - Attendance: Minimum 80% attendance is strictly required for labs and lectures to sit for final exams.
 - Assessments: Grade is based on Continuous Assessments (Quizzes, Mid-Exam, Lab Tests, Assignments) + Final Exam.
 - Lab Group Switching: Changing Lab groups (G1/G2/etc.) requires prior LIC approval or valid medical reason.
-
 IMPORTANT LINKS & PORTALS:
 1. Timetable / Calendar: https://calendar.google.com/calendar/u/0?cid=Y2EwYjM4ZDE3MjcyOTIzMTY1N2FiZmMzNGYxYzdmZGJmOGVhMzMwNTBmZTZmNDYyM2Y1ZmFiODhjMGQzNDYzM0Bncm91cC5jYWxlbmRhci5nb29nbGUuY29t
 2. Courseweb (LMS): https://courseweb.sliit.lk/
 3. Eduscope (Lecture Recordings): https://eduscope.sliit.lk/
 4. Issue Reporting Form: https://docs.google.com/forms/d/e/1FAIpQLSfOUJnkMp8Tdig0C187WDOgU5AZmtPh3ayBZ-_z9xd23K3Zgw/viewform?usp=publish-editor
 5. SLIIT Support Desk: https://ask.sliit.lk/
-
 CRITICAL — NEVER CLAIM TO HAVE SENT/POSTED SOMETHING:
 - You CANNOT actually send messages, post announcements, or perform any action outside this chat reply. That is handled separately by the bot's code, not by you.
 - NEVER say things like "I've sent this to the group" or "yawanawa" / "දැම්මා" as if the action already happened. If a user asks you to post/send something to a group, simply explain that only the Batch Rep (Monal) can trigger that via a direct message with the correct phrasing, and do not simulate or pretend the action occurred.
-
 CRITICAL CODE & TUTORIAL ANALYSIS RULES:
 - When analyzing code snippets or tutorials:
   1. Pay EXTREME attention to variable scope and re-initialization (e.g., whether 'j = 1' is initialized OUTSIDE or INSIDE an outer loop).
@@ -279,12 +286,11 @@ function formatMathForWhatsApp(text) {
 }
 
 // ================================================================
-//  📅 CALENDAR READER (අලුත් කරපු logic එක)
+//  📅 CALENDAR READER
 // ================================================================
 const CALENDAR_API_KEY = process.env.CALENDAR_API_KEY;
 const CALENDAR_ID = process.env.CALENDAR_ID || 'ca0b38d172729231657abfc34f1c7fdb8ea33050fe6f4623f5fab88cd0d4633@group.calendar.google.com';
 
-// අද, හෙට, සඳුදා වගේ කියවලා දවස තෝරගන්න function එක
 function getTargetDateRange(text) {
     const now = new Date();
     const targetDate = new Date(now);
@@ -295,7 +301,6 @@ function getTargetDateRange(text) {
     } else if (lowerText.includes('today') || lowerText.includes('ada') || lowerText.includes('අද')) {
         // default to today
     } else {
-        // Specific days (Monday, Tuesday, etc.)
         const days = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
         const sinhalaDays = ['ඉරිදා','සඳුදා','අඟහරුවාදා','බදාදා','බ්‍රහස්පතින්දා','සිකුරාදා','සෙනසුරාදා'];
         for(let i=0; i<7; i++){
@@ -311,7 +316,6 @@ function getTargetDateRange(text) {
     start.setHours(0,0,0,0);
     const end = new Date(targetDate);
     end.setHours(23,59,59,999);
-
     return { start, end };
 }
 
@@ -396,7 +400,6 @@ async function connectToWhatsApp() {
             }
             if (connection === 'close') {
                 isConnected = false;
-                // ඇත්තම error එක බලන්න
                 const statusCode = (lastDisconnect?.error)?.output?.statusCode;
                 console.error("❌ WhatsApp Connection Closed! Status Code:", statusCode);
                 console.error("❌ Full Error:", lastDisconnect?.error);
@@ -422,7 +425,6 @@ async function connectToWhatsApp() {
         // ----------------------------------------------------------------
         async function processMessage(sock, msg) {
             const sender = msg.key.remoteJid;
-                         // ---------- RATE LIMIT CHECK ----------
             const rateCheck = checkRateLimit(sender);
             if (!rateCheck.allowed) {
                 await sock.sendMessage(sender, { text: rateCheck.reason }, { quoted: msg });
@@ -487,8 +489,7 @@ async function connectToWhatsApp() {
                     const storedFileName = `${crypto.randomUUID()}${ext}`;
                     fs.writeFileSync(path.join(FILES_DIR, storedFileName), buffer);
                     fileRegistry.push({
-                        keyword,
-                        fileName: docMsg.fileName || `${keyword}${ext}`,
+                        keyword, fileName: docMsg.fileName || `${keyword}${ext}`,
                         mimetype: docMsg.mimetype || 'application/pdf',
                         storedFileName
                     });
@@ -553,8 +554,8 @@ async function connectToWhatsApp() {
                 }
                 return;
             }
-                        
-                        // ---------- HELP MENU ----------
+
+            // ---------- HELP MENU ----------
             if (textLower === 'help' || textLower === '/help' || textLower === 'menu' || textLower === '/menu' || textLower === 'start' || textLower === '/start' || textLower === 'commands' || textLower === 'hi' || textLower === 'hello' || textLower === 'hey' || textLower === 'hii' || textLower === 'hlo' || textLower === 'hi there' || textLower === 'good morning' || textLower === 'good night' || textLower === 'suba') {
                 const helpText = `👋 *HansanaBot Help Menu* 🤖
 
@@ -588,27 +589,6 @@ Contact Batch Rep: +94 76 251 3957
                 await sock.sendMessage(sender, { text: helpText }, { quoted: msg });
                 return;
             }
-                const helpText = `👋 *HansanaBot Help Menu* 🤖
-
-*General Commands:*
-📌 *help* - මේ Menu එක පෙන්නනවා
-
-
-*📅 Timetable & Calendar:*
-🗓️ *calendar* - අද / හෙට / ඉදිරි දවස් වල Classes බලන්න
-📅 *tomorrow* / *heta* - හෙට තියෙන Classes බලන්න
-📅 *today* / *ada* - අද තියෙන Classes බලන්න
-📅 *monday*, *tuesday*, *wednesday* etc. - ඒ දවසේ Classes බලන්න
-
-*📁 Files & Documents:*
-📂 *handbook*, *course outline* etc. - Save කරලා තියෙන Files ලබා ගන්න
-
-*📞 Support:*
-Contact Batch Rep: +94 76 251 3957
-`;
-                await sock.sendMessage(sender, { text: helpText }, { quoted: msg });
-                return;
-            }
 
             // WHOAMI ID
             if (textLower === 'whoami' || textLower === 'myid') {
@@ -617,7 +597,7 @@ Contact Batch Rep: +94 76 251 3957
                 return;
             }
 
-                        // 📅 CALENDAR (දැන් අද/හෙට/සතිය බලලා උත්තර දෙනවා)
+            // 📅 CALENDAR (දැන් අද/හෙට/සතිය බලලා උත්තර දෙනවා)
             if (textLower === 'calendar' || textLower === 'timetable' || textLower === 'time' || textLower === 'calender' || textLower === 'class' || textLower === 'lab' || textLower === 'eta' || textLower.startsWith('today') || textLower.startsWith('tomorrow') || textLower.startsWith('heta') || textLower.startsWith('ada') || textLower.startsWith('monday') || textLower.startsWith('tuesday') || textLower.startsWith('wednesday') || textLower.startsWith('thursday') || textLower.startsWith('friday')) {
                 const { start, end } = getTargetDateRange(textLower);
                 const events = await getCalendarEvents(start, end);
@@ -628,7 +608,6 @@ Contact Batch Rep: +94 76 251 3957
                         const startTime = new Date(ev.start?.dateTime || ev.start?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute:'2-digit' });
                         const endTime = new Date(ev.end?.dateTime || ev.end?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute:'2-digit' });
                         
-                        // ⬇️ මේ අලුත් lines ටික add කරලා තියෙනවා (Location & Description)
                         const location = ev.location || '';
                         const description = ev.description || '';
 
@@ -639,18 +618,15 @@ Contact Batch Rep: +94 76 251 3957
                             msgText += `   📍 *ස්ථානය (Location):* ${location}\n`;
                         }
                         if (description) {
-                            // ⬇️ සම්පූර්ණ Description එකම පෙන්නනවා (කපන්නේ නෑ)
                             msgText += `   📝 *විස්තරය (Details):* ${description}\n`;
                         }
                         msgText += `\n`;
-                        // ⬆️ ඉවරයි
                     });
-                        // 👇 මේ අලුත් කොටස තමයි Quiz එකට යොමු කරන Instruction එක
+                    
                     const firstModuleName = events[0]?.summary || 'Module';
                     msgText += `\n💡 *Tip:* ඔයාට අද/හෙට *${firstModuleName}* class එක තියෙනවා. Class එකට යන්න කලින් පොඩි quiz එකක් try කරන්න ඕනද?\n\n👉 Type කරන්න: *quiz*  (Knowledge base එකෙන් ප්‍රශ්න අහනවා)\n`;
-                    // 👆 ඉවරයි
-                        
-                    msgText += `🔗 *Full Calendar:* https://calendar.google.com/calendar/u/0?cid=${encodeURIComponent(CALENDAR_ID)}`;
+                    
+                    msgText += `\n🔗 *Full Calendar:* https://calendar.google.com/calendar/u/0?cid=${encodeURIComponent(CALENDAR_ID)}`;
                     await sock.sendMessage(sender, { text: msgText }, { quoted: msg });
                 } else {
                     await sock.sendMessage(sender, { text: "🎉 ඒ දවසට විතරක් classes නෑ! (No lectures/labs for that day)." }, { quoted: msg });
@@ -665,8 +641,6 @@ Contact Batch Rep: +94 76 251 3957
                 }, { quoted: msg });
                 return;
             }
-
-            
 
             // LIST FILES (Admin)
             if (textLower === 'list files' || textLower === 'show files') {
@@ -708,11 +682,7 @@ Contact Batch Rep: +94 76 251 3957
             if (matchedFile) {
                 try {
                     const buffer = fs.readFileSync(path.join(FILES_DIR, matchedFile.storedFileName));
-                    await sock.sendMessage(sender, {
-                        document: buffer,
-                        mimetype: matchedFile.mimetype,
-                        fileName: matchedFile.fileName
-                    }, { quoted: msg });
+                    await sock.sendMessage(sender, { document: buffer, mimetype: matchedFile.mimetype, fileName: matchedFile.fileName }, { quoted: msg });
                 } catch (err) {
                     console.error('Send file error:', err);
                     await sock.sendMessage(sender, { text: "❌ File send කිරීම අසාර්ථකයි." }, { quoted: msg });
@@ -765,6 +735,48 @@ Contact Batch Rep: +94 76 251 3957
                 const removed = knowledgeBase.splice(idx, 1);
                 saveKnowledgeBase();
                 await sock.sendMessage(sender, { text: `🗑️ Removed: "${removed[0]}"` }, { quoted: msg });
+                return;
+            }
+
+            // ---------- SMART QUIZ GENERATOR (Timetable Based) ----------
+            if (textLower.includes('quiz') || textLower.includes('test me') || textLower.includes('practice') || textLower === 'test') {
+                const { start, end } = getTargetDateRange(textLower);
+                const events = await getCalendarEvents(start, end);
+
+                let moduleName = "General SLIIT IT Module";
+                if (events && events.length > 0) {
+                    moduleName = events[0].summary || "General SLIIT IT Module";
+                }
+
+                const quizPrompt = `You are a strict but friendly tutor. 
+Generate a 10-question quiz specifically for the module "${moduleName}" based on the knowledge base provided below.
+Rules:
+1. Ask the questions ONE BY ONE (wait for the student's answer before asking the next).
+2. After the student answers, tell them if they are correct or incorrect.
+3. If the student says "I don't know" or "bari", or gets it wrong, explain the concept clearly in Singlish/Sinhala before moving to the next question.
+4. At the end of the 10 questions, give them a final score.
+
+Knowledge Base:
+${JSON.stringify(knowledgeBase)}
+
+Make sure the questions are based only on what is in the Knowledge Base and the specific module.`;
+
+                try {
+                    await sock.sendMessage(sender, { text: `📝 ඔයාගේ *${moduleName}* Quiz එක පටන් ගන්නවා! (ප්‍රශ්න 10යි) \n\nමුල් ප්‍රශ්නය: ` }, { quoted: msg });
+                    const result = await model.generateContent(quizPrompt);
+                    const reply = formatMathForWhatsApp(result.response.text());
+                    await sock.sendMessage(sender, { text: reply }, { quoted: msg });
+                } catch (error) {
+                    console.error('Quiz error:', error);
+                    await sock.sendMessage(sender, { text: "❌ Quiz generate කරන්න බැරි වුණා. ටිකකින් ආයේ try කරන්න." }, { quoted: msg });
+                }
+                return;
+            }
+
+            // ---------- DIRECT KNOWLEDGE MATCH (Auto-Reply for FAQs) ----------
+            const directMatch = getDirectKnowledgeMatch(textLower);
+            if (directMatch) {
+                await sock.sendMessage(sender, { text: directMatch }, { quoted: msg });
                 return;
             }
 
