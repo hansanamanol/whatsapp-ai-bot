@@ -20,16 +20,16 @@ const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
 ffmpeg.setFfmpegPath(ffmpegPath);
 
 // ================================================================
-//  👑 ADMIN CONFIG
+//  👑 ADMIN CONFIG (FIXED)
 // ================================================================
 const ADMIN_PHONE_NUMBER = "94762513957";
-const ADMIN_LID = "178481912627279";  // Corrected
-const ADMIN_JIDS = [`${ADMIN_LID}@lid`];
+const ADMIN_LID = "178481912627279";
+const ADMIN_JIDS = [`${ADMIN_LID}@lid`];  // ✅ backticks use කරන්න ඕන!
 
 function isSenderAdmin(sender) {
     const normalized = jidNormalizedUser(sender) || sender;
     if (ADMIN_JIDS.includes(sender) || ADMIN_JIDS.includes(normalized)) return true;
-    if (normalized === `${ADMIN_PHONE_NUMBER}@s.whatsapp.net`) return true;
+    if (normalized === `${ADMIN_PHONE_NUMBER}@s.whatsapp.net`) return true;  // ✅ backticks
     if (ADMIN_LID && (normalized === `${ADMIN_LID}@lid` || sender.includes(ADMIN_LID))) return true;
     return sender.includes(ADMIN_PHONE_NUMBER);
 }
