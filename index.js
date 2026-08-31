@@ -243,7 +243,8 @@ CRITICAL CODE & TUTORIAL ANALYSIS RULES:
 `;
 
 const model = genAI.getGenerativeModel({
-    model: "gemini-3.1-flash-lite", 
+    // ⚠️ වැදගත්: 3.1 වෙනුවට 3.5 දාන්න (මේක තමයි 404 එක වළක්වන්නේ)
+    model: "gemini-3.5-flash-lite", 
     systemInstruction: systemInstruction
 });
 
@@ -264,6 +265,24 @@ function formatMathForWhatsApp(text) {
     let result = text;
     for (const [pattern, symbol] of replacements) result = result.replace(pattern, symbol);
     return result;
+}
+
+// 👇 අලුතෙන් එකතු කළ HTML පෙරහන් Function එක
+function cleanHTML(text) {
+    if (!text) return '';
+    let cleanText = text;
+    // HTML tags ඉවත් කිරීම (<p>, <b>, </li> etc.)
+    cleanText = cleanText.replace(/<[^>]*>/g, '');
+    // HTML Entities (උදා: &amp;, &nbsp;) සාමාන්‍ය අකුරු බවට පත් කිරීම
+    cleanText = cleanText.replace(/&amp;/g, '&');
+    cleanText = cleanText.replace(/&lt;/g, '<');
+    cleanText = cleanText.replace(/&gt;/g, '>');
+    cleanText = cleanText.replace(/&quot;/g, '"');
+    cleanText = cleanText.replace(/&#39;/g, "'");
+    cleanText = cleanText.replace(/&nbsp;/g, ' ');
+    // හිස් පේළි ඉවත් කිරීම
+    cleanText = cleanText.replace(/\n\s*\n/g, '\n').trim();
+    return cleanText;
 }
 
 // ================================================================
@@ -602,7 +621,9 @@ Contact Batch Rep: +94 76 251 3957`;
                             msgText += `   📍 *ස්ථානය (Location):* ${location}\n`;
                         }
                         if (description) {
-                            msgText += `   📝 *විස්තරය (Details):* ${description}\n`;
+                            // 👇 මෙතන cleanHTML function එක පාවිච්චි කළා
+                            const cleanDescription = cleanHTML(description);
+                            msgText += `   📝 *විස්තරය (Details):* ${cleanDescription}\n`;
                         }
                         msgText += `\n`;
                     });
