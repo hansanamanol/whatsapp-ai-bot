@@ -318,11 +318,16 @@ function getTargetDateRange(text) {
     const targetDate = new Date(now);
     const lowerText = text.toLowerCase();
 
-    if (lowerText.includes('tomorrow') || lowerText.includes('heta') || lowerText.includes('හෙට')) {
+    // හෙට (Tomorrow) - "heta", "heta?", "heta monawada", "heta timetable" ඔක්කොම මේකට match වෙනවා
+    const isHeta = /\bheta\b/.test(lowerText) || lowerText.includes('tomorrow') || lowerText.includes('හෙට');
+    const isAda  = /\bada\b/.test(lowerText)  || lowerText.includes('today')   || lowerText.includes('අද');
+
+    if (isHeta) {
         targetDate.setDate(now.getDate() + 1);
-    } else if (lowerText.includes('today') || lowerText.includes('ada') || lowerText.includes('අද')) {
+    } else if (isAda) {
         // default to today
     } else {
+        // Specific days (Monday, Tuesday etc.)
         const days = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
         const sinhalaDays = ['ඉරිදා','සඳුදා','අඟහරුවාදා','බදාදා','බ්‍රහස්පතින්දා','සිකුරාදා','සෙනසුරාදා'];
         for(let i=0; i<7; i++){
@@ -338,7 +343,9 @@ function getTargetDateRange(text) {
     start.setHours(0,0,0,0);
     const end = new Date(targetDate);
     end.setHours(23,59,59,999);
-    return { start, end };
+
+    // 👇 මෙතන targetDate එකත් return කරනවා (අලුතෙන් add කළේ මේකයි)
+    return { start, end, targetDate };
 }
 
 async function getCalendarEvents(start, end) {
@@ -622,14 +629,24 @@ Contact Batch Rep: +94 76 251 3957`;
                 return;
             }
 
-            // 📅 CALENDAR
-
-            // 📅 CALENDAR (නිවැරදිවම දවස් හඳුනාගන්නා ලද)
-            if (textLower === 'calendar' || textLower === 'timetable' || textLower === 'time' || textLower === 'calender' || textLower === 'class' || textLower === 'today' || textLower === 'tomorrow' || textLower === 'ada' || textLower === 'heta' || textLower.includes('thursday') || textLower.includes('monday') || textLower.includes('tuesday') || textLower.includes('wednesday') || textLower.includes('friday') || textLower.includes('saturday') || textLower.includes('sunday') || textLower.includes('today timetable') || textLower.includes('tomorrow timetable') || textLower.includes('ada timetable') || textLower.includes('heta timetable') || textLower.includes('thursday timetable') || textLower.includes('monday class') || textLower.includes('tuesday class') || textLower.includes('wednesday class') || textLower.includes('thursday class') || textLower.includes('friday class')) {                const { start, end } = getTargetDateRange(textLower);
+                       // 📅 CALENDAR
+            if (textLower === 'calendar' || textLower === 'timetable' || textLower === 'time' || textLower === 'calender' || textLower === 'class' || textLower === 'lab' || /\bada\b/.test(textLower) || /\bheta\b/.test(textLower) || textLower.includes('today') || textLower.includes('tomorrow') || textLower.includes('monday') || textLower.includes('tuesday') || textLower.includes('wednesday') || textLower.includes('thursday') || textLower.includes('friday') || textLower.includes('saturday') || textLower.includes('sunday')) {
+                
+                // 👇 දැන් targetDate එකත් ගන්නවා
+                const { start, end, targetDate } = getTargetDateRange(textLower);
                 const events = await getCalendarEvents(start, end);
 
+                // 👇 දිනය ලස්සනට format කරනවා (උදා: 2026 සැප්තැම්බර් 01)
+                const formattedDate = targetDate.toLocaleDateString('en-LK', {
+                    year: 'numeric',
+                    month: 'long',
+                    day: 'numeric',
+                    timeZone: 'Asia/Colombo'
+                });
+
                 if (events && events.length > 0) {
-                    let msgText = '📅 *ඒ දවසේ Classes:*\n\n';
+                    // 👇 මෙතන Classes header එකට දිනය එකතු කළා
+                    let msgText = `📅 *${formattedDate} දින Classes:*\n\n`;
                     events.forEach((ev, idx) => {
                         const startTime = new Date(ev.start?.dateTime || ev.start?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute:'2-digit' });
                         const endTime = new Date(ev.end?.dateTime || ev.end?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute:'2-digit' });
@@ -644,7 +661,6 @@ Contact Batch Rep: +94 76 251 3957`;
                             msgText += `   📍 *ස්ථානය (Location):* ${location}\n`;
                         }
                         if (description) {
-                            // 👇 මෙතන cleanHTML function එක පාවිච්චි කළා
                             const cleanDescription = cleanHTML(description);
                             msgText += `   📝 *විස්තරය (Details):* ${cleanDescription}\n`;
                         }
@@ -652,12 +668,12 @@ Contact Batch Rep: +94 76 251 3957`;
                     });
                     
                     const firstModuleName = events[0]?.summary || 'Module';
-                    msgText += `\n💡 *Tip:* ඔයාට අද/හෙට *${firstModuleName}* class එක තියෙනවා. Class එකට යන්න කලින් පොඩි quiz එකක් try කරන්න ඕනද?\n\n👉 Type කරන්න: *quiz*  (Knowledge base එකෙන් ප්‍රශ්න අහනවා)\n`;
+                    msgText += `\n💡 *Tip:* ${formattedDate} දිනට *${firstModuleName}* class එක තියෙනවා. Class එකට යන්න කලින් පොඩි quiz එකක් try කරන්න ඕනද?\n\n👉 Type කරන්න: *quiz*  (Knowledge base එකෙන් ප්‍රශ්න අහනවා)\n`;
                     
                     msgText += `\n🔗 *Full Calendar:* https://calendar.google.com/calendar/u/0?cid=${encodeURIComponent(CALENDAR_ID)}`;
                     await sock.sendMessage(sender, { text: msgText }, { quoted: msg });
                 } else {
-                    await sock.sendMessage(sender, { text: "🎉 ඒ දවසට විතරක් classes නෑ! (No lectures/labs for that day)." }, { quoted: msg });
+                    await sock.sendMessage(sender, { text: `🎉 *${formattedDate}* දිනට විතරක් classes නෑ! (No lectures/labs for that day).` }, { quoted: msg });
                 }
                 return;
             }
