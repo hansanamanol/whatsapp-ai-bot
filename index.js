@@ -623,8 +623,9 @@ Contact Batch Rep: +94 76 251 3957`;
             }
 
             // 📅 CALENDAR
-            if (textLower === 'calendar' || textLower === 'timetable' || textLower === 'time' || textLower === 'calender' || textLower === 'class' || textLower === 'lab' || textLower === 'today' || textLower === 'tomorrow' || textLower === 'ada' || textLower === 'heta' || textLower === 'monday' || textLower === 'tuesday' || textLower === 'wednesday' || textLower === 'thursday' || textLower === 'friday' || textLower.includes('today class') || textLower.includes('today timetable') || textLower.includes('tomorrow class') || textLower.includes('tomorrow timetable') || textLower.includes('ada class') || textLower.includes('ada timetable') || textLower.includes('heta class') || textLower.includes('heta timetable')) {
-                const { start, end } = getTargetDateRange(textLower);
+
+            // 📅 CALENDAR (නිවැරදිවම දවස් හඳුනාගන්නා ලද)
+            if (textLower === 'calendar' || textLower === 'timetable' || textLower === 'time' || textLower === 'calender' || textLower === 'class' || textLower === 'today' || textLower === 'tomorrow' || textLower === 'ada' || textLower === 'heta' || textLower.includes('thursday') || textLower.includes('monday') || textLower.includes('tuesday') || textLower.includes('wednesday') || textLower.includes('friday') || textLower.includes('saturday') || textLower.includes('sunday') || textLower.includes('today timetable') || textLower.includes('tomorrow timetable') || textLower.includes('ada timetable') || textLower.includes('heta timetable') || textLower.includes('thursday timetable') || textLower.includes('monday class') || textLower.includes('tuesday class') || textLower.includes('wednesday class') || textLower.includes('thursday class') || textLower.includes('friday class')) {                const { start, end } = getTargetDateRange(textLower);
                 const events = await getCalendarEvents(start, end);
 
                 if (events && events.length > 0) {
