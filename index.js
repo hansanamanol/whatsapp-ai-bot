@@ -55,10 +55,9 @@ function buildPromptWithKnowledge(basePrompt) {
 }
 
 // ================================================================
-//  📚 ACADEMIC WORD LIST (Full List 1-8 with Simple Meanings)
+//  📚 ACADEMIC WORD LIST
 // ================================================================
 const academicWords = {
-    // --- List 1 ---
     "estimate": "To guess the amount or value of something.",
     "period": "A length of time.",
     "analysis": "Looking at something carefully to understand it.",
@@ -119,7 +118,6 @@ const academicWords = {
     "environment": "The world around us.",
     "percent": "Out of a hundred.",
     "established": "Started or created.",
-    // --- List 2 onwards ---
     "design": "A plan or drawing.",
     "potential": "Possible ability.",
     "achieve": "To succeed in doing something.",
@@ -1322,7 +1320,7 @@ Contact Batch Rep: +94 76 251 3957`;
 📚 *list info* - Save කරලා තියෙන Info ටික බලන්න
 🗑️ *remove info [number]* - Info එකක් අයින් කරන්න
 📤 *add file: [keyword]* - PDF/Image එකක් save කරන්න
-📋 *list files* - Save කරලා තියෙන Files ටික බලන්න
+📋 *list files* - Save කරලා තියෙන Files ටික බලන්න (PDF එකත් එනවා!)
 🗑️ *remove file [number]* - File එකක් අයින් කරන්න
 📊 *status* - Bot එකේ තත්වය බලන්න`;
                 }
@@ -1346,16 +1344,33 @@ Contact Batch Rep: +94 76 251 3957`;
                 return;
             }
 
-            // LIST FILES (Admin)
+            // LIST FILES (Admin) - List එකත්, Files ටිකත් එවයි!
             if (textLower === 'list files' || textLower === 'show files') {
                 if (!isSenderAdmin(sender)) {
                     await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
                     return;
                 }
-                if (fileRegistry.length === 0) await sock.sendMessage(sender, { text: "📭 No files saved." }, { quoted: msg });
-                else {
+                if (fileRegistry.length === 0) {
+                    await sock.sendMessage(sender, { text: "📭 No files saved." }, { quoted: msg });
+                } else {
                     const list = fileRegistry.map((f, i) => `${i+1}. "${f.keyword}" → ${f.fileName}`).join('\n');
                     await sock.sendMessage(sender, { text: `📁 *Saved Files (${fileRegistry.length})*\n\n${list}` }, { quoted: msg });
+
+                    // ✅ අලුත් කොටස: List එකත් එක්කම ඇත්තම PDF Files ටික එවනවා!
+                    for (const f of fileRegistry) {
+                        const filePath = path.join(FILES_DIR, f.storedFileName);
+                        if (fs.existsSync(filePath)) {
+                            const buffer = fs.readFileSync(filePath);
+                            await sock.sendMessage(sender, {
+                                document: buffer,
+                                mimetype: f.mimetype || 'application/pdf',
+                                fileName: f.fileName || 'document.pdf'
+                            }, { quoted: msg });
+                            await new Promise(r => setTimeout(r, 1500)); // WhatsApp block නොවෙන්න පොඩි Delay එකක්
+                        } else {
+                            console.error(`File not found: ${filePath}`);
+                        }
+                    }
                 }
                 return;
             }
@@ -1447,7 +1462,7 @@ Contact Batch Rep: +94 76 251 3957`;
                 return;
             }
 
-            // ---------- SMART QUIZ GENERATOR ----------
+            // QUIZ
             if (textLower.includes('quiz') || textLower.includes('test me') || textLower.includes('practice') || textLower === 'test') {
                 const { start, end } = getTargetDateRange(textLower);
                 const events = await getCalendarEvents(start, end);
