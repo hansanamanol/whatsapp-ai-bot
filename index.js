@@ -1279,7 +1279,15 @@ async function connectToWhatsApp() {
                 aiIntent.intent = 'chat';
                 aiIntent.date_keyword = null;
             }
-            
+            const isDayMonthQuery = /sanduda|saduda|sikurda|sikurada|eelaga|laban|balanna|ada|heta|anidda|monday|tuesday|wednesday|thursday|friday|saturday|sunday|janawari|february|march|april|may|june|july|august|september|october|november|december|සිකුරාදා|සඳුදා|අඟහරුවාදා|බදාදා|බ්‍රහස්පතින්දා|සෙනසුරාදා|ඉරිදා/i.test(textLower);
+            if (isDayMonthQuery) {
+               aiIntent.intent = 'calendar';
+               if (!aiIntent.date_keyword) {
+                   aiIntent.date_keyword = textLower;
+                }
+            }     
+
+                
             if (aiIntent.intent === 'calendar') {
                 const { start, end, targetDate } = getTargetDateRange(aiIntent.date_keyword || textLower);
                 const events = await getCalendarEvents(start, end);
