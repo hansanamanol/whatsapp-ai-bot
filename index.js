@@ -1376,9 +1376,10 @@ Contact Batch Rep: +94 76 251 3957`;
                 return;
             }
 
-            // FILE DELIVERY (STRICT)
+            // FILE DELIVERY (STRICT) - ✅ FIXED! (kw define කළා)
             const matchedFile = fileRegistry.find(f => {
-                const kwWords = f.keyword.toLowerCase().split(/[\s,:.!?()]+/).filter(w => w.length > 2);
+                const kw = f.keyword.toLowerCase(); // ✅ මේ line එක එකතු කරන්න!
+                const kwWords = kw.split(/[\s,:.!?()]+/).filter(w => w.length > 2);
                 return textLower.includes(kw) || kwWords.some(word => textLower.includes(word));
             });
 
