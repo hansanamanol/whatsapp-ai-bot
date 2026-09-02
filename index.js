@@ -318,23 +318,56 @@ function getTargetDateRange(text) {
     const targetDate = new Date(now);
     const lowerText = text.toLowerCase();
 
-    // හෙට (Tomorrow) - "heta", "heta?", "heta monawada", "heta timetable" ඔක්කොම මේකට match වෙනවා
-    const isHeta = /\bheta\b/.test(lowerText) || lowerText.includes('tomorrow') || lowerText.includes('හෙට');
-    const isAda  = /\bada\b/.test(lowerText)  || lowerText.includes('today')   || lowerText.includes('අද');
-
-    if (isHeta) {
+    // 1. අද, හෙට
+    if (/\bheta\b/.test(lowerText) || lowerText.includes('tomorrow') || lowerText.includes('හෙට')) {
         targetDate.setDate(now.getDate() + 1);
-    } else if (isAda) {
+    } else if (/\bada\b/.test(lowerText) || lowerText.includes('today') || lowerText.includes('අද')) {
         // default to today
-    } else {
-        // Specific days (Monday, Tuesday etc.)
+    } 
+    // 2. අනිද්දා (Day after tomorrow)
+    else if (/\banidda\b/.test(lowerText) || lowerText.includes('anidha') || lowerText.includes('inannida') || lowerText.includes('අනිද්දා')) {
+        targetDate.setDate(now.getDate() + 2);
+    } 
+    // 3. පෙරේදා (Day before yesterday)
+    else if (/\bpereda\b/.test(lowerText) || lowerText.includes('pera') || lowerText.includes('පෙරේදා')) {
+        targetDate.setDate(now.getDate() - 2);
+    } 
+    // 4. ඊයේ (Yesterday)
+    else if (lowerText.includes('iyye') || lowerText.includes('ඊයේ')) {
+        targetDate.setDate(now.getDate() - 1);
+    } 
+    else {
+        // 5. ඉංග්‍රීසි සහ සිංහල දවස් නම්
         const days = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
         const sinhalaDays = ['ඉරිදා','සඳුදා','අඟහරුවාදා','බදාදා','බ්‍රහස්පතින්දා','සිකුරාදා','සෙනසුරාදා'];
+        let isDayFound = false;
         for(let i=0; i<7; i++){
             if(lowerText.includes(days[i]) || lowerText.includes(sinhalaDays[i])){
                 const diff = (i - now.getDay() + 7) % 7;
                 targetDate.setDate(now.getDate() + diff);
+                isDayFound = true;
                 break;
+            }
+        }
+
+        // 6. නිශ්චිත දිනයක් (උදා: "September 3" හෝ "3 september")
+        if (!isDayFound) {
+            const monthNames = ['january','february','march','april','may','june','july','august','september','october','november','december'];
+            // "September 3" වගේ හෝ "3 September" වගේ pattern එක හොයනවා
+            let match = lowerText.match(/(\d{1,2})(?:st|nd|rd|th)?\s*(january|february|march|april|may|june|july|august|september|october|november|december)/i);
+            if (!match) match = lowerText.match(/(january|february|march|april|may|june|july|august|september|october|november|december)\s*(\d{1,2})(?:st|nd|rd|th)?/i);
+            
+            if (match) {
+                const monthIndex = monthNames.indexOf(match[1].toLowerCase());
+                const day = parseInt(match[2]);
+                if (monthIndex !== -1) {
+                    targetDate.setMonth(monthIndex);
+                    targetDate.setDate(day);
+                    // අතීත දිනයක් නම් ලබන අවුරුද්දට යනවා
+                    if (targetDate < now) {
+                        targetDate.setFullYear(now.getFullYear() + 1);
+                    }
+                }
             }
         }
     }
@@ -343,11 +376,8 @@ function getTargetDateRange(text) {
     start.setHours(0,0,0,0);
     const end = new Date(targetDate);
     end.setHours(23,59,59,999);
-
-    // 👇 මෙතන targetDate එකත් return කරනවා (අලුතෙන් add කළේ මේකයි)
     return { start, end, targetDate };
 }
-
 async function getCalendarEvents(start, end) {
     if (!CALENDAR_API_KEY) {
         console.warn('⚠️ CALENDAR_API_KEY not set. Calendar will not work.');
@@ -630,8 +660,7 @@ Contact Batch Rep: +94 76 251 3957`;
             }
 
                        // 📅 CALENDAR
-            if (textLower === 'calendar' || textLower === 'timetable' || textLower === 'time' || textLower === 'calender' || textLower === 'class' || textLower === 'lab' || /\bada\b/.test(textLower) || /\bheta\b/.test(textLower) || textLower.includes('today') || textLower.includes('tomorrow') || textLower.includes('monday') || textLower.includes('tuesday') || textLower.includes('wednesday') || textLower.includes('thursday') || textLower.includes('friday') || textLower.includes('saturday') || textLower.includes('sunday')) {
-                
+ if (textLower === 'calendar' || textLower === 'timetable' || textLower === 'time' || textLower === 'calender' || textLower === 'class' || textLower === 'lab' || /\bada\b/.test(textLower) || /\bheta\b/.test(textLower) || /\banidda\b/.test(textLower) || /\bpereda\b/.test(textLower) || textLower.includes('anidha') || textLower.includes('inannida') || textLower.includes('iyye') || textLower.includes('today') || textLower.includes('tomorrow') || textLower.includes('monday') || textLower.includes('tuesday') || textLower.includes('wednesday') || textLower.includes('thursday') || textLower.includes('friday') || textLower.includes('saturday') || textLower.includes('sunday') || textLower.includes('january') || textLower.includes('february') || textLower.includes('march') || textLower.includes('april') || textLower.includes('may') || textLower.includes('june') || textLower.includes('july') || textLower.includes('august') || textLower.includes('september') || textLower.includes('october') || textLower.includes('november') || textLower.includes('december')) {                
                 // 👇 දැන් targetDate එකත් ගන්නවා
                 const { start, end, targetDate } = getTargetDateRange(textLower);
                 const events = await getCalendarEvents(start, end);
