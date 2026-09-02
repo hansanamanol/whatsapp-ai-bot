@@ -36,9 +36,15 @@ function isSenderAdmin(sender) {
 }
 
 // ================================================================
+//  📁 DATA DIRECTORY (Volume Path)
+// ================================================================
+const DATA_DIR = process.env.DATA_DIR || '/app/data';
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+// ================================================================
 //  📚 KNOWLEDGE BASE
 // ================================================================
-const KNOWLEDGE_FILE = path.join(__dirname, 'knowledge.json');
+const KNOWLEDGE_FILE = path.join(DATA_DIR, 'knowledge.json');
 let knowledgeBase = [];
 try {
     if (fs.existsSync(KNOWLEDGE_FILE)) knowledgeBase = JSON.parse(fs.readFileSync(KNOWLEDGE_FILE, 'utf8'));
@@ -55,7 +61,7 @@ function buildPromptWithKnowledge(basePrompt) {
 }
 
 // ================================================================
-//  📚 ACADEMIC WORD LIST
+//  📚 ACADEMIC WORD LIST (සම්පූර්ණ ලැයිස්තුව)
 // ================================================================
 const academicWords = {
     "estimate": "To guess the amount or value of something.",
@@ -543,7 +549,7 @@ const academicWords = {
 // ================================================================
 //  📇 STUDENT REGISTRY
 // ================================================================
-const STUDENTS_FILE = path.join(__dirname, 'students.json');
+const STUDENTS_FILE = path.join(DATA_DIR, 'students.json');
 let studentRegistry = [];
 try {
     if (fs.existsSync(STUDENTS_FILE)) studentRegistry = JSON.parse(fs.readFileSync(STUDENTS_FILE, 'utf8'));
@@ -568,9 +574,9 @@ let geminiRequestsToday = 0;
 // ================================================================
 //  📁 FILE REGISTRY
 // ================================================================
-const FILES_DIR = path.join(__dirname, 'resources');
+const FILES_DIR = path.join(DATA_DIR, 'resources');
 if (!fs.existsSync(FILES_DIR)) fs.mkdirSync(FILES_DIR, { recursive: true });
-const FILE_REGISTRY_PATH = path.join(__dirname, 'files-registry.json');
+const FILE_REGISTRY_PATH = path.join(DATA_DIR, 'files-registry.json');
 let fileRegistry = [];
 try {
     if (fs.existsSync(FILE_REGISTRY_PATH)) fileRegistry = JSON.parse(fs.readFileSync(FILE_REGISTRY_PATH, 'utf8'));
@@ -614,8 +620,6 @@ const messageQueue = new ConcurrencyQueue(MAX_CONCURRENT);
 //  🧠 CONVERSATION MEMORY & LAST FILE CONTEXT
 // ================================================================
 const userMemory = {};
-
-// 📄 අන්තිමට කියවපු File එක මතක තියාගන්න (Evidence feature එකට)
 const lastFileContext = {};
 
 function getRecentContext(userId) {
@@ -857,7 +861,7 @@ function cleanHTML(text) {
 }
 
 // ================================================================
-//  📅 CALENDAR READER
+//  📅 CALENDAR READER (Singlish + Sinhala + English)
 // ================================================================
 const CALENDAR_API_KEY = process.env.CALENDAR_API_KEY;
 const CALENDAR_ID = process.env.CALENDAR_ID || 'ca0b38d172729231657abfc34f1c7fdb8ea33050fe6f4623f5fab88cd0d4633@group.calendar.google.com';
@@ -878,31 +882,60 @@ function getTargetDateRange(text) {
     } else if (lowerText.includes('iyye') || lowerText.includes('ඊයේ')) {
         targetDate.setDate(now.getDate() - 1);
     } else {
-        const days = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
-        const sinhalaDays = ['ඉරිදා','සඳුදා','අඟහරුවාදා','බදාදා','බ්‍රහස්පතින්දා','සිකුරාදා','සෙනසුරාදා'];
+        // ✅ Singlish + Sinhala + English Days
+        const days = [
+            { names: ['sunday', 'ira', 'ඉරිදා'], value: 0 },
+            { names: ['monday', 'sanduda', 'sandu', 'සඳුදා'], value: 1 },
+            { names: ['tuesday', 'angaharuwada', 'අඟහරුවාදා'], value: 2 },
+            { names: ['wednesday', 'badhada', 'බදාදා'], value: 3 },
+            { names: ['thursday', 'bradaspatinda', 'sikurutha', 'බ්‍රහස්පතින්දා'], value: 4 },
+            { names: ['friday', 'sikurda', 'sikuru', 'සිකුරාදා'], value: 5 },
+            { names: ['saturday', 'sena', 'සෙනසුරාදා'], value: 6 }
+        ];
         let isDayFound = false;
-        for(let i=0; i<7; i++){
-            if(lowerText.includes(days[i]) || lowerText.includes(sinhalaDays[i])){
-                const diff = (i - now.getDay() + 7) % 7;
-                targetDate.setDate(now.getDate() + diff);
-                isDayFound = true;
-                break;
+        for (let day of days) {
+            for (let name of day.names) {
+                if (lowerText.includes(name)) {
+                    const diff = (day.value - now.getDay() + 7) % 7;
+                    targetDate.setDate(now.getDate() + diff);
+                    isDayFound = true;
+                    break;
+                }
             }
+            if (isDayFound) break;
         }
 
         if (!isDayFound) {
-            const monthNames = ['january','february','march','april','may','june','july','august','september','october','november','december'];
-            let match = lowerText.match(/(\d{1,2})(?:st|nd|rd|th)?\s*(january|february|march|april|may|june|july|august|september|october|november|december)/i);
-            if (!match) match = lowerText.match(/(january|february|march|april|may|june|july|august|september|october|november|december)\s*(\d{1,2})(?:st|nd|rd|th)?/i);
+            // ✅ Singlish + Sinhala + English Months
+            const months = [
+                { names: ['january', 'janawari', 'ජනවාරි'], value: 0 },
+                { names: ['february', 'pebarwari', 'පෙබරවාරි'], value: 1 },
+                { names: ['march', 'marthu', 'මාර්තු'], value: 2 },
+                { names: ['april', 'aprel', 'අප්‍රේල්'], value: 3 },
+                { names: ['may', 'mayi', 'මැයි'], value: 4 },
+                { names: ['june', 'juni', 'ජූනි'], value: 5 },
+                { names: ['july', 'juli', 'ජූලි'], value: 6 },
+                { names: ['august', 'agosthu', 'අගෝස්තු'], value: 7 },
+                { names: ['september', 'septembar', 'සැප්තැම්බර්'], value: 8 },
+                { names: ['october', 'oktobar', 'ඔක්තෝබර්'], value: 9 },
+                { names: ['november', 'novembar', 'නොවැම්බර්'], value: 10 },
+                { names: ['december', 'desembar', 'දෙසැම්බර්'], value: 11 }
+            ];
             
-            if (match) {
-                const monthIndex = monthNames.indexOf(match[1].toLowerCase());
-                const day = parseInt(match[2]);
-                if (monthIndex !== -1) {
-                    targetDate.setMonth(monthIndex);
-                    targetDate.setDate(day);
-                    if (targetDate < now) {
-                        targetDate.setFullYear(now.getFullYear() + 1);
+            for (let month of months) {
+                for (let name of month.names) {
+                    if (lowerText.includes(name)) {
+                        let match = lowerText.match(/(\d{1,2})(?:st|nd|rd|th)?/);
+                        if (match) {
+                            targetDate.setMonth(month.value);
+                            targetDate.setDate(parseInt(match[1]));
+                        } else {
+                            targetDate.setMonth(month.value);
+                        }
+                        if (targetDate < now) {
+                            targetDate.setFullYear(now.getFullYear() + 1);
+                        }
+                        break;
                     }
                 }
             }
@@ -910,9 +943,9 @@ function getTargetDateRange(text) {
     }
 
     const start = new Date(targetDate);
-    start.setHours(0,0,0,0);
+    start.setHours(0, 0, 0, 0);
     const end = new Date(targetDate);
-    end.setHours(23,59,59,999);
+    end.setHours(23, 59, 59, 999);
     return { start, end, targetDate };
 }
 
@@ -1231,6 +1264,12 @@ async function connectToWhatsApp() {
 
             // AI INTENT
             const aiIntent = await getCalendarIntentFromAI(rawMessageText);
+
+            // 🛑 FIX: Exam/Quiz/Mid/Lab Test dates අහනවා නම් Timetable එක පෙන්නන්න එපා!
+            if (/exam|quiz|mid|test|assessment|date|kawadda|set wenne|විභාග|ප්‍රශ්න|කුසීස්|මචි/i.test(textLower)) {
+                aiIntent.intent = 'chat';
+                aiIntent.date_keyword = null;
+            }
             
             if (aiIntent.intent === 'calendar') {
                 const { start, end, targetDate } = getTargetDateRange(aiIntent.date_keyword || textLower);
@@ -1285,7 +1324,6 @@ async function connectToWhatsApp() {
 
 🛠️ *How to use me (fr fr):*
 👉 Just type *"ada class"* or *"heta class"* to see what's poppin' today/tomorrow.
-👉 Type *"quiz"* to test your brain before the lecture! (Don't be a procrastinator, bestie! 😤)
 👉 Need notes? Type *"pdf"* to get the actual file!
 👉 Type *"word"* to learn a new academic word daily! (Smart move, bestie! 🧠✨)
 👉 Got a random question? Just ask me in Sinhala or English.
@@ -1356,7 +1394,6 @@ Contact Batch Rep: +94 76 251 3957`;
                     const list = fileRegistry.map((f, i) => `${i+1}. "${f.keyword}" → ${f.fileName}`).join('\n');
                     await sock.sendMessage(sender, { text: `📁 *Saved Files (${fileRegistry.length})*\n\n${list}` }, { quoted: msg });
 
-                    // ✅ අලුත් කොටස: List එකත් එක්කම ඇත්තම PDF Files ටික එවනවා!
                     for (const f of fileRegistry) {
                         const filePath = path.join(FILES_DIR, f.storedFileName);
                         if (fs.existsSync(filePath)) {
@@ -1366,7 +1403,7 @@ Contact Batch Rep: +94 76 251 3957`;
                                 mimetype: f.mimetype || 'application/pdf',
                                 fileName: f.fileName || 'document.pdf'
                             }, { quoted: msg });
-                            await new Promise(r => setTimeout(r, 1500)); // WhatsApp block නොවෙන්න පොඩි Delay එකක්
+                            await new Promise(r => setTimeout(r, 1500));
                         } else {
                             console.error(`File not found: ${filePath}`);
                         }
@@ -1397,7 +1434,7 @@ Contact Batch Rep: +94 76 251 3957`;
             }
 
             // ==========================================================
-            // 🚨 FILE DELIVERY (STRICT) - "pdf", "evidence" කියලා ගැහුවම අන්තිමට කියෙව්ව File එක එවයි!
+            // 🚨 FILE DELIVERY (STRICT)
             // ==========================================================
             let matchedFile = fileRegistry.find(f => {
                 const kw = f.keyword.toLowerCase();
@@ -1405,7 +1442,6 @@ Contact Batch Rep: +94 76 251 3957`;
                 return textLower.includes(kw) || kwWords.some(word => textLower.includes(word));
             });
 
-            // "Pdf" හෝ "evidence" කිව්වම, අන්තිමට කියවපු PDF එකම එවනවා (Case insensitive)
             if (!matchedFile && (textLower === 'pdf' || textLower.includes('evidence')) && lastFileContext[sender]) {
                 matchedFile = lastFileContext[sender];
             }
@@ -1462,64 +1498,12 @@ Contact Batch Rep: +94 76 251 3957`;
                 return;
             }
 
-            // QUIZ
-            if (textLower.includes('quiz') || textLower.includes('test me') || textLower.includes('practice') || textLower === 'test') {
-                const { start, end } = getTargetDateRange(textLower);
-                const events = await getCalendarEvents(start, end);
-                let moduleName = "General SLIIT IT Module";
-                if (events && events.length > 0) {
-                    moduleName = events[0].summary || "General SLIIT IT Module";
-                }
-                const matchedPDF = fileRegistry.find(f => 
-                    f.mimetype === 'application/pdf' && 
-                    new RegExp(`\\b${f.keyword}\\b`, 'i').test(textLower)
-                );
-                try {
-                    if (matchedPDF) {
-                        await sock.sendMessage(sender, { text: `📄 *${moduleName}* Quiz එක PDF *${matchedPDF.fileName}* එක මත පදනම්ව හදනවා... (ප්‍රශ්න 10යි)` }, { quoted: msg });
-                        const pdfBuffer = fs.readFileSync(path.join(FILES_DIR, matchedPDF.storedFileName));
-                        const base64Pdf = pdfBuffer.toString('base64');
-                        const pdfPart = { inlineData: { data: base64Pdf, mimeType: 'application/pdf' } };
-                        const pdfQuizPrompt = `You are a strict but friendly tutor. 
-Generate a 10-question quiz based *ONLY* on the content of the provided PDF file. 
-The module is "${moduleName}".
-Rules:
-1. Ask the questions ONE BY ONE (wait for the student's answer before asking the next).
-2. After the student answers, tell them if they are correct or incorrect.
-3. If the student says "I don't know" or "bari", explain the concept clearly before moving to the next question.
-4. At the end, give them a final score.`;
-                        geminiRequestsToday++;
-                        const pdfResult = await model.generateContent([pdfQuizPrompt, pdfPart]);
-                        const pdfReply = formatMathForWhatsApp(pdfResult.response.text());
-                        await sock.sendMessage(sender, { text: pdfReply }, { quoted: msg });
-                    } else {
-                        await sock.sendMessage(sender, { text: `📝 ඔයාගේ *${moduleName}* Quiz එක Knowledge Base එකෙන් පටන් ගන්නවා! (ප්‍රශ්න 10යි)` }, { quoted: msg });
-                        const quizPrompt = `You are a strict but friendly tutor. 
-Generate a 10-question quiz specifically for the module "${moduleName}" based on the knowledge base provided below.
-Rules:
-1. Ask the questions ONE BY ONE (wait for the student's answer before asking the next).
-2. After the student answers, tell them if they are correct or incorrect.
-3. If the student says "I don't know" or "bari", explain the concept clearly before moving to the next question.
-4. At the end of the 10 questions, give them a final score.
-Knowledge Base:
-${JSON.stringify(knowledgeBase)}`;
-                        geminiRequestsToday++;
-                        const result = await model.generateContent(quizPrompt);
-                        const reply = formatMathForWhatsApp(result.response.text());
-                        await sock.sendMessage(sender, { text: reply }, { quoted: msg });
-                    }
-                } catch (error) {
-                    console.error('Quiz error:', error);
-                    await sock.sendMessage(sender, { text: "❌ Quiz generate කරන්න බැරි වුණා. ටිකකින් ආයේ try කරන්න." }, { quoted: msg });
-                }
-                return;
-            }
+            // ⛔ QUIZ FEATURE අක්‍රීය කර ඇත
 
-            // ---------- AI FILE QUERY (Stored PDF කියවලා ප්‍රශ්නයට උත්තර දීම) ----------
+            // ---------- AI FILE QUERY ----------
             const isExplicitFileRequest2 = /\b(pdf|file|send|download|document|danna|ewanna|yawanna|evidence|source|uththara|sadaha|reference|prove|copy)\b/i.test(textLower);
             
             if (!isExplicitFileRequest2) {
-                // ✅ අකුරු කුඩා/ලොකු (Case Sensitive නැතිව) සහ කෙටි වචන ("tw") match වෙනවා
                 const matchedFileContext = fileRegistry.find(f => {
                     const kw = f.keyword.toLowerCase();
                     return kw.split(/[\s,:.!?()]+/).some(word => word.length >= 2 && textLower.includes(word)) || textLower.includes(kw);
@@ -1533,17 +1517,14 @@ ${JSON.stringify(knowledgeBase)}`;
                             const base64Pdf = pdfBuffer.toString('base64');
                             const pdfPart = { inlineData: { data: base64Pdf, mimeType: 'application/pdf' } };
                             
-                            // ✅ Strict Prompt: PDF එකේ තියෙන දේවල් වලින් විතරක් උත්තර දෙන්න කියලා බල කරනවා
                             const queryPrompt = `Read the attached PDF file. The user has asked: "${rawMessageText}".\n\nAnswer the user's question directly, briefly, and clearly based *ONLY* on the information in the PDF file. If the answer is not in the PDF, say "Sorry, this information is not in the file." Do not mention the file name unless necessary.`;
 
                             geminiRequestsToday++;
                             const result = await model.generateContent([queryPrompt, pdfPart]);
                             const reply = formatMathForWhatsApp(result.response.text());
 
-                            // ✅ මේකෙන් පස්සේ "pdf" කියලා ගැහුවම මේ File එකම එවනවා
                             lastFileContext[sender] = matchedFileContext;
 
-                            // ✅ Evidence Guide
                             const userGuide = `\n\n📄 *ඔයාට මේ තොරතුරු වල සාක්ෂි (Evidence) බලන්න ඕනද?*\n👉 එතකොට *"pdf"* කියලා type කරන්න.`;
 
                             await sock.sendMessage(sender, { text: reply + userGuide }, { quoted: msg });
