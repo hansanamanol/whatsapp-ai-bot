@@ -61,7 +61,7 @@ function buildPromptWithKnowledge(basePrompt) {
 }
 
 // ================================================================
-//  📚 ACADEMIC WORD LIST (සම්පූර්ණ ලැයිස්තුව)
+//  📚 ACADEMIC WORD LIST
 // ================================================================
 const academicWords = {
     "estimate": "To guess the amount or value of something.",
@@ -861,13 +861,15 @@ function cleanHTML(text) {
 }
 
 // ================================================================
-//  📅 CALENDAR READER (Singlish + Sinhala + English)
+//  📅 CALENDAR READER (✅ අලුත් Timezone Fix + Singlish/Sinhala)
 // ================================================================
 const CALENDAR_API_KEY = process.env.CALENDAR_API_KEY;
 const CALENDAR_ID = process.env.CALENDAR_ID || 'ca0b38d172729231657abfc34f1c7fdb8ea33050fe6f4623f5fab88cd0d4633@group.calendar.google.com';
 
 function getTargetDateRange(text) {
-    const now = new Date();
+    // ✅ FIX: Server UTC වෙනුවට ශ්‍රී ලංකා (Asia/Colombo) වෙලාව ගන්නවා
+    const utcNow = new Date();
+    const now = new Date(utcNow.toLocaleString('en-US', { timeZone: 'Asia/Colombo' }));
     const targetDate = new Date(now);
     const lowerText = text.toLowerCase();
 
