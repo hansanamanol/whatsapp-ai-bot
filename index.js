@@ -721,19 +721,37 @@ Contact Batch Rep: +94 76 251 3957`;
                 return;
             }
 
-            // FILE DELIVERY
-            const matchedFile = fileRegistry.find(f => new RegExp(`\\b${f.keyword}\\b`, 'i').test(textLower));
+                       // FILE DELIVERY (ඇත්තටම PDF එක යවන කොටස)
+            const matchedFile = fileRegistry.find(f => {
+                const kw = f.keyword.toLowerCase();
+                // ඔයා යවන ඕනෑම text එකකින් keyword එක හොයලා බලනවා
+                return textLower.includes(kw) || kw.includes(textLower);
+            });
+
             if (matchedFile) {
                 try {
-                    const buffer = fs.readFileSync(path.join(FILES_DIR, matchedFile.storedFileName));
-                    await sock.sendMessage(sender, { document: buffer, mimetype: matchedFile.mimetype, fileName: matchedFile.fileName }, { quoted: msg });
+                    const filePath = path.join(FILES_DIR, matchedFile.storedFileName);
+                    console.log('📂 User asked for file:', textLower, '| Matched keyword:', matchedFile.keyword);
+                    console.log('📁 Looking for file at:', filePath);
+
+                    if (fs.existsSync(filePath)) {
+                        const buffer = fs.readFileSync(filePath);
+                        await sock.sendMessage(sender, { 
+                            document: buffer, 
+                            mimetype: matchedFile.mimetype || 'application/pdf', 
+                            fileName: matchedFile.fileName || 'document.pdf' 
+                        }, { quoted: msg });
+                        console.log('✅ File sent successfully!');
+                    } else {
+                        console.error('❌ File not found on server!');
+                        await sock.sendMessage(sender, { text: "❌ ඔයා ඉල්ලපු File එක Server එකේ නෑ. Bot එක Restart වුනාම File එක මැකිලා යනවා. Admin ට කියලා ආයේ Add කරන්න." }, { quoted: msg });
+                    }
                 } catch (err) {
-                    console.error('Send file error:', err);
-                    await sock.sendMessage(sender, { text: "❌ File send කිරීම අසාර්ථකයි." }, { quoted: msg });
+                    console.error('❌ Error sending file:', err);
+                    await sock.sendMessage(sender, { text: "❌ File එක යවන්න අවුලක් වුණා. නැවත try කරන්න." }, { quoted: msg });
                 }
                 return;
             }
-
             // ADD INFO (Admin)
             if (/^(add info|info add|save info)\b/i.test(textLower)) {
                 if (!isSenderAdmin(sender)) {
