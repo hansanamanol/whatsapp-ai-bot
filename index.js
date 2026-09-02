@@ -2,6 +2,7 @@
 //  📦 DEPENDENCIES
 // ================================================================
 require('dotenv').config();
+const cron = require('node-cron'); // ⏰ නවතම එකතු කිරීම
 
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason,
         downloadMediaMessage, jidNormalizedUser } = require('@whiskeysockets/baileys');
@@ -54,6 +55,30 @@ function buildPromptWithKnowledge(basePrompt) {
 }
 
 // ================================================================
+//  📇 STUDENT REGISTRY (ඔටෝමටික් ස්ථිර ලියාපදිංචිය)
+// ================================================================
+const STUDENTS_FILE = path.join(__dirname, 'students.json');
+let studentRegistry = [];
+try {
+    if (fs.existsSync(STUDENTS_FILE)) studentRegistry = JSON.parse(fs.readFileSync(STUDENTS_FILE, 'utf8'));
+} catch (e) { console.error('Error loading students.json:', e); }
+
+function saveStudents() {
+    try { fs.writeFileSync(STUDENTS_FILE, JSON.stringify(studentRegistry, null, 2)); } catch (e) { console.error(e); }
+}
+
+function addStudent(jid) {
+    if (!studentRegistry.includes(jid)) {
+        studentRegistry.push(jid);
+        saveStudents();
+        console.log('📇 New student registered:', jid);
+    }
+}
+
+// 📊 Status tracking සඳහා Requests ගාන
+let geminiRequestsToday = 0;
+
+// ================================================================
 //  📁 FILE REGISTRY
 // ================================================================
 const FILES_DIR = path.join(__dirname, 'resources');
@@ -99,7 +124,7 @@ class ConcurrencyQueue {
 const messageQueue = new ConcurrencyQueue(MAX_CONCURRENT);
 
 // ================================================================
-//  🧠 CONVERSATION MEMORY (කලින් ප්‍රශ්න මතක තියාගන්න)
+//  🧠 CONVERSATION MEMORY
 // ================================================================
 const userMemory = {};
 
@@ -112,13 +137,10 @@ function getRecentContext(userId) {
 function addToMemory(userId, role, text) {
     if (!userMemory[userId]) userMemory[userId] = [];
     userMemory[userId].push({ role, text });
-    
-    // මතකය වැඩි වුනොත් අන්තිම 5ක් විතරක් තියාගන්න (API Limit ඉතිරි කරන්න)
     if (userMemory[userId].length > 10) { 
         userMemory[userId].shift();
     }
 }
-
 
 // ================================================================
 //  🔁 MESSAGE DEDUP
@@ -265,7 +287,6 @@ CRITICAL CODE & TUTORIAL ANALYSIS RULES:
 `;
 
 const model = genAI.getGenerativeModel({
-    // ⚠️ වැදගත්: 3.1 වෙනුවට 3.5 දාන්න (මේක තමයි 404 එක වළක්වන්නේ)
     model: "gemini-3.5-flash-lite", 
     systemInstruction: systemInstruction
 });
@@ -288,6 +309,7 @@ function formatMathForWhatsApp(text) {
     for (const [pattern, symbol] of replacements) result = result.replace(pattern, symbol);
     return result;
 }
+
 // AI එකෙන් වාක්‍යයේ අදහස (Intent) තේරුම් ගන්නා function එක
 async function getCalendarIntentFromAI(text) {
     const prompt = `
@@ -307,9 +329,9 @@ async function getCalendarIntentFromAI(text) {
     `;
 
     try {
+        geminiRequestsToday++;
         const result = await model.generateContent(prompt);
         const rawText = result.response.text().trim();
-        // JSON එක විතරක් අදිනවා (ගොඩක් වෙලාවට AI එක JSON එක වටේ ```json``` වගේ දානවා)
         const jsonMatch = rawText.match(/\{.*\}/s);
         if (jsonMatch) {
             return JSON.parse(jsonMatch[0]);
@@ -320,20 +342,17 @@ async function getCalendarIntentFromAI(text) {
     return { intent: "chat", date_keyword: null };
 }
 
-// 👇 අලුතෙන් එකතු කළ HTML පෙරහන් Function එක
+// HTML පෙරහන් Function එක
 function cleanHTML(text) {
     if (!text) return '';
     let cleanText = text;
-    // HTML tags ඉවත් කිරීම (<p>, <b>, </li> etc.)
     cleanText = cleanText.replace(/<[^>]*>/g, '');
-    // HTML Entities (උදා: &amp;, &nbsp;) සාමාන්‍ය අකුරු බවට පත් කිරීම
     cleanText = cleanText.replace(/&amp;/g, '&');
     cleanText = cleanText.replace(/&lt;/g, '<');
     cleanText = cleanText.replace(/&gt;/g, '>');
     cleanText = cleanText.replace(/&quot;/g, '"');
     cleanText = cleanText.replace(/&#39;/g, "'");
     cleanText = cleanText.replace(/&nbsp;/g, ' ');
-    // හිස් පේළි ඉවත් කිරීම
     cleanText = cleanText.replace(/\n\s*\n/g, '\n').trim();
     return cleanText;
 }
@@ -343,6 +362,7 @@ function cleanHTML(text) {
 // ================================================================
 const CALENDAR_API_KEY = process.env.CALENDAR_API_KEY;
 const CALENDAR_ID = process.env.CALENDAR_ID || 'ca0b38d172729231657abfc34f1c7fdb8ea33050fe6f4623f5fab88cd0d4633@group.calendar.google.com';
+
 function getTargetDateRange(text) {
     const now = new Date();
     const targetDate = new Date(now);
@@ -359,7 +379,6 @@ function getTargetDateRange(text) {
     } else if (lowerText.includes('iyye') || lowerText.includes('ඊයේ')) {
         targetDate.setDate(now.getDate() - 1);
     } else {
-        // ඉතුරු දවස් සහ නිශ්චිත දිනයන් (September 3 වගේ)
         const days = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
         const sinhalaDays = ['ඉරිදා','සඳුදා','අඟහරුවාදා','බදාදා','බ්‍රහස්පතින්දා','සිකුරාදා','සෙනසුරාදා'];
         let isDayFound = false;
@@ -397,6 +416,7 @@ function getTargetDateRange(text) {
     end.setHours(23,59,59,999);
     return { start, end, targetDate };
 }
+
 async function getCalendarEvents(start, end) {
     if (!CALENDAR_API_KEY) {
         console.warn('⚠️ CALENDAR_API_KEY not set. Calendar will not work.');
@@ -417,6 +437,46 @@ async function getCalendarEvents(start, end) {
         console.error('Calendar API error:', error.message);
         return null;
     }
+}
+
+// ================================================================
+//  ⏰ DAILY TIMETABLE AUTO-PUSH FUNCTION
+// ================================================================
+async function sendDailyTimetable(sock) {
+    if (studentRegistry.length === 0) {
+        console.log('No students registered yet, skipping daily push.');
+        return;
+    }
+
+    const { start, end, targetDate } = getTargetDateRange('today');
+    const events = await getCalendarEvents(start, end);
+    const formattedDate = targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' });
+
+    let msgText = `🌅 *Good Morning!* අද දවසේ Classes:\n📅 *${formattedDate}*\n\n`;
+
+    if (events && events.length > 0) {
+        events.forEach((ev, idx) => {
+            const startTime = new Date(ev.start?.dateTime || ev.start?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit' });
+            const endTime = new Date(ev.end?.dateTime || ev.end?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit' });
+            const location = ev.location || '';
+            msgText += `${idx + 1}. *${ev.summary || 'Untitled'}*\n   🕒 ${startTime} - ${endTime}\n`;
+            if (location) msgText += `   📍 ${location}\n\n`;
+        });
+    } else {
+        msgText += "🎉 අද Classes නෑ! Free Day! 💯";
+    }
+
+    msgText += `\n💡 *Tip:* පාඩම් කරන්න \`quiz\` කියලා type කරන්න!`;
+
+    for (const jid of studentRegistry) {
+        try {
+            await sock.sendMessage(jid, { text: msgText });
+            await new Promise(r => setTimeout(r, 2000)); // WhatsApp Block නොවීමට Delay
+        } catch (e) {
+            console.error(`Failed to send to ${jid}:`, e.message);
+        }
+    }
+    console.log('✅ Daily Timetable pushed to all students!');
 }
 
 // ================================================================
@@ -498,11 +558,21 @@ async function connectToWhatsApp() {
             }
         });
 
+        // ⏰ CRON JOB - හැමදාම උදේ 5:00 ට (Sri Lanka වෙලාවෙන්)
+        cron.schedule('0 5 * * *', async () => {
+            console.log('⏰ Running Daily Timetable Push at 5:00 AM SL Time...');
+            await sendDailyTimetable(sock);
+        }, { timezone: 'Asia/Colombo' });
+
         // ----------------------------------------------------------------
         //  processMessage function
         // ----------------------------------------------------------------
         async function processMessage(sock, msg) {
             const sender = msg.key.remoteJid;
+            
+            // 🚨 Student ලියාපදිංචි කිරීම (Auto-Push සඳහා)
+            addStudent(sender);
+
             const rateCheck = checkRateLimit(sender);
             if (!rateCheck.allowed) {
                 await sock.sendMessage(sender, { text: rateCheck.reason }, { quoted: msg });
@@ -531,96 +601,20 @@ async function connectToWhatsApp() {
             let fullUserPrompt = rawMessageText;
             if (quotedText) fullUserPrompt = `[Quoted: "${quotedText}"]\nUser: "${rawMessageText}"`;
 
-            // ---------- AUDIO ----------
-            if (audioMsg) {
-                try {
-                    await sock.sendMessage(sender, { text: "🎙️ **Voice Note Process වෙමින්...**" }, { quoted: msg });
-                    const oggBuffer = await downloadMediaMessage(msg, 'buffer', {});
-                    const mp3Buffer = await convertAudioToMp3(oggBuffer);
-                    const base64Audio = mp3Buffer.toString('base64');
-                    const audioPart = { inlineData: { data: base64Audio, mimeType: 'audio/mp3' } };
-                    const prompt = buildPromptWithKnowledge("Listen to this audio and reply.");
-                    const result = await model.generateContent([prompt, audioPart]);
-                    const reply = formatMathForWhatsApp(result.response.text());
-                    await sock.sendMessage(sender, { text: reply }, { quoted: msg });
-                } catch (err) {
-                    console.error('Audio error:', err);
-                    await sock.sendMessage(sender, { text: "❌ Voice message එක process කරන්න බැරි වුණා." }, { quoted: msg });
-                }
-                return;
-            }
-
-            // ---------- ADD FILE (Admin) ----------
-            if (docMsg && /^add file\b/i.test(rawMessageText.toLowerCase().trim())) {
-                if (!isSenderAdmin(sender)) {
-                    await sock.sendMessage(sender, { text: "❌ මේක කරන්න පුළුවන් Batch Rep ට විතරයි!" }, { quoted: msg });
-                    return;
-                }
-                const keyword = rawMessageText.replace(/^add file\s*:?\s*/i, '').trim().toLowerCase();
-                if (!keyword) {
-                    await sock.sendMessage(sender, { text: "⚠️ Keyword එකත් caption එකේ දෙන්න: add file: course outline" }, { quoted: msg });
-                    return;
-                }
-                try {
-                    const buffer = await downloadMediaMessage(msg, 'buffer', {});
-                    const ext = path.extname(docMsg.fileName || '') || '.pdf';
-                    const storedFileName = `${crypto.randomUUID()}${ext}`;
-                    fs.writeFileSync(path.join(FILES_DIR, storedFileName), buffer);
-                    fileRegistry.push({
-                        keyword, fileName: docMsg.fileName || `${keyword}${ext}`,
-                        mimetype: docMsg.mimetype || 'application/pdf',
-                        storedFileName
-                    });
-                    saveFileRegistry();
-                    await sock.sendMessage(sender, { text: `✅ File save කළා! Keyword: "${keyword}"` }, { quoted: msg });
-                } catch (err) {
-                    console.error('Save file error:', err);
-                    await sock.sendMessage(sender, { text: "❌ File save කිරීම අසාර්ථකයි." }, { quoted: msg });
-                }
-                return;
-            }
-
-            // ---------- PDF ANALYSIS ----------
-            if (docMsg) {
-                try {
-                    if (docMsg.mimetype === 'application/pdf') {
-                        await sock.sendMessage(sender, { text: "📄 **PDF Read කරමින්...**" }, { quoted: msg });
-                        const buffer = await downloadMediaMessage(msg, 'buffer', {});
-                        const base64Pdf = buffer.toString('base64');
-                        const pdfPart = { inlineData: { data: base64Pdf, mimeType: 'application/pdf' } };
-                        const prompt = buildPromptWithKnowledge(`Read PDF and respond. User: ${rawMessageText || ''}`);
-                        const result = await model.generateContent([prompt, pdfPart]);
-                        const reply = formatMathForWhatsApp(result.response.text());
-                        await sock.sendMessage(sender, { text: reply }, { quoted: msg });
-                    }
-                } catch (err) {
-                    console.error('PDF error:', err);
-                    await sock.sendMessage(sender, { text: "❌ PDF read කරගන්න බැරි වුණා." }, { quoted: msg });
-                }
-                return;
-            }
-
-            // ---------- IMAGE ----------
-            if (imgMsg) {
-                try {
-                    await sock.sendMessage(sender, { text: "⏳ **Image Process වෙමින්...**" }, { quoted: msg });
-                    const buffer = await downloadMediaMessage(msg, 'buffer', {});
-                    const base64Image = buffer.toString('base64');
-                    const mimeType = imgMsg.mimetype || 'image/jpeg';
-                    const imagePart = { inlineData: { data: base64Image, mimeType: mimeType } };
-                    const prompt = buildPromptWithKnowledge(`Analyze image. User: ${rawMessageText || ''}`);
-                    const result = await model.generateContent([prompt, imagePart]);
-                    const reply = formatMathForWhatsApp(result.response.text());
-                    await sock.sendMessage(sender, { text: reply }, { quoted: msg });
-                } catch (err) {
-                    console.error('Image error:', err);
-                    await sock.sendMessage(sender, { text: "❌ Image process කරන්න බැරි වුණා." }, { quoted: msg });
-                }
-                return;
-            }
-
             // ---------- TEXT COMMANDS ----------
             const textLower = rawMessageText.toLowerCase().trim();
+
+            // 🚨 STATUS COMMAND (Admin Only) - නව එකතු කිරීම!
+            if (textLower === 'status') {
+                if (!isSenderAdmin(sender)) {
+                    await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
+                    return;
+                }
+                const statusMsg = `✅ *HansanaBot Status*\n\n👥 *Used Requests:* ${geminiRequestsToday}/500\n📁 *Total Files:* ${fileRegistry.length}\n📚 *Saved Info:* ${knowledgeBase.length}\n👥 *Registered Students:* ${studentRegistry.length}`;
+                await sock.sendMessage(sender, { text: statusMsg }, { quoted: msg });
+                return;
+            }
+
             // 🚨 ADD INFO (Admin) - මුලින්ම check කරනවා
             if (/^(add info|info add|save info)\b/i.test(textLower)) {
                 if (!isSenderAdmin(sender)) {
@@ -638,11 +632,10 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // 🤖 AI එකෙන් Intent එක තේරුම් ගන්නවා (යම් යම් keyword වලින් හරියටම වැඩ නොකරන විට)
+            // 🤖 AI එකෙන් Intent එක තේරුම් ගන්නවා
             const aiIntent = await getCalendarIntentFromAI(rawMessageText);
             
             if (aiIntent.intent === 'calendar') {
-                // AI එක කිව්වා timetable එක ඕනේ කියලා නම්, date_keyword එක දාලා getTargetDateRange එක call කරනවා
                 const { start, end, targetDate } = getTargetDateRange(aiIntent.date_keyword || textLower);
                 const events = await getCalendarEvents(start, end);
 
@@ -668,7 +661,7 @@ async function connectToWhatsApp() {
                 return;
             }
             
-            // AI එක කිව්වා add_info කියලා නම් (ආරක්ෂිතව save කරනවා)
+            // AI එක කිව්වා add_info කියලා නම්
             if (aiIntent.intent === 'add_info' && isSenderAdmin(sender)) {
                 const infoText = rawMessageText.replace(/^(add info|info add|save info)\s*:?\s*/i, '').trim();
                 if (infoText) {
@@ -679,8 +672,6 @@ async function connectToWhatsApp() {
                 }
             }
 
-            // AI එක එහෙමත් නැත්නම් හරියටම හඳුනාගත්තේ නැත්නම්, සාමාන්‍ය AI response එක    
-                
             // WHO AM I
             if (/\bwho\s*am\s*i\b/i.test(textLower) || textLower.includes('man kauda') || textLower.includes('mama kauda')) {
                 const isAdmin = isSenderAdmin(sender);
@@ -723,7 +714,8 @@ Contact Batch Rep: +94 76 251 3957`;
 🗑️ *remove info [number]* - Info එකක් අයින් කරන්න
 📤 *add file: [keyword]* - PDF/Image එකක් save කරන්න
 📋 *list files* - Save කරලා තියෙන Files ටික බලන්න
-🗑️ *remove file [number]* - File එකක් අයින් කරන්න`;
+🗑️ *remove file [number]* - File එකක් අයින් කරන්න
+📊 *status* - Bot එකේ තත්වය බලන්න (API ගාන, Files, Students)`;
                 }
                 
                 await sock.sendMessage(sender, { text: helpText }, { quoted: msg });
@@ -780,25 +772,17 @@ Contact Batch Rep: +94 76 251 3957`;
                 return;
             }
 
-            // FILE DELIVERY (STRICT - ඉල්ලුවොත් විතරයි එවන්නේ)
-            // 1. මුලින්ම බලනවා කෙනෙක් ඇත්තටම file එකක් ඉල්ලනවද කියලා
-            const isExplicitFileRequest = /\b(pdf|file|send|download|document|danna|ewanna|yawanna)\b/i.test(textLower) || textLower.includes(' pdf');
-
-            // 2. ඊට පස්සේ keyword එක හොයනවා
+            // ==========================================================
+            // 🚨 FILE DELIVERY (STRICT) - කෙනෙක් "pdf", "evidence", "file" ඉල්ලුවම විතරයි
+            // ==========================================================
             const matchedFile = fileRegistry.find(f => {
                 const kwWords = f.keyword.toLowerCase().split(/[\s,:.!?()]+/).filter(w => w.length > 2);
-                // ඔයාගේ keyword එකේ තියෙන ප්‍රධාන වචන (උදා: it1150, tw, technical) ඔයාගේ ප්‍රශ්නයේ තියෙනවද බලනවා
-                const hasKeywordMatch = kwWords.some(word => textLower.includes(word));
-                
-                // File එකක් ඉල්ලනවා නම් සහ Keyword එකත් තියෙනවා නම් විතරයි එවන්නේ
-                return isExplicitFileRequest && hasKeywordMatch;
+                return textLower.includes(kw) || kwWords.some(word => textLower.includes(word));
             });
 
-            if (matchedFile) {
+            if (matchedFile && (textLower === 'pdf' || textLower.includes('pdf') || textLower.includes('evidence') || textLower.includes('source') || textLower.includes('file'))) {
                 try {
                     const filePath = path.join(FILES_DIR, matchedFile.storedFileName);
-                    console.log('📂 User explicitly asked for file:', textLower, '| Matched keyword:', matchedFile.keyword);
-
                     if (fs.existsSync(filePath)) {
                         const buffer = fs.readFileSync(filePath);
                         await sock.sendMessage(sender, { 
@@ -806,18 +790,17 @@ Contact Batch Rep: +94 76 251 3957`;
                             mimetype: matchedFile.mimetype || 'application/pdf', 
                             fileName: matchedFile.fileName || 'document.pdf' 
                         }, { quoted: msg });
-                        console.log('✅ File sent successfully!');
                     } else {
-                        console.error('❌ File not found on server!');
-                        await sock.sendMessage(sender, { text: "❌ File එක Server එකේ නෑ. Bot එක Restart වුනාම File එක මැකිලා යනවා. Admin ට කියලා ආයේ Add කරන්න." }, { quoted: msg });
+                        await sock.sendMessage(sender, { text: "❌ File එක නෑ. Bot එක Restart වෙලා නම් Admin ට කියලා ආයේ Add කරන්න." }, { quoted: msg });
                     }
                 } catch (err) {
                     console.error('❌ Error sending file:', err);
-                    await sock.sendMessage(sender, { text: "❌ File එක යවන්න අවුලක් වුණා. නැවත try කරන්න." }, { quoted: msg });
+                    await sock.sendMessage(sender, { text: "❌ Error sending file. Try again." }, { quoted: msg });
                 }
                 return;
             }
-            
+            // ==========================================================
+
             // LIST INFO (Admin)
             if (textLower === 'list info' || textLower === 'show info') {
                 if (!isSenderAdmin(sender)) {
@@ -859,7 +842,6 @@ Contact Batch Rep: +94 76 251 3957`;
                     moduleName = events[0].summary || "General SLIIT IT Module";
                 }
 
-                // PDF එකක් හොයලා බලනවා (add file වලින් දාපු)
                 const matchedPDF = fileRegistry.find(f => 
                     f.mimetype === 'application/pdf' && 
                     new RegExp(`\\b${f.keyword}\\b`, 'i').test(textLower)
@@ -867,7 +849,6 @@ Contact Batch Rep: +94 76 251 3957`;
 
                 try {
                     if (matchedPDF) {
-                        // PDF එකක් හම්බුනොත් ඒක read කරලා quiz එක හදනවා
                         await sock.sendMessage(sender, { text: `📄 *${moduleName}* Quiz එක PDF *${matchedPDF.fileName}* එක මත පදනම්ව හදනවා... (ප්‍රශ්න 10යි)` }, { quoted: msg });
 
                         const pdfBuffer = fs.readFileSync(path.join(FILES_DIR, matchedPDF.storedFileName));
@@ -883,12 +864,12 @@ Rules:
 3. If the student says "I don't know" or "bari", explain the concept clearly before moving to the next question.
 4. At the end, give them a final score.`;
 
+                        geminiRequestsToday++;
                         const pdfResult = await model.generateContent([pdfQuizPrompt, pdfPart]);
                         const pdfReply = formatMathForWhatsApp(pdfResult.response.text());
                         await sock.sendMessage(sender, { text: pdfReply }, { quoted: msg });
 
                     } else {
-                        // PDF එකක් නැත්නම් "add info" Text එකෙන් හදනවා
                         await sock.sendMessage(sender, { text: `📝 ඔයාගේ *${moduleName}* Quiz එක Knowledge Base එකෙන් පටන් ගන්නවා! (ප්‍රශ්න 10යි)` }, { quoted: msg });
 
                         const quizPrompt = `You are a strict but friendly tutor. 
@@ -902,6 +883,7 @@ Rules:
 Knowledge Base:
 ${JSON.stringify(knowledgeBase)}`;
 
+                        geminiRequestsToday++;
                         const result = await model.generateContent(quizPrompt);
                         const reply = formatMathForWhatsApp(result.response.text());
                         await sock.sendMessage(sender, { text: reply }, { quoted: msg });
@@ -913,22 +895,54 @@ ${JSON.stringify(knowledgeBase)}`;
                 return;
             }
 
-                      // ---------- GENERAL AI RESPONSE (මතකය සමඟ) ----------
+            // ---------- AI FILE QUERY (Stored PDF කියවලා ප්‍රශ්නයට උත්තර දීම) ----------
+            const isExplicitFileRequest2 = /\b(pdf|file|send|download|document|danna|ewanna|yawanna|evidence|source|uththara|sadaha|reference|prove|copy)\b/i.test(textLower);
+            
+            if (!isExplicitFileRequest2) {
+                const matchedFileContext = fileRegistry.find(f => {
+                    const kw = f.keyword.toLowerCase();
+                    return kw.split(/[\s,:.!?()]+/).some(word => word.length > 2 && textLower.includes(word)) || textLower.includes(kw);
+                });
+
+                if (matchedFileContext && matchedFileContext.mimetype === 'application/pdf') {
+                    try {
+                        const filePath = path.join(FILES_DIR, matchedFileContext.storedFileName);
+                        if (fs.existsSync(filePath)) {
+                            const pdfBuffer = fs.readFileSync(filePath);
+                            const base64Pdf = pdfBuffer.toString('base64');
+                            const pdfPart = { inlineData: { data: base64Pdf, mimeType: 'application/pdf' } };
+
+                            const queryPrompt = `Read the attached PDF file. The user has asked: "${rawMessageText}".\n\nAnswer the user's question directly, briefly, and clearly based ONLY on the information in the PDF file. If the answer is not in the PDF, say "Sorry, this information is not in the file." Do not mention the file name unless necessary.`;
+
+                            geminiRequestsToday++;
+                            const result = await model.generateContent([queryPrompt, pdfPart]);
+                            const reply = formatMathForWhatsApp(result.response.text());
+
+                            const userGuide = `\n\n📄 *ඔයාට මේ තොරතුරු වල සාක්ෂි (Evidence) බලන්න ඕනද?*\n👉 එතකොට *"pdf"* කියලා type කරන්න.`;
+
+                            await sock.sendMessage(sender, { text: reply + userGuide }, { quoted: msg });
+                            return;
+                        }
+                    } catch (error) {
+                        console.error('AI File Query Error:', error);
+                    }
+                }
+            }
+
+            // ---------- GENERAL AI RESPONSE (මතකය සමඟ) ----------
             if (rawMessageText) {
                 try {
-                    // කලින් ප්‍රශ්න මතකයෙන් අදිනවා
                     const history = getRecentContext(sender);
                     
-                    // මතකය තියෙනවා නම් prompt එකට එකතු කරනවා
                     let promptToSend = fullUserPrompt;
                     if (history) {
                         promptToSend = `පෙර සංවාදය:\n${history}\n\nවත්මන් ප්‍රශ්නය: ${fullUserPrompt}`;
                     }
 
+                    geminiRequestsToday++;
                     const result = await model.generateContent(buildPromptWithKnowledge(promptToSend));
                     const reply = formatMathForWhatsApp(result.response.text());
                     
-                    // අලුත් ප්‍රශ්නය සහ උත්තරය මතකයට දානවා
                     addToMemory(sender, 'User', fullUserPrompt);
                     addToMemory(sender, 'Bot', reply);
 
