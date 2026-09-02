@@ -613,9 +613,12 @@ class ConcurrencyQueue {
 const messageQueue = new ConcurrencyQueue(MAX_CONCURRENT);
 
 // ================================================================
-//  🧠 CONVERSATION MEMORY
+//  🧠 CONVERSATION MEMORY & LAST FILE CONTEXT
 // ================================================================
 const userMemory = {};
+
+// 📄 අන්තිමට කියවපු File එක මතක තියාගන්න (Evidence feature එකට)
+const lastFileContext = {};
 
 function getRecentContext(userId) {
     const history = userMemory[userId];
@@ -1286,6 +1289,7 @@ async function connectToWhatsApp() {
 👉 Just type *"ada class"* or *"heta class"* to see what's poppin' today/tomorrow.
 👉 Type *"quiz"* to test your brain before the lecture! (Don't be a procrastinator, bestie! 😤)
 👉 Need notes? Type *"pdf"* to get the actual file!
+👉 Type *"word"* to learn a new academic word daily! (Smart move, bestie! 🧠✨)
 👉 Got a random question? Just ask me in Sinhala or English.
 👉 *"status"* is only for the main character (Admin) 💅
 
@@ -1303,6 +1307,7 @@ Catch my drift? Slide into my DMs and let's get that GPA up! 📈🚀`;
 📌 *guide* - Gen Z Style Guide එක බලන්න
 🆔 *whoami* - ඔයාගේ ID එක බලන්න
 👤 *who am i* - Adminද Studentද කියලා බලන්න
+📖 *word* - Academic Word Practice (නව වචන ඉගෙන ගන්න)
 📅 *calendar* - අද / හෙට / ඉදිරි දවස් වල Classes බලන්න
 📂 *pdf* - Save කරලා තියෙන Files ලබා ගන්න
 
@@ -1376,12 +1381,19 @@ Contact Batch Rep: +94 76 251 3957`;
                 return;
             }
 
-            // FILE DELIVERY (STRICT) - ✅ FIXED! (kw define කළා)
-            const matchedFile = fileRegistry.find(f => {
-                const kw = f.keyword.toLowerCase(); // ✅ මේ line එක එකතු කරන්න!
-                const kwWords = kw.split(/[\s,:.!?()]+/).filter(w => w.length > 2);
+            // ==========================================================
+            // 🚨 FILE DELIVERY (STRICT) - "pdf", "evidence" කියලා ගැහුවම අන්තිමට කියෙව්ව File එක එවයි!
+            // ==========================================================
+            let matchedFile = fileRegistry.find(f => {
+                const kw = f.keyword.toLowerCase();
+                const kwWords = kw.split(/[\s,:.!?()]+/).filter(w => w.length >= 2);
                 return textLower.includes(kw) || kwWords.some(word => textLower.includes(word));
             });
+
+            // "Pdf" හෝ "evidence" කිව්වම, අන්තිමට කියවපු PDF එකම එවනවා (Case insensitive)
+            if (!matchedFile && (textLower === 'pdf' || textLower.includes('evidence')) && lastFileContext[sender]) {
+                matchedFile = lastFileContext[sender];
+            }
 
             if (matchedFile && (textLower === 'pdf' || textLower.includes('pdf') || textLower.includes('evidence') || textLower.includes('source') || textLower.includes('file'))) {
                 try {
@@ -1402,6 +1414,7 @@ Contact Batch Rep: +94 76 251 3957`;
                 }
                 return;
             }
+            // ==========================================================
 
             // LIST INFO (Admin)
             if (textLower === 'list info' || textLower === 'show info') {
@@ -1434,7 +1447,7 @@ Contact Batch Rep: +94 76 251 3957`;
                 return;
             }
 
-            // QUIZ
+            // ---------- SMART QUIZ GENERATOR ----------
             if (textLower.includes('quiz') || textLower.includes('test me') || textLower.includes('practice') || textLower === 'test') {
                 const { start, end } = getTargetDateRange(textLower);
                 const events = await getCalendarEvents(start, end);
@@ -1487,14 +1500,16 @@ ${JSON.stringify(knowledgeBase)}`;
                 return;
             }
 
-            // AI FILE QUERY
+            // ---------- AI FILE QUERY (Stored PDF කියවලා ප්‍රශ්නයට උත්තර දීම) ----------
             const isExplicitFileRequest2 = /\b(pdf|file|send|download|document|danna|ewanna|yawanna|evidence|source|uththara|sadaha|reference|prove|copy)\b/i.test(textLower);
             
             if (!isExplicitFileRequest2) {
+                // ✅ අකුරු කුඩා/ලොකු (Case Sensitive නැතිව) සහ කෙටි වචන ("tw") match වෙනවා
                 const matchedFileContext = fileRegistry.find(f => {
                     const kw = f.keyword.toLowerCase();
-                    return kw.split(/[\s,:.!?()]+/).some(word => word.length > 2 && textLower.includes(word)) || textLower.includes(kw);
+                    return kw.split(/[\s,:.!?()]+/).some(word => word.length >= 2 && textLower.includes(word)) || textLower.includes(kw);
                 });
+                
                 if (matchedFileContext && matchedFileContext.mimetype === 'application/pdf') {
                     try {
                         const filePath = path.join(FILES_DIR, matchedFileContext.storedFileName);
@@ -1502,11 +1517,20 @@ ${JSON.stringify(knowledgeBase)}`;
                             const pdfBuffer = fs.readFileSync(filePath);
                             const base64Pdf = pdfBuffer.toString('base64');
                             const pdfPart = { inlineData: { data: base64Pdf, mimeType: 'application/pdf' } };
-                            const queryPrompt = `Read the attached PDF file. The user has asked: "${rawMessageText}".\n\nAnswer the user's question directly, briefly, and clearly based ONLY on the information in the PDF file. If the answer is not in the PDF, say "Sorry, this information is not in the file." Do not mention the file name unless necessary.`;
+                            
+                            // ✅ Strict Prompt: PDF එකේ තියෙන දේවල් වලින් විතරක් උත්තර දෙන්න කියලා බල කරනවා
+                            const queryPrompt = `Read the attached PDF file. The user has asked: "${rawMessageText}".\n\nAnswer the user's question directly, briefly, and clearly based *ONLY* on the information in the PDF file. If the answer is not in the PDF, say "Sorry, this information is not in the file." Do not mention the file name unless necessary.`;
+
                             geminiRequestsToday++;
                             const result = await model.generateContent([queryPrompt, pdfPart]);
                             const reply = formatMathForWhatsApp(result.response.text());
+
+                            // ✅ මේකෙන් පස්සේ "pdf" කියලා ගැහුවම මේ File එකම එවනවා
+                            lastFileContext[sender] = matchedFileContext;
+
+                            // ✅ Evidence Guide
                             const userGuide = `\n\n📄 *ඔයාට මේ තොරතුරු වල සාක්ෂි (Evidence) බලන්න ඕනද?*\n👉 එතකොට *"pdf"* කියලා type කරන්න.`;
+
                             await sock.sendMessage(sender, { text: reply + userGuide }, { quoted: msg });
                             return;
                         }
@@ -1517,7 +1541,7 @@ ${JSON.stringify(knowledgeBase)}`;
                 }
             }
 
-            // FUN & MOTIVATION
+            // 🎉 FUN & MOTIVATION
             if (textLower === 'motivate me' || textLower === 'daily quote' || textLower === 'inspire me') {
                 const quotes = [
                     "Success is not final, failure is not fatal: it is the courage to continue that counts. - Winston Churchill",
@@ -1541,7 +1565,7 @@ ${JSON.stringify(knowledgeBase)}`;
                 return;
             }
 
-            // ACADEMIC WORD PRACTICE
+            // 📖 ACADEMIC WORD PRACTICE
             if (textLower === 'word' || textLower === 'aw word' || textLower === 'practice word' || textLower === 'vocabulary') {
                 const wordKeys = Object.keys(academicWords);
                 const randomWord = wordKeys[Math.floor(Math.random() * wordKeys.length)];
@@ -1550,13 +1574,13 @@ ${JSON.stringify(knowledgeBase)}`;
                 return;
             }
 
-            // THANKS AUTO-REPLY
+            // 🙏 THANKS AUTO-REPLY
             if (textLower.includes('thanks') || textLower.includes('thank you') || textLower.includes('sthuthi') || textLower.includes('stuti') || textLower.includes('bohoma sthuthi')) {
                 await sock.sendMessage(sender, { text: "ඔයාව සාදරයෙන් පිළිගන්නවා! 🥰❤️ තව මොනවා හරි ඕන නම් අහන්න!" }, { quoted: msg });
                 return;
             }
 
-            // GENERAL AI RESPONSE
+            // ---------- GENERAL AI RESPONSE (මතකය සමඟ) ----------
             if (rawMessageText) {
                 try {
                     const history = getRecentContext(sender);
