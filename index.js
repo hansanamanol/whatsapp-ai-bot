@@ -867,11 +867,19 @@ const CALENDAR_API_KEY = process.env.CALENDAR_API_KEY;
 const CALENDAR_ID = process.env.CALENDAR_ID || 'ca0b38d172729231657abfc34f1c7fdb8ea33050fe6f4623f5fab88cd0d4633@group.calendar.google.com';
 
 function getTargetDateRange(text) {
-    // ✅ FIX: Server UTC වෙනුවට ශ්‍රී ලංකා (Asia/Colombo) වෙලාව ගන්නවා
+    // ✅ FIX 1: Server UTC වෙනුවට ශ්‍රී ලංකා (Asia/Colombo) වෙලාව ගන්නවා
     const utcNow = new Date();
-    const now = new Date(utcNow.toLocaleString('en-US', { timeZone: 'Asia/Colombo' }));
-    const targetDate = new Date(now);
-    const lowerText = text.toLowerCase();
+    let now = new Date(utcNow.toLocaleString('en-US', { timeZone: 'Asia/Colombo' }));
+    let targetDate = new Date(now);
+    const lowerText = text.toLowerCase().replace(/\s+/g, ''); // Spaces අයින් කරලා බලනවා
+
+    // ✅ FIX 2: "Next Week" කියන හැම විදිහක්ම හඳුනාගන්නවා
+    if (lowerText.includes('nextweek') || lowerText.includes('laban') || lowerText.includes('eelaga') || 
+        lowerText.includes('eelagast') || lowerText.includes('balanna') || lowerText.includes('ඊළඟ') || lowerText.includes('ලබන')) {
+        now = new Date(now);
+        now.setDate(now.getDate() + 7);
+        targetDate = new Date(now);
+    }
 
     if (lowerText.includes('tomorrow') || lowerText.includes('tomorow') || /\bheta\b/.test(lowerText) || lowerText.includes('hetta') || lowerText.includes('හෙට')) {
         targetDate.setDate(now.getDate() + 1);
@@ -884,14 +892,14 @@ function getTargetDateRange(text) {
     } else if (lowerText.includes('iyye') || lowerText.includes('ඊයේ')) {
         targetDate.setDate(now.getDate() - 1);
     } else {
-        // ✅ Singlish + Sinhala + English Days
+        // ✅ Singlish + Sinhala + English Days (සියලුම වෙනස්කම් ඇතුළත්)
         const days = [
             { names: ['sunday', 'ira', 'ඉරිදා'], value: 0 },
-            { names: ['monday', 'sanduda', 'sandu', 'සඳුදා'], value: 1 },
+            { names: ['monday', 'sanduda', 'sandu', 'saduda', 'sadudaa', 'සඳුදා'], value: 1 },
             { names: ['tuesday', 'angaharuwada', 'අඟහරුවාදා'], value: 2 },
             { names: ['wednesday', 'badhada', 'බදාදා'], value: 3 },
-            { names: ['thursday', 'bradaspatinda', 'sikurutha', 'බ්‍රහස්පතින්දා'], value: 4 },
-            { names: ['friday', 'sikurda', 'sikuru', 'සිකුරාදා'], value: 5 },
+            { names: ['thursday', 'bradaspatinda', 'sikurutha', 'brahaspathinda', 'බ්‍රහස්පතින්දා'], value: 4 },
+            { names: ['friday', 'sikurda', 'sikuru', 'sikuradata', 'sikurudata', 'sikuruda', 'සිකුරාදා'], value: 5 },
             { names: ['saturday', 'sena', 'සෙනසුරාදා'], value: 6 }
         ];
         let isDayFound = false;
@@ -950,7 +958,6 @@ function getTargetDateRange(text) {
     end.setHours(23, 59, 59, 999);
     return { start, end, targetDate };
 }
-
 async function getCalendarEvents(start, end) {
     if (!CALENDAR_API_KEY) {
         console.warn('⚠️ CALENDAR_API_KEY not set. Calendar will not work.');
