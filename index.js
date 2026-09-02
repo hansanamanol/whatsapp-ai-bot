@@ -288,6 +288,37 @@ function formatMathForWhatsApp(text) {
     for (const [pattern, symbol] of replacements) result = result.replace(pattern, symbol);
     return result;
 }
+// AI එකෙන් වාක්‍යයේ අදහස (Intent) තේරුම් ගන්නා function එක
+async function getCalendarIntentFromAI(text) {
+    const prompt = `
+    You are a highly accurate intent classifier for a University WhatsApp Bot.
+    Analyze the user's message below. The user is asking about their SLIIT timetable.
+    Identify if they are asking for a schedule for a specific day ("ada", "heta", "anidda", "pereda", "monday", "september 3" etc.), or if they are just chatting.
+    Rules:
+    - ONLY classify as 'calendar' if they are asking for a class schedule.
+    - If they are just chatting (e.g., "adaraya", "kohomada", "hello"), classify as 'chat'.
+    - If they are saving info (starts with "Add info"), classify as 'add_info'.
+    - Respond with ONLY a JSON object in this exact format:
+    { "intent": "calendar", "date_keyword": "anidda" }
+    { "intent": "chat", "date_keyword": null }
+    { "intent": "add_info", "date_keyword": null }
+    
+    User text: "${text}"
+    `;
+
+    try {
+        const result = await model.generateContent(prompt);
+        const rawText = result.response.text().trim();
+        // JSON එක විතරක් අදිනවා (ගොඩක් වෙලාවට AI එක JSON එක වටේ ```json``` වගේ දානවා)
+        const jsonMatch = rawText.match(/\{.*\}/s);
+        if (jsonMatch) {
+            return JSON.parse(jsonMatch[0]);
+        }
+    } catch (e) {
+        console.error('Intent parsing error:', e);
+    }
+    return { intent: "chat", date_keyword: null };
+}
 
 // 👇 අලුතෙන් එකතු කළ HTML පෙරහන් Function එක
 function cleanHTML(text) {
@@ -590,7 +621,66 @@ async function connectToWhatsApp() {
 
             // ---------- TEXT COMMANDS ----------
             const textLower = rawMessageText.toLowerCase().trim();
+            // 🚨 ADD INFO (Admin) - මුලින්ම check කරනවා
+            if (/^(add info|info add|save info)\b/i.test(textLower)) {
+                if (!isSenderAdmin(sender)) {
+                    await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
+                    return;
+                }
+                const infoText = rawMessageText.replace(/^(add info|info add|save info)\s*:?\s*/i, '').trim();
+                if (!infoText) {
+                    await sock.sendMessage(sender, { text: "⚠️ Please provide info text." }, { quoted: msg });
+                    return;
+                }
+                knowledgeBase.push(infoText);
+                saveKnowledgeBase();
+                await sock.sendMessage(sender, { text: `✅ Info saved! (Total: ${knowledgeBase.length})` }, { quoted: msg });
+                return;
+            }
 
+            // 🤖 AI එකෙන් Intent එක තේරුම් ගන්නවා (යම් යම් keyword වලින් හරියටම වැඩ නොකරන විට)
+            const aiIntent = await getCalendarIntentFromAI(rawMessageText);
+            
+            if (aiIntent.intent === 'calendar') {
+                // AI එක කිව්වා timetable එක ඕනේ කියලා නම්, date_keyword එක දාලා getTargetDateRange එක call කරනවා
+                const { start, end, targetDate } = getTargetDateRange(aiIntent.date_keyword || textLower);
+                const events = await getCalendarEvents(start, end);
+
+                if (events && events.length > 0) {
+                    let msgText = `📅 *${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })} දින Classes:*\n\n`;
+                    events.forEach((ev, idx) => {
+                        const startTime = new Date(ev.start?.dateTime || ev.start?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute:'2-digit' });
+                        const endTime = new Date(ev.end?.dateTime || ev.end?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute:'2-digit' });
+                        const location = ev.location || '';
+                        const description = ev.description || '';
+                        
+                        msgText += `${idx+1}. *${ev.summary || 'Untitled'}*\n`;
+                        msgText += `   🕒 ${startTime} – ${endTime}\n`;
+                        if (location) msgText += `   📍 *ස්ථානය (Location):* ${location}\n`;
+                        if (description) msgText += `   📝 *විස්තරය (Details):* ${cleanHTML(description)}\n`;
+                        msgText += `\n`;
+                    });
+                    msgText += `\n🔗 *Full Calendar:* https://calendar.google.com/calendar/u/0?cid=${encodeURIComponent(CALENDAR_ID)}`;
+                    await sock.sendMessage(sender, { text: msgText }, { quoted: msg });
+                } else {
+                    await sock.sendMessage(sender, { text: `🎉 *${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })}* දිනට Classes නෑ!` }, { quoted: msg });
+                }
+                return;
+            }
+            
+            // AI එක කිව්වා add_info කියලා නම් (ආරක්ෂිතව save කරනවා)
+            if (aiIntent.intent === 'add_info' && isSenderAdmin(sender)) {
+                const infoText = rawMessageText.replace(/^(add info|info add|save info)\s*:?\s*/i, '').trim();
+                if (infoText) {
+                    knowledgeBase.push(infoText);
+                    saveKnowledgeBase();
+                    await sock.sendMessage(sender, { text: `✅ Info saved! (Total: ${knowledgeBase.length})` }, { quoted: msg });
+                    return;
+                }
+            }
+
+            // AI එක එහෙමත් නැත්නම් හරියටම හඳුනාගත්තේ නැත්නම්, සාමාන්‍ය AI response එක    
+                
             // WHO AM I
             if (/\bwho\s*am\s*i\b/i.test(textLower) || textLower.includes('man kauda') || textLower.includes('mama kauda')) {
                 const isAdmin = isSenderAdmin(sender);
@@ -644,53 +734,6 @@ Contact Batch Rep: +94 76 251 3957`;
             if (textLower === 'whoami' || textLower === 'myid') {
                 const normalized = jidNormalizedUser(sender) || sender;
                 await sock.sendMessage(sender, { text: `🆔 Your ID: \`${normalized}\`` }, { quoted: msg });
-                return;
-            }
-
-                       // 📅 CALENDAR
-            if (textLower === 'calendar' || textLower === 'timetable' || textLower === 'time' || textLower === 'calender' || textLower === 'class' || textLower === 'lab' || /\bada\b/.test(textLower) || /\bheta\b/.test(textLower) || textLower.includes('anidda') || textLower.includes('inannida') || textLower.includes('pereda') || textLower.includes('iyye') || textLower.includes('today') || textLower.includes('tomorrow') || textLower.includes('monday') || textLower.includes('tuesday') || textLower.includes('wednesday') || textLower.includes('thursday') || textLower.includes('friday') || textLower.includes('saturday') || textLower.includes('sunday') || textLower.includes('january') || textLower.includes('february') || textLower.includes('march') || textLower.includes('april') || textLower.includes('may') || textLower.includes('june') || textLower.includes('july') || textLower.includes('august') || textLower.includes('september') || textLower.includes('october') || textLower.includes('november') || textLower.includes('december')) {                // 👇 දැන් targetDate එකත් ගන්නවා
-                const { start, end, targetDate } = getTargetDateRange(textLower);
-                const events = await getCalendarEvents(start, end);
-
-                // 👇 දිනය ලස්සනට format කරනවා (උදා: 2026 සැප්තැම්බර් 01)
-                const formattedDate = targetDate.toLocaleDateString('en-LK', {
-                    year: 'numeric',
-                    month: 'long',
-                    day: 'numeric',
-                    timeZone: 'Asia/Colombo'
-                });
-
-                if (events && events.length > 0) {
-                    // 👇 මෙතන Classes header එකට දිනය එකතු කළා
-                    let msgText = `📅 *${formattedDate} දින Classes:*\n\n`;
-                    events.forEach((ev, idx) => {
-                        const startTime = new Date(ev.start?.dateTime || ev.start?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute:'2-digit' });
-                        const endTime = new Date(ev.end?.dateTime || ev.end?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute:'2-digit' });
-                        
-                        const location = ev.location || '';
-                        const description = ev.description || '';
-
-                        msgText += `${idx+1}. *${ev.summary || 'Untitled'}*\n`;
-                        msgText += `   🕒 ${startTime} – ${endTime}\n`;
-                        
-                        if (location) {
-                            msgText += `   📍 *ස්ථානය (Location):* ${location}\n`;
-                        }
-                        if (description) {
-                            const cleanDescription = cleanHTML(description);
-                            msgText += `   📝 *විස්තරය (Details):* ${cleanDescription}\n`;
-                        }
-                        msgText += `\n`;
-                    });
-                    
-                    const firstModuleName = events[0]?.summary || 'Module';
-                    msgText += `\n💡 *Tip:* ${formattedDate} දිනට *${firstModuleName}* class එක තියෙනවා. Class එකට යන්න කලින් පොඩි quiz එකක් try කරන්න ඕනද?\n\n👉 Type කරන්න: *quiz*  (Knowledge base එකෙන් ප්‍රශ්න අහනවා)\n`;
-                    
-                    msgText += `\n🔗 *Full Calendar:* https://calendar.google.com/calendar/u/0?cid=${encodeURIComponent(CALENDAR_ID)}`;
-                    await sock.sendMessage(sender, { text: msgText }, { quoted: msg });
-                } else {
-                    await sock.sendMessage(sender, { text: `🎉 *${formattedDate}* දිනට විතරක් classes නෑ! (No lectures/labs for that day).` }, { quoted: msg });
-                }
                 return;
             }
 
@@ -768,23 +811,7 @@ Contact Batch Rep: +94 76 251 3957`;
                 }
                 return;
             }
-            // ADD INFO (Admin)
-            if (/^(add info|info add|save info)\b/i.test(textLower)) {
-                if (!isSenderAdmin(sender)) {
-                    await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
-                    return;
-                }
-                const infoText = rawMessageText.replace(/^(add info|info add|save info)\s*:?\s*/i, '').trim();
-                if (!infoText) {
-                    await sock.sendMessage(sender, { text: "⚠️ Please provide info text." }, { quoted: msg });
-                    return;
-                }
-                knowledgeBase.push(infoText);
-                saveKnowledgeBase();
-                await sock.sendMessage(sender, { text: `✅ Info saved! (Total: ${knowledgeBase.length})` }, { quoted: msg });
-                return;
-            }
-
+            
             // LIST INFO (Admin)
             if (textLower === 'list info' || textLower === 'show info') {
                 if (!isSenderAdmin(sender)) {
