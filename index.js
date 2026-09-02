@@ -2,7 +2,7 @@
 //  📦 DEPENDENCIES
 // ================================================================
 require('dotenv').config();
-const cron = require('node-cron'); // ⏰ නවතම එකතු කිරීම
+const cron = require('node-cron');
 
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason,
         downloadMediaMessage, jidNormalizedUser } = require('@whiskeysockets/baileys');
@@ -55,7 +55,7 @@ function buildPromptWithKnowledge(basePrompt) {
 }
 
 // ================================================================
-//  📇 STUDENT REGISTRY (ඔටෝමටික් ස්ථිර ලියාපදිංචිය)
+//  📇 STUDENT REGISTRY
 // ================================================================
 const STUDENTS_FILE = path.join(__dirname, 'students.json');
 let studentRegistry = [];
@@ -75,7 +75,6 @@ function addStudent(jid) {
     }
 }
 
-// 📊 Status tracking සඳහා Requests ගාන
 let geminiRequestsToday = 0;
 
 // ================================================================
@@ -164,9 +163,19 @@ let latestQR = "";
 let isConnected = false;
 
 // ================================================================
-//  🛡️ RATE LIMIT & ANTI-SPAM
+//  🛡️ RATE LIMIT & ANTI-SPAM (Memory Leak Fix එක ඇතුළත්)
 // ================================================================
 const rateLimitMap = {}; 
+
+// ⏰ Memory Leak Fix - පැය 1කට සැරයක් පරණ Data හිස් කිරීම
+setInterval(() => {
+    const now = Date.now();
+    for (const userId in rateLimitMap) {
+        if (now - rateLimitMap[userId].startTime > 3600000) {
+            delete rateLimitMap[userId];
+        }
+    }
+}, 3600000);
 
 function checkRateLimit(userId) {
     const now = Date.now();
@@ -310,7 +319,7 @@ function formatMathForWhatsApp(text) {
     return result;
 }
 
-// AI එකෙන් වාක්‍යයේ අදහස (Intent) තේරුම් ගන්නා function එක
+// AI Intent Function
 async function getCalendarIntentFromAI(text) {
     const prompt = `
     You are a highly accurate intent classifier for a University WhatsApp Bot.
@@ -358,7 +367,7 @@ function cleanHTML(text) {
 }
 
 // ================================================================
-//  📅 CALENDAR READER
+//  📅 CALENDAR READER (Regex Fix "adaraya")
 // ================================================================
 const CALENDAR_API_KEY = process.env.CALENDAR_API_KEY;
 const CALENDAR_ID = process.env.CALENDAR_ID || 'ca0b38d172729231657abfc34f1c7fdb8ea33050fe6f4623f5fab88cd0d4633@group.calendar.google.com';
@@ -368,7 +377,8 @@ function getTargetDateRange(text) {
     const targetDate = new Date(now);
     const lowerText = text.toLowerCase();
 
-    if (lowerText.includes('tomorrow') || lowerText.includes('heta') || lowerText.includes('හෙට')) {
+    // වැදගත්: /\bada\b/ සහ /\bheta\b/ ලෙස වෙනස් කළා (ඒ නිසා "adaraya" වලට හසු නොවේ)
+    if (lowerText.includes('tomorrow') || /\bheta\b/.test(lowerText) || lowerText.includes('හෙට')) {
         targetDate.setDate(now.getDate() + 1);
     } else if (lowerText.includes('today') || /\bada\b/.test(lowerText) || lowerText.includes('අද')) {
         // default to today
@@ -480,7 +490,7 @@ async function sendDailyTimetable(sock) {
 }
 
 // ================================================================
-//  🎵 AUDIO CONVERSION
+//  🎵 AUDIO CONVERSION (Temp Files Cleanup)
 // ================================================================
 function convertAudioToMp3(inputBuffer) {
     return new Promise((resolve, reject) => {
@@ -496,9 +506,15 @@ function convertAudioToMp3(inputBuffer) {
                     if (fs.existsSync(tempIn)) fs.unlinkSync(tempIn);
                     if (fs.existsSync(tempOut)) fs.unlinkSync(tempOut);
                     resolve(outputBuffer);
-                } catch (e) { reject(e); }
+                } catch (e) { 
+                    // අමතර ආරක්ෂාව - Cleanup
+                    if (fs.existsSync(tempIn)) fs.unlinkSync(tempIn);
+                    if (fs.existsSync(tempOut)) fs.unlinkSync(tempOut);
+                    reject(e); 
+                }
             })
             .on('error', (err) => {
+                // ✅ Temp Files Cleanup
                 if (fs.existsSync(tempIn)) fs.unlinkSync(tempIn);
                 if (fs.existsSync(tempOut)) fs.unlinkSync(tempOut);
                 reject(err);
@@ -569,8 +585,6 @@ async function connectToWhatsApp() {
         // ----------------------------------------------------------------
         async function processMessage(sock, msg) {
             const sender = msg.key.remoteJid;
-            
-            // 🚨 Student ලියාපදිංචි කිරීම (Auto-Push සඳහා)
             addStudent(sender);
 
             const rateCheck = checkRateLimit(sender);
@@ -601,10 +615,98 @@ async function connectToWhatsApp() {
             let fullUserPrompt = rawMessageText;
             if (quotedText) fullUserPrompt = `[Quoted: "${quotedText}"]\nUser: "${rawMessageText}"`;
 
+            // ---------- AUDIO ----------
+            if (audioMsg) {
+                try {
+                    await sock.sendMessage(sender, { text: "🎙️ **Voice Note Process වෙමින්...**" }, { quoted: msg });
+                    const oggBuffer = await downloadMediaMessage(msg, 'buffer', {});
+                    const mp3Buffer = await convertAudioToMp3(oggBuffer);
+                    const base64Audio = mp3Buffer.toString('base64');
+                    const audioPart = { inlineData: { data: base64Audio, mimeType: 'audio/mp3' } };
+                    const prompt = buildPromptWithKnowledge("Listen to this audio and reply.");
+                    const result = await model.generateContent([prompt, audioPart]);
+                    const reply = formatMathForWhatsApp(result.response.text());
+                    await sock.sendMessage(sender, { text: reply }, { quoted: msg });
+                } catch (err) {
+                    console.error('Audio error:', err);
+                    await sock.sendMessage(sender, { text: "❌ Voice message එක process කරන්න බැරි වුණා." }, { quoted: msg });
+                }
+                return;
+            }
+
+            // ---------- ADD FILE (Admin) ----------
+            if (docMsg && /^add file\b/i.test(rawMessageText.toLowerCase().trim())) {
+                if (!isSenderAdmin(sender)) {
+                    await sock.sendMessage(sender, { text: "❌ මේක කරන්න පුළුවන් Batch Rep ට විතරයි!" }, { quoted: msg });
+                    return;
+                }
+                const keyword = rawMessageText.replace(/^add file\s*:?\s*/i, '').trim().toLowerCase();
+                if (!keyword) {
+                    await sock.sendMessage(sender, { text: "⚠️ Keyword එකත් caption එකේ දෙන්න: add file: course outline" }, { quoted: msg });
+                    return;
+                }
+                try {
+                    const buffer = await downloadMediaMessage(msg, 'buffer', {});
+                    const ext = path.extname(docMsg.fileName || '') || '.pdf';
+                    const storedFileName = `${crypto.randomUUID()}${ext}`;
+                    fs.writeFileSync(path.join(FILES_DIR, storedFileName), buffer);
+                    fileRegistry.push({
+                        keyword, fileName: docMsg.fileName || `${keyword}${ext}`,
+                        mimetype: docMsg.mimetype || 'application/pdf',
+                        storedFileName
+                    });
+                    saveFileRegistry();
+                    await sock.sendMessage(sender, { text: `✅ File save කළා! Keyword: "${keyword}"` }, { quoted: msg });
+                } catch (err) {
+                    console.error('Save file error:', err);
+                    await sock.sendMessage(sender, { text: "❌ File save කිරීම අසාර්ථකයි." }, { quoted: msg });
+                }
+                return;
+            }
+
+            // ---------- PDF ANALYSIS ----------
+            if (docMsg) {
+                try {
+                    if (docMsg.mimetype === 'application/pdf') {
+                        await sock.sendMessage(sender, { text: "📄 **PDF Read කරමින්...**" }, { quoted: msg });
+                        const buffer = await downloadMediaMessage(msg, 'buffer', {});
+                        const base64Pdf = buffer.toString('base64');
+                        const pdfPart = { inlineData: { data: base64Pdf, mimeType: 'application/pdf' } };
+                        const prompt = buildPromptWithKnowledge(`Read PDF and respond. User: ${rawMessageText || ''}`);
+                        const result = await model.generateContent([prompt, pdfPart]);
+                        const reply = formatMathForWhatsApp(result.response.text());
+                        await sock.sendMessage(sender, { text: reply }, { quoted: msg });
+                    }
+                } catch (err) {
+                    console.error('PDF error:', err);
+                    await sock.sendMessage(sender, { text: "❌ File එක විවෘත කරන්න බැරි වුණා. ආයේ උත්සාහ කරන්න." }, { quoted: msg });
+                }
+                return;
+            }
+
+            // ---------- IMAGE ----------
+            if (imgMsg) {
+                try {
+                    await sock.sendMessage(sender, { text: "⏳ **Image Process වෙමින්...**" }, { quoted: msg });
+                    const buffer = await downloadMediaMessage(msg, 'buffer', {});
+                    const base64Image = buffer.toString('base64');
+                    const mimeType = imgMsg.mimetype || 'image/jpeg';
+                    const imagePart = { inlineData: { data: base64Image, mimeType: mimeType } };
+                    const prompt = buildPromptWithKnowledge(`Analyze image. User: ${rawMessageText || ''}`);
+                    const result = await model.generateContent([prompt, imagePart]);
+                    const reply = formatMathForWhatsApp(result.response.text());
+                    await sock.sendMessage(sender, { text: reply }, { quoted: msg });
+                } catch (err) {
+                    console.error('Image error:', err);
+                    await sock.sendMessage(sender, { text: "❌ Image process කරන්න බැරි වුණා." }, { quoted: msg });
+                }
+                return;
+            }
+
             // ---------- TEXT COMMANDS ----------
             const textLower = rawMessageText.toLowerCase().trim();
 
-            // 🚨 STATUS COMMAND (Admin Only) - නව එකතු කිරීම!
+            // 🚨 STATUS COMMAND (Admin Only)
             if (textLower === 'status') {
                 if (!isSenderAdmin(sender)) {
                     await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
@@ -615,7 +717,7 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // 🚨 ADD INFO (Admin) - මුලින්ම check කරනවා
+            // 🚨 ADD INFO (Admin)
             if (/^(add info|info add|save info)\b/i.test(textLower)) {
                 if (!isSenderAdmin(sender)) {
                     await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
@@ -632,7 +734,7 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // 🤖 AI එකෙන් Intent එක තේරුම් ගන්නවා
+            // 🤖 AI Intent
             const aiIntent = await getCalendarIntentFromAI(rawMessageText);
             
             if (aiIntent.intent === 'calendar') {
@@ -661,7 +763,6 @@ async function connectToWhatsApp() {
                 return;
             }
             
-            // AI එක කිව්වා add_info කියලා නම්
             if (aiIntent.intent === 'add_info' && isSenderAdmin(sender)) {
                 const infoText = rawMessageText.replace(/^(add info|info add|save info)\s*:?\s*/i, '').trim();
                 if (infoText) {
@@ -683,24 +784,33 @@ async function connectToWhatsApp() {
                 return;
             }
 
+            // ---------- GEN Z GUIDE (නවතම එකතු කිරීම) ----------
+            if (textLower === 'guide' || textLower === 'genz' || textLower === 'how to use') {
+                const genZGuide = `Yo bestie! 👋🔥 I'm *HansanaBot*, your AI slay assistant! No cap, I got your back! 🫡✨
+
+🛠️ *How to use me (fr fr):*
+👉 Just type *"ada class"* or *"heta class"* to see what's poppin' today/tomorrow.
+👉 Type *"quiz"* to test your brain before the lecture! (Don't be a procrastinator, bestie! 😤)
+👉 Need notes? Type *"pdf"* to get the actual file!
+👉 Got a random question? Just ask me in Sinhala or English.
+👉 *"status"* is only for the main character (Admin) 💅
+
+Catch my drift? Slide into my DMs and let's get that GPA up! 📈🚀`;
+                await sock.sendMessage(sender, { text: genZGuide }, { quoted: msg });
+                return;
+            }
+
             // ---------- HELP MENU (Student & Admin) ----------
             if (textLower === 'help' || textLower === '/help' || textLower === 'menu' || textLower === '/menu' || textLower === 'start' || textLower === '/start' || textLower === 'commands' || textLower === 'hi' || textLower === 'hello' || textLower === 'hey' || textLower === 'hii' || textLower === 'hlo' || textLower === 'hi there' || textLower === 'good morning' || textLower === 'good night' || textLower === 'suba') {
                 const isAdmin = isSenderAdmin(sender);
                 let helpText = `👋 *HansanaBot Help Menu* 🤖
 
 *General Commands:*
-📌 *help* - මේ Menu එක පෙන්නනවා
+📌 *guide* - Gen Z Style Guide එක බලන්න
 🆔 *whoami* - ඔයාගේ ID එක බලන්න
 👤 *who am i* - Adminද Studentද කියලා බලන්න
-
-*📅 Timetable & Calendar:*
-🗓️ *calendar* - අද / හෙට / ඉදිරි දවස් වල Classes බලන්න
-📅 *tomorrow* / *heta* - හෙට තියෙන Classes බලන්න
-📅 *today* / *ada* - අද තියෙන Classes බලන්න
-📅 *monday*, *tuesday*, *wednesday* etc. - ඒ දවසේ Classes බලන්න
-
-*📁 Files & Documents:*
-📂 *handbook*, *course outline* etc. - Save කරලා තියෙන Files ලබා ගන්න
+📅 *calendar* - අද / හෙට / ඉදිරි දවස් වල Classes බලන්න
+📂 *pdf* - Save කරලා තියෙන Files ලබා ගන්න
 
 *📞 Support:*
 Contact Batch Rep: +94 76 251 3957`;
@@ -715,7 +825,7 @@ Contact Batch Rep: +94 76 251 3957`;
 📤 *add file: [keyword]* - PDF/Image එකක් save කරන්න
 📋 *list files* - Save කරලා තියෙන Files ටික බලන්න
 🗑️ *remove file [number]* - File එකක් අයින් කරන්න
-📊 *status* - Bot එකේ තත්වය බලන්න (API ගාන, Files, Students)`;
+📊 *status* - Bot එකේ තත්වය බලන්න`;
                 }
                 
                 await sock.sendMessage(sender, { text: helpText }, { quoted: msg });
@@ -773,7 +883,7 @@ Contact Batch Rep: +94 76 251 3957`;
             }
 
             // ==========================================================
-            // 🚨 FILE DELIVERY (STRICT) - කෙනෙක් "pdf", "evidence", "file" ඉල්ලුවම විතරයි
+            // 🚨 FILE DELIVERY (STRICT) - "pdf", "evidence", "file" ඉල්ලුවම විතරයි
             // ==========================================================
             const matchedFile = fileRegistry.find(f => {
                 const kwWords = f.keyword.toLowerCase().split(/[\s,:.!?()]+/).filter(w => w.length > 2);
@@ -795,7 +905,7 @@ Contact Batch Rep: +94 76 251 3957`;
                     }
                 } catch (err) {
                     console.error('❌ Error sending file:', err);
-                    await sock.sendMessage(sender, { text: "❌ Error sending file. Try again." }, { quoted: msg });
+                    await sock.sendMessage(sender, { text: "❌ File එක යවන්න අවුලක් වුණා. නැවත try කරන්න." }, { quoted: msg });
                 }
                 return;
             }
@@ -832,7 +942,7 @@ Contact Batch Rep: +94 76 251 3957`;
                 return;
             }
 
-            // ---------- SMART QUIZ GENERATOR (PDF හෝ Info මත පදනම්ව) ----------
+            // ---------- SMART QUIZ GENERATOR ----------
             if (textLower.includes('quiz') || textLower.includes('test me') || textLower.includes('practice') || textLower === 'test') {
                 const { start, end } = getTargetDateRange(textLower);
                 const events = await getCalendarEvents(start, end);
@@ -925,6 +1035,7 @@ ${JSON.stringify(knowledgeBase)}`;
                         }
                     } catch (error) {
                         console.error('AI File Query Error:', error);
+                        await sock.sendMessage(sender, { text: "❌ File එක විවෘත කරන්න බැරි වුණා. ආයේ උත්සාහ කරන්න." }, { quoted: msg });
                     }
                 }
             }
