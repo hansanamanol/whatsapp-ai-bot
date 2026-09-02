@@ -780,18 +780,24 @@ Contact Batch Rep: +94 76 251 3957`;
                 return;
             }
 
-                       // FILE DELIVERY (ඇත්තටම PDF එක යවන කොටස)
+            // FILE DELIVERY (STRICT - ඉල්ලුවොත් විතරයි එවන්නේ)
+            // 1. මුලින්ම බලනවා කෙනෙක් ඇත්තටම file එකක් ඉල්ලනවද කියලා
+            const isExplicitFileRequest = /\b(pdf|file|send|download|document|danna|ewanna|yawanna)\b/i.test(textLower) || textLower.includes(' pdf');
+
+            // 2. ඊට පස්සේ keyword එක හොයනවා
             const matchedFile = fileRegistry.find(f => {
-                const kw = f.keyword.toLowerCase();
-                // ඔයා යවන ඕනෑම text එකකින් keyword එක හොයලා බලනවා
-                return textLower.includes(kw) || kw.includes(textLower);
+                const kwWords = f.keyword.toLowerCase().split(/[\s,:.!?()]+/).filter(w => w.length > 2);
+                // ඔයාගේ keyword එකේ තියෙන ප්‍රධාන වචන (උදා: it1150, tw, technical) ඔයාගේ ප්‍රශ්නයේ තියෙනවද බලනවා
+                const hasKeywordMatch = kwWords.some(word => textLower.includes(word));
+                
+                // File එකක් ඉල්ලනවා නම් සහ Keyword එකත් තියෙනවා නම් විතරයි එවන්නේ
+                return isExplicitFileRequest && hasKeywordMatch;
             });
 
             if (matchedFile) {
                 try {
                     const filePath = path.join(FILES_DIR, matchedFile.storedFileName);
-                    console.log('📂 User asked for file:', textLower, '| Matched keyword:', matchedFile.keyword);
-                    console.log('📁 Looking for file at:', filePath);
+                    console.log('📂 User explicitly asked for file:', textLower, '| Matched keyword:', matchedFile.keyword);
 
                     if (fs.existsSync(filePath)) {
                         const buffer = fs.readFileSync(filePath);
@@ -803,7 +809,7 @@ Contact Batch Rep: +94 76 251 3957`;
                         console.log('✅ File sent successfully!');
                     } else {
                         console.error('❌ File not found on server!');
-                        await sock.sendMessage(sender, { text: "❌ ඔයා ඉල්ලපු File එක Server එකේ නෑ. Bot එක Restart වුනාම File එක මැකිලා යනවා. Admin ට කියලා ආයේ Add කරන්න." }, { quoted: msg });
+                        await sock.sendMessage(sender, { text: "❌ File එක Server එකේ නෑ. Bot එක Restart වුනාම File එක මැකිලා යනවා. Admin ට කියලා ආයේ Add කරන්න." }, { quoted: msg });
                     }
                 } catch (err) {
                     console.error('❌ Error sending file:', err);
