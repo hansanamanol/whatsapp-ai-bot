@@ -1063,7 +1063,7 @@ function convertAudioToMp3(inputBuffer) {
 async function connectToWhatsApp() {
     try {
         console.log('🔄 Loading auth state...');
-        const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+        const { state, saveCreds } = await useMultiFileAuthState(path.join(DATA_DIR, 'auth_info_baileys'));
         const sock = makeWASocket({
             auth: state,
             printQRInTerminal: false,
