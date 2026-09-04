@@ -1047,6 +1047,14 @@ async function sendDailyTimetable(sock) {
     }
 
     const { start, end, targetDate } = getTargetDateRange('today');
+
+    // ✅ FIX: සති අන්තය (සෙනසුරාදා=6, ඉරිදා=0) නම් Message එක යවන්නේ නෑ.
+    const dayOfWeek = targetDate.getDay(); 
+    if (dayOfWeek === 0 || dayOfWeek === 6) {
+        console.log('සති අන්තයක් නිසා Daily Timetable එක යවන්නේ නැහැ.');
+        return;
+    }
+
     const events = await getCalendarEvents(start, end);
     const formattedDate = targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' });
 
@@ -1061,6 +1069,7 @@ async function sendDailyTimetable(sock) {
             if (location) msgText += `   📍 ${location}\n\n`;
         });
     } else {
+        // (ඔයාට අවශ්‍ය නම් මේ "Free Day" message එකත් අයින් කරන්න පුළුවන්, ඒත් weekday holiday එකකදී මේක ප්‍රයෝජනවත් වෙන්න පුළුවන්)
         msgText += "🎉 අද Classes නෑ! Free Day! 💯";
     }
 
@@ -1084,10 +1093,8 @@ async function sendDailyTimetable(sock) {
 // ================================================================
 //  📝 QUIZ GENERATOR (අද දවසේ PDF වලින්)
 // ================================================================
-async function handleQuizCommand(sock, sender, msg) {
+async function handleQuizCommand(sock, sender, msg, specificModule = '') {
     try {
-        await sock.sendMessage(sender, { text: "📝 **අද දවසේ Modules වලින් Quiz එකක් හදමින්...**" }, { quoted: msg });
-
         const { start, end, targetDate } = getTargetDateRange('today');
         const events = await getCalendarEvents(start, end);
 
@@ -1114,74 +1121,97 @@ async function handleQuizCommand(sock, sender, msg) {
             return;
         }
 
-        const relevantFiles = [];
-        for (const module of todayModules) {
-            const moduleKeywords = MODULE_FILE_MAP[module.code] || [module.code.toLowerCase()];
+        // ✅ අලුත්: Module එකක් තෝරලා නැත්නම් ලිස්ට් එක පෙන්නනවා
+        if (!specificModule) {
+            if (todayModules.length === 1) {
+                specificModule = todayModules[0].code; // එකම module එකක් නම් ඒකම ගන්නවා
+            } else {
+                const list = todayModules.map((m, i) => `${i+1}. *${m.code}* - ${m.fullName}`).join('\n');
+                await sock.sendMessage(sender, { 
+                    text: `📚 අද තියෙන Modules කිහිපයක් තියෙනවා. ඔයාට ඕන Module එක තෝරන්න:\n\n${list}\n\n👉 *Type කරන්න:* \`Quiz ${todayModules[0].code}\` (උදා: Quiz SE1020)` 
+                }, { quoted: msg });
+                return;
+            }
+        }
+
+        // ✅ තෝරපු Module එක හොයනවා
+        const query = specificModule.toLowerCase();
+        let targetModules = todayModules.filter(m => 
+            m.code.toLowerCase().includes(query) || 
+            m.fullName.toLowerCase().includes(query)
+        );
+
+        if (targetModules.length === 0) {
+            const list = todayModules.map(m => m.code).join(', ');
+            await sock.sendMessage(sender, { text: `⚠️ ඒ Module එක අද තියෙන්නේ නෑ! අද තියෙන Modules: *${list}*\n\nඋදාහරණයක් විදිහට: \`Quiz SE1020\`` }, { quoted: msg });
+            return;
+        }
+
+        // ✅ තෝරපු Module එකට විතරක් ප්‍රශ්න 10ක් හදනවා
+        for (const module of targetModules) {
+            const moduleCode = module.code;
+            const moduleName = module.fullName || moduleCode;
+
+            const moduleKeywords = MODULE_FILE_MAP[moduleCode] || [moduleCode.toLowerCase()];
             const file = fileRegistry.find(f => {
                 const keyword = f.keyword.toLowerCase();
                 return moduleKeywords.some(kw => keyword.includes(kw)) || 
                        moduleKeywords.some(kw => (f.fileName || '').toLowerCase().includes(kw));
             });
-            if (file) {
-                relevantFiles.push({
-                    module: module,
-                    file: file
-                });
+
+            if (!file) {
+                let message;
+                if (isSenderAdmin(sender)) {
+                    message = `📭 ${moduleCode} සඳහා PDF File එකක් හම්බුනේ නැහැ.\n\n💡 *උපදෙස්:* අදාළ PDF එක \`add file: ${moduleCode} notes\` ලෙස Save කරන්න.`;
+                } else {
+                    message = `📭 ${moduleCode} සඳහා PDF File එකක් තාම Add කරලා නැහැ. Batch Rep ට දැනුම් දෙන්න.`;
+                }
+                await sock.sendMessage(sender, { text: message }, { quoted: msg });
+                continue; 
             }
-        }
 
-        if (relevantFiles.length === 0) {
-            await sock.sendMessage(sender, { 
-                text: `📭 අද තියෙන Modules වලට අදාළ PDF Files හම්බුනේ නැහැ.\n\nඅද Modules: ${todayModules.map(m => m.code).join(', ')}\n\n💡 *උපදෙස්:* අදාළ PDF එක \`add file: ${todayModules[0].code} notes\` ලෙස Save කරන්න.` 
-            }, { quoted: msg });
-            return;
-        }
+            const filePath = path.join(FILES_DIR, file.storedFileName);
+            if (!fs.existsSync(filePath)) {
+                await sock.sendMessage(sender, { text: `❌ ${moduleCode} සඳහා File එක Server එකේ නෑ. Admin ට කියන්න.` }, { quoted: msg });
+                continue;
+            }
 
-        let allPdfContent = '';
-        for (const item of relevantFiles) {
-            const filePath = path.join(FILES_DIR, item.file.storedFileName);
-            if (fs.existsSync(filePath)) {
+            try {
+                await sock.sendMessage(sender, { text: `📝 *${moduleCode}* සඳහා Quiz එක හදමින්...` }, { quoted: msg });
+
                 const pdfBuffer = fs.readFileSync(filePath);
                 const base64Pdf = pdfBuffer.toString('base64');
                 const pdfPart = { inlineData: { data: base64Pdf, mimeType: 'application/pdf' } };
-                
-                const moduleName = item.module.fullName || item.module.code;
-                const prompt = `Read this PDF file which is for the module "${moduleName}". Extract key concepts, important points, and potential quiz questions from this material.`;
-                
-                try {
-                    const result = await generateContentWithRetry(model, [prompt, pdfPart]);
-                    allPdfContent += `\n\n--- ${moduleName} ---\n${result.response.text()}`;
-                } catch (e) {
-                    console.error(`Error processing PDF for ${moduleName}:`, e);
-                }
-            }
-        }
 
-        if (!allPdfContent) {
-            await sock.sendMessage(sender, { text: "❌ PDF Files read කරන්න බැරි වුණා. ආයේ try කරන්න." }, { quoted: msg });
-            return;
-        }
-
-        const quizPrompt = `
-You are a university lecturer. Based on the following lecture content from today's modules, create a quiz with 5 questions.
+                const quizPrompt = `You are a university lecturer. Based on the following lecture content for the module "${moduleName}", create a quiz with 10 questions.
 
 RULES:
 - Questions should test understanding, not just memorization.
 - Include a mix of: Multiple Choice, True/False, and Short Answer.
 - Provide clear correct answers.
 - Format the quiz neatly for WhatsApp (use bullet points, bold text, emojis).
+- **Language Rule (Important!):**
+  1. The quiz questions and the main correct answers MUST be in **English**.
+  2. After providing the correct answer in English, add a line starting with *"💡 Sinhala Explanation:"* and write a brief, clear explanation in **Sinhala** for that specific answer so the student can easily understand it.
+  3. Use simple Sinhala words (Singlish / Sinhala script is fine) to explain concepts that might be difficult.
 
 LECTURE CONTENT:
-${allPdfContent}
+${/* PDF content will be sent as a part */ ''}
 
 Generate the quiz now.`;
-        
-        geminiRequestsToday++;
-        const result = await generateContentWithRetry(model, quizPrompt);
-        const quizReply = formatMathForWhatsApp(result.response.text());
 
-        const header = `📝 *අද දවසේ Quiz* (${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })})\n\n📚 *Modules:* ${todayModules.map(m => m.code).join(', ')}\n───────────────────\n\n`;
-        await sock.sendMessage(sender, { text: header + quizReply }, { quoted: msg });
+                geminiRequestsToday++;
+                const result = await generateContentWithRetry(model, [quizPrompt, pdfPart]);
+                const quizReply = formatMathForWhatsApp(result.response.text());
+
+                const header = `📝 *${moduleCode} - Quiz* (${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })})\n───────────────────\n\n`;
+                await sock.sendMessage(sender, { text: header + quizReply }, { quoted: msg });
+
+            } catch (error) {
+                console.error(`Error generating quiz for ${moduleCode}:`, error);
+                await sock.sendMessage(sender, { text: `❌ ${moduleCode} Quiz එක හදන්න බැරි වුණා. නැවත try කරන්න.` }, { quoted: msg });
+            }
+        }
 
     } catch (error) {
         console.error('Quiz generation error:', error);
@@ -1294,7 +1324,17 @@ async function connectToWhatsApp() {
                 return;
             }   
             const isGroup = sender.endsWith('@g.us');
-            if (isGroup) return;
+
+            // 🚫 Group එකට එන හැම Message එකක්ම Ignore කරනවා
+            if (isGroup) {
+                // 🕵️‍♂️ GROUP_JID එක තාම හිස් නම් විතරයි Log එකට ID එක print කරන්නේ
+                if (!GROUP_JID) {
+                    console.log(`📢 Group ID Found (Silent Log): ${sender}`);
+                }
+                
+                // ✅ Bot එක කිසිම reply එකක් Group එකට යවන්නේ නැහැ. කෙලින්ම return වෙනවා.
+                return; 
+            }
 
             await sock.readMessages([msg.key]);
             await sock.sendPresenceUpdate('composing', sender);
@@ -1407,9 +1447,11 @@ async function connectToWhatsApp() {
             // ---------- TEXT COMMANDS ----------
             const textLower = rawMessageText.toLowerCase().trim();
 
-            // ---------- QUIZ COMMAND ----------
-            if (textLower === 'quiz' || textLower === 'quiz එකක්' || textLower === 'quiz ekk') {
-                await handleQuizCommand(sock, sender, msg);
+                       // ---------- QUIZ COMMAND ----------
+            const quizMatch = textLower.match(/^quiz\s+(.+)$/); // "quiz oop", "quiz se1020" වගේ
+            if (textLower === 'quiz' || textLower === 'quiz එකක්' || textLower === 'quiz ekk' || quizMatch) {
+                const moduleQuery = quizMatch ? quizMatch[1].trim() : ''; // තෝරපු module එක
+                await handleQuizCommand(sock, sender, msg, moduleQuery);
                 return;
             }
 
