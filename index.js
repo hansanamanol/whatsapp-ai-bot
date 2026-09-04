@@ -587,6 +587,17 @@ function saveFileRegistry() {
 }
 
 // ================================================================
+//  📚 MODULE TO FILE KEYWORD MAPPING (for quiz)
+// ================================================================
+const MODULE_FILE_MAP = {
+    'SE1020': ['oop', 'se1020', 'object oriented'],
+    'IT1170': ['dsa', 'it1170', 'data structures'],
+    'IT1160': ['discrete', 'it1160', 'math'],
+    'IT1150': ['technical writing', 'it1150', 'writing'],
+    'IE1011': ['information systems', 'ie1011', 'is']
+};
+
+// ================================================================
 //  🧵 CONCURRENCY QUEUE
 // ================================================================
 const MAX_CONCURRENT = 3;
@@ -789,6 +800,7 @@ CRITICAL CODE & TUTORIAL ANALYSIS RULES:
   3. Keep track of accurate question labeling (a, b, c, d, e) without swapping their code contents.
 `;
 
+// ✅ Changed model to gemini-1.5-flash to avoid 503 errors
 const model = genAI.getGenerativeModel({
     model: "gemini-3.5-flash-lite", 
     systemInstruction: systemInstruction
@@ -1026,6 +1038,122 @@ async function sendDailyTimetable(sock) {
 }
 
 // ================================================================
+//  📝 QUIZ GENERATOR (අද දවසේ PDF වලින්)
+// ================================================================
+async function handleQuizCommand(sock, sender, msg) {
+    try {
+        await sock.sendMessage(sender, { text: "📝 **අද දවසේ Modules වලින් Quiz එකක් හදමින්...**" }, { quoted: msg });
+
+        // 1. අද දවසේ Timetable එක ගන්න
+        const { start, end, targetDate } = getTargetDateRange('today');
+        const events = await getCalendarEvents(start, end);
+
+        if (!events || events.length === 0) {
+            await sock.sendMessage(sender, { text: "🎉 අද Classes නෑ! Quiz එකක් හදන්න Modules නැහැ." }, { quoted: msg });
+            return;
+        }
+
+        // 2. අද තියෙන Modules වල Names එකතු කරන්න
+        const todayModules = [];
+        events.forEach(ev => {
+            const summary = ev.summary || '';
+            // Module Code එක හොයන්න (උදා: SE1020, IT1170)
+            const moduleCodeMatch = summary.match(/(SE|IT|IE)\d{4}/i);
+            if (moduleCodeMatch) {
+                todayModules.push({
+                    code: moduleCodeMatch[0].toUpperCase(),
+                    fullName: summary,
+                    event: ev
+                });
+            }
+        });
+
+        if (todayModules.length === 0) {
+            await sock.sendMessage(sender, { text: "📭 අද Classes තියෙනවා, ඒත් Module Codes හඳුනාගන්න බැරි වුණා. Quiz එකක් හදන්න බැහැ." }, { quoted: msg });
+            return;
+        }
+
+        // 3. මෙම Modules වලට අදාළ PDF Files Registry එකෙන් හොයන්න
+        const relevantFiles = [];
+        for (const module of todayModules) {
+            // Module Code එකට Mapping එකෙන් Keywords හොයන්න
+            const moduleKeywords = MODULE_FILE_MAP[module.code] || [module.code.toLowerCase()];
+            const file = fileRegistry.find(f => {
+                const keyword = f.keyword.toLowerCase();
+                return moduleKeywords.some(kw => keyword.includes(kw)) || 
+                       moduleKeywords.some(kw => (f.fileName || '').toLowerCase().includes(kw));
+            });
+            if (file) {
+                relevantFiles.push({
+                    module: module,
+                    file: file
+                });
+            }
+        }
+
+        if (relevantFiles.length === 0) {
+            await sock.sendMessage(sender, { 
+                text: `📭 අද තියෙන Modules වලට අදාළ PDF Files හම්බුනේ නැහැ.\n\nඅද Modules: ${todayModules.map(m => m.code).join(', ')}\n\n💡 *උපදෙස්:* අදාළ PDF එක \`add file: ${todayModules[0].code} notes\` ලෙස Save කරන්න.` 
+            }, { quoted: msg });
+            return;
+        }
+
+        // 4. හම්බුනු PDF Files ටික AI එකට යවලා Quiz එක හදාගන්න
+        let allPdfContent = '';
+        for (const item of relevantFiles) {
+            const filePath = path.join(FILES_DIR, item.file.storedFileName);
+            if (fs.existsSync(filePath)) {
+                const pdfBuffer = fs.readFileSync(filePath);
+                const base64Pdf = pdfBuffer.toString('base64');
+                const pdfPart = { inlineData: { data: base64Pdf, mimeType: 'application/pdf' } };
+                
+                const moduleName = item.module.fullName || item.module.code;
+                const prompt = `Read this PDF file which is for the module "${moduleName}". Extract key concepts, important points, and potential quiz questions from this material.`;
+                
+                try {
+                    const result = await model.generateContent([prompt, pdfPart]);
+                    allPdfContent += `\n\n--- ${moduleName} ---\n${result.response.text()}`;
+                } catch (e) {
+                    console.error(`Error processing PDF for ${moduleName}:`, e);
+                }
+            }
+        }
+
+        if (!allPdfContent) {
+            await sock.sendMessage(sender, { text: "❌ PDF Files read කරන්න බැරි වුණා. ආයේ try කරන්න." }, { quoted: msg });
+            return;
+        }
+
+        // 5. Quiz එක Generate කරන්න AI එකට කියන්න
+        const quizPrompt = `
+You are a university lecturer. Based on the following lecture content from today's modules, create a quiz with 5 questions.
+
+RULES:
+- Questions should test understanding, not just memorization.
+- Include a mix of: Multiple Choice, True/False, and Short Answer.
+- Provide clear correct answers.
+- Format the quiz neatly for WhatsApp (use bullet points, bold text, emojis).
+
+LECTURE CONTENT:
+${allPdfContent}
+
+Generate the quiz now.`;
+        
+        geminiRequestsToday++;
+        const result = await model.generateContent(quizPrompt);
+        const quizReply = formatMathForWhatsApp(result.response.text());
+
+        // 6. Quiz එක යවන්න
+        const header = `📝 *අද දවසේ Quiz* (${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })})\n\n📚 *Modules:* ${todayModules.map(m => m.code).join(', ')}\n───────────────────\n\n`;
+        await sock.sendMessage(sender, { text: header + quizReply }, { quoted: msg });
+
+    } catch (error) {
+        console.error('Quiz generation error:', error);
+        await sock.sendMessage(sender, { text: "❌ Quiz එක හදන්න බැරි වුණා. නැවත try කරන්න." }, { quoted: msg });
+    }
+}
+
+// ================================================================
 //  🎵 AUDIO CONVERSION
 // ================================================================
 function convertAudioToMp3(inputBuffer) {
@@ -1243,6 +1371,12 @@ async function connectToWhatsApp() {
             // ---------- TEXT COMMANDS ----------
             const textLower = rawMessageText.toLowerCase().trim();
 
+            // ---------- QUIZ COMMAND (අද දවසේ PDF වලින් Quiz එකක්) ----------
+            if (textLower === 'quiz' || textLower === 'quiz එකක්' || textLower === 'quiz ekk') {
+                await handleQuizCommand(sock, sender, msg);
+                return;
+            }
+
             // STATUS (Admin)
             if (textLower === 'status') {
                 if (!isSenderAdmin(sender)) {
@@ -1271,7 +1405,10 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // 🚨 FILE DELIVERY (STRICT - File එක හම්බුනොත් කෙලින්ම එවයි!)
+            // 🚨 SMART FILE HANDLING — Explicit request → raw file. Content question → AI reads PDF & answers.
+            const explicitFileWords = /\b(pdf|file|send|download|document|danna|ewanna|yawanna|evidence|source|uththara|sadaha|reference|prove|copy)\b/i;
+            const isExplicitFileRequest = explicitFileWords.test(textLower);
+
             let matchedFile = fileRegistry.find(f => {
                 const kw = f.keyword.toLowerCase();
                 const kwWords = kw.split(/[\s,:.!?()]+/).filter(w => w.length >= 2);
@@ -1279,21 +1416,52 @@ async function connectToWhatsApp() {
             });
 
             if (matchedFile) {
-                try {
-                    const filePath = path.join(FILES_DIR, matchedFile.storedFileName);
-                    if (fs.existsSync(filePath)) {
-                        const buffer = fs.readFileSync(filePath);
-                        await sock.sendMessage(sender, { 
-                            document: buffer, 
-                            mimetype: matchedFile.mimetype || 'application/pdf', 
-                            fileName: matchedFile.fileName || 'document.pdf' 
-                        }, { quoted: msg });
-                    } else {
-                        await sock.sendMessage(sender, { text: "❌ File එක නෑ. Bot එක Restart වෙලා නම් Admin ට කියලා ආයේ Add කරන්න." }, { quoted: msg });
+                const filePath = path.join(FILES_DIR, matchedFile.storedFileName);
+
+                // Case 1: Explicit request → send raw file
+                if (isExplicitFileRequest || matchedFile.mimetype !== 'application/pdf') {
+                    try {
+                        if (fs.existsSync(filePath)) {
+                            const buffer = fs.readFileSync(filePath);
+                            await sock.sendMessage(sender, {
+                                document: buffer,
+                                mimetype: matchedFile.mimetype || 'application/pdf',
+                                fileName: matchedFile.fileName || 'document.pdf'
+                            }, { quoted: msg });
+                        } else {
+                            await sock.sendMessage(sender, { text: "❌ File එක නෑ. Bot එක Restart වෙලා නම් Admin ට කියලා ආයේ Add කරන්න." }, { quoted: msg });
+                        }
+                    } catch (err) {
+                        console.error('❌ Error sending file:', err);
+                        await sock.sendMessage(sender, { text: "❌ File එක යවන්න අවුලක් වුණා. නැවත try කරන්න." }, { quoted: msg });
                     }
-                } catch (err) {
-                    console.error('❌ Error sending file:', err);
-                    await sock.sendMessage(sender, { text: "❌ File එක යවන්න අවුලක් වුණා. නැවත try කරන්න." }, { quoted: msg });
+                    return;
+                }
+
+                // Case 2: Content question about a PDF → AI reads it & answers directly
+                try {
+                    if (fs.existsSync(filePath)) {
+                        const pdfBuffer = fs.readFileSync(filePath);
+                        const base64Pdf = pdfBuffer.toString('base64');
+                        const pdfPart = { inlineData: { data: base64Pdf, mimeType: 'application/pdf' } };
+
+                        const queryPrompt = `Read the attached PDF file. The user has asked: "${rawMessageText}".\n\nAnswer the user's question directly, briefly, and clearly based *ONLY* on the information in the PDF file. If the answer is not in the PDF, say "Sorry, this information is not in the file." Do not mention the file name unless necessary.`;
+
+                        geminiRequestsToday++;
+                        const result = await model.generateContent([queryPrompt, pdfPart]);
+                        const reply = formatMathForWhatsApp(result.response.text());
+
+                        lastFileContext[sender] = matchedFile;
+
+                        const userGuide = `\n\n📄 *ඔයාට මේ තොරතුරු වල සාක්ෂි (Evidence) බලන්න ඕනද?*\n👉 එතකොට *"pdf"* කියලා type කරන්න.`;
+
+                        await sock.sendMessage(sender, { text: reply + userGuide }, { quoted: msg });
+                    } else {
+                        await sock.sendMessage(sender, { text: "❌ File එක නෑ. Admin ට කියලා ආයේ Add කරන්න." }, { quoted: msg });
+                    }
+                } catch (error) {
+                    console.error('AI File Query Error:', error);
+                    await sock.sendMessage(sender, { text: "❌ File එක විවෘත කරන්න බැරි වුණා. ආයේ උත්සාහ කරන්න." }, { quoted: msg });
                 }
                 return;
             }
@@ -1408,6 +1576,7 @@ Catch my drift? Slide into my DMs and let's get that GPA up! 📈🚀`;
 📖 *word* - Academic Word Practice (නව වචන ඉගෙන ගන්න)
 📅 *calendar* - අද / හෙට / ඉදිරි දවස් වල Classes බලන්න
 📂 *pdf* - Save කරලා තියෙන Files ලබා ගන්න
+📝 *quiz* - අද දවසේ Modules වලින් Quiz එකක්
 
 *📞 Support:*
 Contact Batch Rep: +94 76 251 3957`;
@@ -1509,45 +1678,7 @@ Contact Batch Rep: +94 76 251 3957`;
                 return;
             }
 
-            // ⛔ QUIZ FEATURE අක්‍රීය කර ඇත
-
-            // ---------- AI FILE QUERY ----------
-            const isExplicitFileRequest2 = /\b(pdf|file|send|download|document|danna|ewanna|yawanna|evidence|source|uththara|sadaha|reference|prove|copy)\b/i.test(textLower);
-            
-            if (!isExplicitFileRequest2) {
-                const matchedFileContext = fileRegistry.find(f => {
-                    const kw = f.keyword.toLowerCase();
-                    return kw.split(/[\s,:.!?()]+/).some(word => word.length >= 2 && textLower.includes(word)) || textLower.includes(kw);
-                });
-                
-                if (matchedFileContext && matchedFileContext.mimetype === 'application/pdf') {
-                    try {
-                        const filePath = path.join(FILES_DIR, matchedFileContext.storedFileName);
-                        if (fs.existsSync(filePath)) {
-                            const pdfBuffer = fs.readFileSync(filePath);
-                            const base64Pdf = pdfBuffer.toString('base64');
-                            const pdfPart = { inlineData: { data: base64Pdf, mimeType: 'application/pdf' } };
-                            
-                            const queryPrompt = `Read the attached PDF file. The user has asked: "${rawMessageText}".\n\nAnswer the user's question directly, briefly, and clearly based *ONLY* on the information in the PDF file. If the answer is not in the PDF, say "Sorry, this information is not in the file." Do not mention the file name unless necessary.`;
-
-                            geminiRequestsToday++;
-                            const result = await model.generateContent([queryPrompt, pdfPart]);
-                            const reply = formatMathForWhatsApp(result.response.text());
-
-                            lastFileContext[sender] = matchedFileContext;
-
-                            const userGuide = `\n\n📄 *ඔයාට මේ තොරතුරු වල සාක්ෂි (Evidence) බලන්න ඕනද?*\n👉 එතකොට *"pdf"* කියලා type කරන්න.`;
-
-                            await sock.sendMessage(sender, { text: reply + userGuide }, { quoted: msg });
-                            return;
-                        }
-                    } catch (error) {
-                        console.error('AI File Query Error:', error);
-                        await sock.sendMessage(sender, { text: "❌ File එක විවෘත කරන්න බැරි වුණා. ආයේ උත්සාහ කරන්න." }, { quoted: msg });
-                    }
-                }
-            }
-
+           
             // 🎉 FUN & MOTIVATION
             if (textLower === 'motivate me' || textLower === 'daily quote' || textLower === 'inspire me') {
                 const quotes = [
