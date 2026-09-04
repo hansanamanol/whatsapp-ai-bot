@@ -743,12 +743,25 @@ app.listen(PORT, () => console.log(`✅ Web server running on port ${PORT}`));
 // ================================================================
 //  🤖 GEMINI SETUP
 // ================================================================
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-if (!GEMINI_API_KEY) {
-    console.error('❌ GEMINI_API_KEY not set. Exiting.');
-    process.exit(1);
+// (1) Support multiple keys:
+const apiKeys = [
+    process.env.GEMINI_API_KEY_1,
+    process.env.GEMINI_API_KEY_2,
+    process.env.GEMINI_API_KEY_3,
+    process.env.GEMINI_API_KEY_4
+].filter(key => key); 
+
+let currentKeyIndex = 0;
+
+function getNextGenAI() {
+    if (apiKeys.length === 0) {
+        console.error('❌ No API keys found! Please set GEMINI_API_KEY_1...');
+        process.exit(1);
+    }
+    const key = apiKeys[currentKeyIndex];
+    currentKeyIndex = (currentKeyIndex + 1) % apiKeys.length; 
+    return new GoogleGenerativeAI(key);
 }
-const genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
 
 const systemInstruction = `
 You are HansanaBot, the official digital assistant representing the SLIIT IT Y1S2 Batch Representative, Monal Hansana.
@@ -800,11 +813,47 @@ CRITICAL CODE & TUTORIAL ANALYSIS RULES:
   3. Keep track of accurate question labeling (a, b, c, d, e) without swapping their code contents.
 `;
 
-// ✅ Changed model to gemini-1.5-flash to avoid 503 errors
-const model = genAI.getGenerativeModel({
-    model: "gemini-3.5-flash-lite", 
+// (2) Use a let variable that can be reassigned on key switch
+let model = getNextGenAI().getGenerativeModel({
+    model: "gemini-3.1-flash-lite", 
     systemInstruction: systemInstruction
 });
+
+// (3) Helper function to create a model with the current key and correct settings
+function createModelWithCurrentKey() {
+    return getNextGenAI().getGenerativeModel({
+        model: "gemini-3.5-flash-lite", 
+        systemInstruction: systemInstruction
+    });
+}
+
+// (4) Unified Retry + Key Rotation Logic
+async function generateContentWithRetry(modelInstance, request, maxRetries = 4) {
+    let delay = 1000; // 1 second initial delay
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+            return await modelInstance.generateContent(request);
+        } catch (error) {
+            // 503 (Server Overload) හෝ 429 (Quota Exceeded) ආවොත්
+            if (error.status === 503 || error.status === 429 || error.message.includes('503') || error.message.includes('429')) {
+                if (attempt === maxRetries) {
+                    console.error('Max retries reached. Switching keys failed too:', error.message);
+                    throw error;
+                }
+                
+                // (5) Key එක මාරු කරලා අලුත් Model එකක් හදනවා
+                model = createModelWithCurrentKey();
+
+                console.log(`Error ${error.status} detected. Switching to key #${currentKeyIndex} and retrying in ${delay/1000}s...`);
+                await new Promise(resolve => setTimeout(resolve, delay));
+                delay *= 2; // Exponential backoff (1s, 2s, 4s, 8s)
+            } else {
+                throw error; // අනිත් errors (400, 401) වෙනුවෙන්
+            }
+        }
+    }
+}
 
 function formatMathForWhatsApp(text) {
     if (!text) return text;
@@ -845,7 +894,7 @@ async function getCalendarIntentFromAI(text) {
 
     try {
         geminiRequestsToday++;
-        const result = await model.generateContent(prompt);
+        const result = await generateContentWithRetry(model, prompt);
         const rawText = result.response.text().trim();
         const jsonMatch = rawText.match(/\{.*\}/s);
         if (jsonMatch) {
@@ -879,13 +928,11 @@ const CALENDAR_API_KEY = process.env.CALENDAR_API_KEY;
 const CALENDAR_ID = process.env.CALENDAR_ID || 'ca0b38d172729231657abfc34f1c7fdb8ea33050fe6f4623f5fab88cd0d4633@group.calendar.google.com';
 
 function getTargetDateRange(text) {
-    // ✅ FIX 1: Server UTC වෙනුවට ශ්‍රී ලංකා (Asia/Colombo) වෙලාව ගන්නවා
     const utcNow = new Date();
     let now = new Date(utcNow.toLocaleString('en-US', { timeZone: 'Asia/Colombo' }));
     let targetDate = new Date(now);
-    const lowerText = text.toLowerCase().replace(/\s+/g, ''); // Spaces අයින් කරලා බලනවා
+    const lowerText = text.toLowerCase().replace(/\s+/g, ''); 
 
-    // ✅ FIX 2: "Next Week" කියන හැම විදිහක්ම හඳුනාගන්නවා
     if (lowerText.includes('nextweek') || lowerText.includes('laban') || lowerText.includes('eelaga') || 
         lowerText.includes('eelagast') || lowerText.includes('balanna') || lowerText.includes('ඊළඟ') || lowerText.includes('ලබන')) {
         now = new Date(now);
@@ -904,7 +951,6 @@ function getTargetDateRange(text) {
     } else if (lowerText.includes('iyye') || lowerText.includes('ඊයේ')) {
         targetDate.setDate(now.getDate() - 1);
     } else {
-        // ✅ Singlish + Sinhala + English Days (සියලුම වෙනස්කම් ඇතුළත්)
         const days = [
             { names: ['sunday', 'ira', 'ඉරිදා'], value: 0 },
             { names: ['monday', 'sanduda', 'sandu', 'saduda', 'sadudaa', 'සඳුදා'], value: 1 },
@@ -928,7 +974,6 @@ function getTargetDateRange(text) {
         }
 
         if (!isDayFound) {
-            // ✅ Singlish + Sinhala + English Months
             const months = [
                 { names: ['january', 'janawari', 'ජනවාරි'], value: 0 },
                 { names: ['february', 'pebarwari', 'පෙබරවාරි'], value: 1 },
@@ -1019,7 +1064,6 @@ async function sendDailyTimetable(sock) {
         msgText += "🎉 අද Classes නෑ! Free Day! 💯";
     }
 
-    // ✅ Word of the Day
     const wordKeys = Object.keys(academicWords);
     const randomWord = wordKeys[Math.floor(Math.random() * wordKeys.length)];
     msgText += `\n📚 *Word of the Day:* *${randomWord}* - ${academicWords[randomWord]}\n`;
@@ -1044,7 +1088,6 @@ async function handleQuizCommand(sock, sender, msg) {
     try {
         await sock.sendMessage(sender, { text: "📝 **අද දවසේ Modules වලින් Quiz එකක් හදමින්...**" }, { quoted: msg });
 
-        // 1. අද දවසේ Timetable එක ගන්න
         const { start, end, targetDate } = getTargetDateRange('today');
         const events = await getCalendarEvents(start, end);
 
@@ -1053,11 +1096,9 @@ async function handleQuizCommand(sock, sender, msg) {
             return;
         }
 
-        // 2. අද තියෙන Modules වල Names එකතු කරන්න
         const todayModules = [];
         events.forEach(ev => {
             const summary = ev.summary || '';
-            // Module Code එක හොයන්න (උදා: SE1020, IT1170)
             const moduleCodeMatch = summary.match(/(SE|IT|IE)\d{4}/i);
             if (moduleCodeMatch) {
                 todayModules.push({
@@ -1073,10 +1114,8 @@ async function handleQuizCommand(sock, sender, msg) {
             return;
         }
 
-        // 3. මෙම Modules වලට අදාළ PDF Files Registry එකෙන් හොයන්න
         const relevantFiles = [];
         for (const module of todayModules) {
-            // Module Code එකට Mapping එකෙන් Keywords හොයන්න
             const moduleKeywords = MODULE_FILE_MAP[module.code] || [module.code.toLowerCase()];
             const file = fileRegistry.find(f => {
                 const keyword = f.keyword.toLowerCase();
@@ -1098,7 +1137,6 @@ async function handleQuizCommand(sock, sender, msg) {
             return;
         }
 
-        // 4. හම්බුනු PDF Files ටික AI එකට යවලා Quiz එක හදාගන්න
         let allPdfContent = '';
         for (const item of relevantFiles) {
             const filePath = path.join(FILES_DIR, item.file.storedFileName);
@@ -1111,7 +1149,7 @@ async function handleQuizCommand(sock, sender, msg) {
                 const prompt = `Read this PDF file which is for the module "${moduleName}". Extract key concepts, important points, and potential quiz questions from this material.`;
                 
                 try {
-                    const result = await model.generateContent([prompt, pdfPart]);
+                    const result = await generateContentWithRetry(model, [prompt, pdfPart]);
                     allPdfContent += `\n\n--- ${moduleName} ---\n${result.response.text()}`;
                 } catch (e) {
                     console.error(`Error processing PDF for ${moduleName}:`, e);
@@ -1124,7 +1162,6 @@ async function handleQuizCommand(sock, sender, msg) {
             return;
         }
 
-        // 5. Quiz එක Generate කරන්න AI එකට කියන්න
         const quizPrompt = `
 You are a university lecturer. Based on the following lecture content from today's modules, create a quiz with 5 questions.
 
@@ -1140,10 +1177,9 @@ ${allPdfContent}
 Generate the quiz now.`;
         
         geminiRequestsToday++;
-        const result = await model.generateContent(quizPrompt);
+        const result = await generateContentWithRetry(model, quizPrompt);
         const quizReply = formatMathForWhatsApp(result.response.text());
 
-        // 6. Quiz එක යවන්න
         const header = `📝 *අද දවසේ Quiz* (${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })})\n\n📚 *Modules:* ${todayModules.map(m => m.code).join(', ')}\n───────────────────\n\n`;
         await sock.sendMessage(sender, { text: header + quizReply }, { quoted: msg });
 
@@ -1289,7 +1325,7 @@ async function connectToWhatsApp() {
                     const base64Audio = mp3Buffer.toString('base64');
                     const audioPart = { inlineData: { data: base64Audio, mimeType: 'audio/mp3' } };
                     const prompt = buildPromptWithKnowledge("Listen to this audio and reply.");
-                    const result = await model.generateContent([prompt, audioPart]);
+                    const result = await generateContentWithRetry(model, [prompt, audioPart]);
                     const reply = formatMathForWhatsApp(result.response.text());
                     await sock.sendMessage(sender, { text: reply }, { quoted: msg });
                 } catch (err) {
@@ -1338,7 +1374,7 @@ async function connectToWhatsApp() {
                         const base64Pdf = buffer.toString('base64');
                         const pdfPart = { inlineData: { data: base64Pdf, mimeType: 'application/pdf' } };
                         const prompt = buildPromptWithKnowledge(`Read PDF and respond. User: ${rawMessageText || ''}`);
-                        const result = await model.generateContent([prompt, pdfPart]);
+                        const result = await generateContentWithRetry(model, [prompt, pdfPart]);
                         const reply = formatMathForWhatsApp(result.response.text());
                         await sock.sendMessage(sender, { text: reply }, { quoted: msg });
                     }
@@ -1358,7 +1394,7 @@ async function connectToWhatsApp() {
                     const mimeType = imgMsg.mimetype || 'image/jpeg';
                     const imagePart = { inlineData: { data: base64Image, mimeType: mimeType } };
                     const prompt = buildPromptWithKnowledge(`Analyze image. User: ${rawMessageText || ''}`);
-                    const result = await model.generateContent([prompt, imagePart]);
+                    const result = await generateContentWithRetry(model, [prompt, imagePart]);
                     const reply = formatMathForWhatsApp(result.response.text());
                     await sock.sendMessage(sender, { text: reply }, { quoted: msg });
                 } catch (err) {
@@ -1371,7 +1407,7 @@ async function connectToWhatsApp() {
             // ---------- TEXT COMMANDS ----------
             const textLower = rawMessageText.toLowerCase().trim();
 
-            // ---------- QUIZ COMMAND (අද දවසේ PDF වලින් Quiz එකක්) ----------
+            // ---------- QUIZ COMMAND ----------
             if (textLower === 'quiz' || textLower === 'quiz එකක්' || textLower === 'quiz ekk') {
                 await handleQuizCommand(sock, sender, msg);
                 return;
@@ -1405,7 +1441,7 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // 🚨 SMART FILE HANDLING — Explicit request → raw file. Content question → AI reads PDF & answers.
+            // 🚨 SMART FILE HANDLING
             const explicitFileWords = /\b(pdf|file|send|download|document|danna|ewanna|yawanna|evidence|source|uththara|sadaha|reference|prove|copy)\b/i;
             const isExplicitFileRequest = explicitFileWords.test(textLower);
 
@@ -1418,7 +1454,6 @@ async function connectToWhatsApp() {
             if (matchedFile) {
                 const filePath = path.join(FILES_DIR, matchedFile.storedFileName);
 
-                // Case 1: Explicit request → send raw file
                 if (isExplicitFileRequest || matchedFile.mimetype !== 'application/pdf') {
                     try {
                         if (fs.existsSync(filePath)) {
@@ -1438,7 +1473,6 @@ async function connectToWhatsApp() {
                     return;
                 }
 
-                // Case 2: Content question about a PDF → AI reads it & answers directly
                 try {
                     if (fs.existsSync(filePath)) {
                         const pdfBuffer = fs.readFileSync(filePath);
@@ -1448,7 +1482,7 @@ async function connectToWhatsApp() {
                         const queryPrompt = `Read the attached PDF file. The user has asked: "${rawMessageText}".\n\nAnswer the user's question directly, briefly, and clearly based *ONLY* on the information in the PDF file. If the answer is not in the PDF, say "Sorry, this information is not in the file." Do not mention the file name unless necessary.`;
 
                         geminiRequestsToday++;
-                        const result = await model.generateContent([queryPrompt, pdfPart]);
+                        const result = await generateContentWithRetry(model, [queryPrompt, pdfPart]);
                         const reply = formatMathForWhatsApp(result.response.text());
 
                         lastFileContext[sender] = matchedFile;
@@ -1465,9 +1499,8 @@ async function connectToWhatsApp() {
                 }
                 return;
             }
-            // ==========================================================
 
-            // 🚨 REMOVE INFO (Admin) - මේක AI INTENT එකට කලින් run වෙන්න ඕනේ!
+            // 🚨 REMOVE INFO (Admin)
             if (/^remove info\s+\d+/i.test(textLower)) {
                 if (!isSenderAdmin(sender)) {
                     await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
@@ -1487,7 +1520,6 @@ async function connectToWhatsApp() {
             // AI INTENT
             const aiIntent = await getCalendarIntentFromAI(rawMessageText);
 
-            // 🛑 FIX: Exam/Quiz/Mid/Lab Test dates අහනවා නම් Timetable එක පෙන්නන්න එපා!
             if (/exam|quiz|mid|test|assessment|date|kawadda|set wenne|විභාග|ප්‍රශ්න|කුසීස්|මචි/i.test(textLower)) {
                 aiIntent.intent = 'chat';
                 aiIntent.date_keyword = null;
@@ -1500,7 +1532,6 @@ async function connectToWhatsApp() {
                 }
             }     
 
-                
             if (aiIntent.intent === 'calendar') {
                 const { start, end, targetDate } = getTargetDateRange(aiIntent.date_keyword || textLower);
                 const events = await getCalendarEvents(start, end);
@@ -1613,7 +1644,7 @@ Contact Batch Rep: +94 76 251 3957`;
                 return;
             }
 
-            // LIST FILES (Admin) - List එකත්, Files ටිකත් එවයි!
+            // LIST FILES (Admin)
             if (textLower === 'list files' || textLower === 'show files') {
                 if (!isSenderAdmin(sender)) {
                     await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
@@ -1727,7 +1758,7 @@ Contact Batch Rep: +94 76 251 3957`;
                         promptToSend = `පෙර සංවාදය:\n${history}\n\nවත්මන් ප්‍රශ්නය: ${fullUserPrompt}`;
                     }
                     geminiRequestsToday++;
-                    const result = await model.generateContent(buildPromptWithKnowledge(promptToSend));
+                    const result = await generateContentWithRetry(model, buildPromptWithKnowledge(promptToSend));
                     const reply = formatMathForWhatsApp(result.response.text());
                     addToMemory(sender, 'User', fullUserPrompt);
                     addToMemory(sender, 'Bot', reply);
