@@ -1271,6 +1271,51 @@ async function connectToWhatsApp() {
                 return;
             }
 
+            // 🚨 FILE DELIVERY (STRICT - File එක හම්බුනොත් කෙලින්ම එවයි!)
+            let matchedFile = fileRegistry.find(f => {
+                const kw = f.keyword.toLowerCase();
+                const kwWords = kw.split(/[\s,:.!?()]+/).filter(w => w.length >= 2);
+                return textLower.includes(kw) || kwWords.some(word => textLower.includes(word));
+            });
+
+            if (matchedFile) {
+                try {
+                    const filePath = path.join(FILES_DIR, matchedFile.storedFileName);
+                    if (fs.existsSync(filePath)) {
+                        const buffer = fs.readFileSync(filePath);
+                        await sock.sendMessage(sender, { 
+                            document: buffer, 
+                            mimetype: matchedFile.mimetype || 'application/pdf', 
+                            fileName: matchedFile.fileName || 'document.pdf' 
+                        }, { quoted: msg });
+                    } else {
+                        await sock.sendMessage(sender, { text: "❌ File එක නෑ. Bot එක Restart වෙලා නම් Admin ට කියලා ආයේ Add කරන්න." }, { quoted: msg });
+                    }
+                } catch (err) {
+                    console.error('❌ Error sending file:', err);
+                    await sock.sendMessage(sender, { text: "❌ File එක යවන්න අවුලක් වුණා. නැවත try කරන්න." }, { quoted: msg });
+                }
+                return;
+            }
+            // ==========================================================
+
+            // 🚨 REMOVE INFO (Admin) - මේක AI INTENT එකට කලින් run වෙන්න ඕනේ!
+            if (/^remove info\s+\d+/i.test(textLower)) {
+                if (!isSenderAdmin(sender)) {
+                    await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
+                    return;
+                }
+                const idx = parseInt(textLower.replace(/^remove info\s+/i, ''), 10) - 1;
+                if (isNaN(idx) || idx < 0 || idx >= knowledgeBase.length) {
+                    await sock.sendMessage(sender, { text: "⚠️ Invalid number. Use 'list info'." }, { quoted: msg });
+                    return;
+                }
+                const removed = knowledgeBase.splice(idx, 1);
+                saveKnowledgeBase();
+                await sock.sendMessage(sender, { text: `🗑️ Removed: "${removed[0]}"` }, { quoted: msg });
+                return;
+            }
+
             // AI INTENT
             const aiIntent = await getCalendarIntentFromAI(rawMessageText);
 
@@ -1450,40 +1495,6 @@ Contact Batch Rep: +94 76 251 3957`;
                 return;
             }
 
-            // ==========================================================
-            // 🚨 FILE DELIVERY (STRICT)
-            // ==========================================================
-            let matchedFile = fileRegistry.find(f => {
-                const kw = f.keyword.toLowerCase();
-                const kwWords = kw.split(/[\s,:.!?()]+/).filter(w => w.length >= 2);
-                return textLower.includes(kw) || kwWords.some(word => textLower.includes(word));
-            });
-
-            if (!matchedFile && (textLower === 'pdf' || textLower.includes('evidence')) && lastFileContext[sender]) {
-                matchedFile = lastFileContext[sender];
-            }
-
-            if (matchedFile && (textLower === 'pdf' || textLower.includes('pdf') || textLower.includes('evidence') || textLower.includes('source') || textLower.includes('file'))) {
-                try {
-                    const filePath = path.join(FILES_DIR, matchedFile.storedFileName);
-                    if (fs.existsSync(filePath)) {
-                        const buffer = fs.readFileSync(filePath);
-                        await sock.sendMessage(sender, { 
-                            document: buffer, 
-                            mimetype: matchedFile.mimetype || 'application/pdf', 
-                            fileName: matchedFile.fileName || 'document.pdf' 
-                        }, { quoted: msg });
-                    } else {
-                        await sock.sendMessage(sender, { text: "❌ File එක නෑ. Bot එක Restart වෙලා නම් Admin ට කියලා ආයේ Add කරන්න." }, { quoted: msg });
-                    }
-                } catch (err) {
-                    console.error('❌ Error sending file:', err);
-                    await sock.sendMessage(sender, { text: "❌ File එක යවන්න අවුලක් වුණා. නැවත try කරන්න." }, { quoted: msg });
-                }
-                return;
-            }
-            // ==========================================================
-
             // LIST INFO (Admin)
             if (textLower === 'list info' || textLower === 'show info') {
                 if (!isSenderAdmin(sender)) {
@@ -1495,23 +1506,6 @@ Contact Batch Rep: +94 76 251 3957`;
                     const list = knowledgeBase.map((k, i) => `${i+1}. ${k}`).join('\n\n');
                     await sock.sendMessage(sender, { text: `📚 *Saved Info (${knowledgeBase.length})*\n\n${list}` }, { quoted: msg });
                 }
-                return;
-            }
-
-            // REMOVE INFO (Admin)
-            if (/^remove info\s+\d+/i.test(textLower)) {
-                if (!isSenderAdmin(sender)) {
-                    await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
-                    return;
-                }
-                const idx = parseInt(textLower.replace(/^remove info\s+/i, ''), 10) - 1;
-                if (isNaN(idx) || idx < 0 || idx >= knowledgeBase.length) {
-                    await sock.sendMessage(sender, { text: "⚠️ Invalid number. Use 'list info'." }, { quoted: msg });
-                    return;
-                }
-                const removed = knowledgeBase.splice(idx, 1);
-                saveKnowledgeBase();
-                await sock.sendMessage(sender, { text: `🗑️ Removed: "${removed[0]}"` }, { quoted: msg });
                 return;
             }
 
