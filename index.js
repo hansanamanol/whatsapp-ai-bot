@@ -1442,21 +1442,24 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // ---------- IMAGE ----------
+                        // ---------- IMAGE (✅ Image එකක් ආවොත් කෙලින්ම AI එකට යවලා උත්තර දෙනවා) ----------
             if (imgMsg) {
                 try {
-                    await sock.sendMessage(sender, { text: "⏳ **Image Process වෙමින්...**" }, { quoted: msg });
+                    await sock.sendMessage(sender, { text: "⏳ **Image එක විශ්ලේෂණය කරමින්...**" }, { quoted: msg });
                     const buffer = await downloadMediaMessage(msg, 'buffer', {});
                     const base64Image = buffer.toString('base64');
                     const mimeType = imgMsg.mimetype || 'image/jpeg';
                     const imagePart = { inlineData: { data: base64Image, mimeType: mimeType } };
-                    const prompt = buildPromptWithKnowledge(`Analyze image. User: ${rawMessageText || ''}`);
+                    
+                    // ✅ Image එකේ තියෙන ඕනෑම දෙයක් ගැන අහන්න පුළුවන් Prompt එකක්
+                    const prompt = buildPromptWithKnowledge(`Please analyze the attached image carefully. If it contains a table, schedule, timetable, or any other information, extract all the text/data accurately. If the user has asked a question (e.g., "What is the schedule?", "When is the exam?"), answer based on the image provided. User's question: "${rawMessageText || 'Explain this image'}"`);
+                    
                     const result = await generateContentWithRetry(model, [prompt, imagePart]);
                     const reply = formatMathForWhatsApp(result.response.text());
                     await sock.sendMessage(sender, { text: reply }, { quoted: msg });
                 } catch (err) {
                     console.error('Image error:', err);
-                    await sock.sendMessage(sender, { text: "❌ Image process කරන්න බැරි වුණා." }, { quoted: msg });
+                    await sock.sendMessage(sender, { text: "❌ Image එක process කරන්න බැරි වුණා. ආයේ උත්සාහ කරන්න." }, { quoted: msg });
                 }
                 return;
             }
