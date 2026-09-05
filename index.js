@@ -1961,13 +1961,15 @@ Contact Batch Rep: +94 76 251 3957`;
                 return;
             }
 
-            // ---------- GENERAL AI RESPONSE (මතකය සමඟ) ----------
+                        // ---------- GENERAL AI RESPONSE (මතකය සමඟ) ✅ අලුත්ම Fix ----------
             if (rawMessageText) {
                 try {
                     const history = getRecentContext(sender);
                     let promptToSend = fullUserPrompt;
+                    
+                    // ✅ දරුවා "i dont know", "explain", "what" වගේ කියලා යැව්වම, Bot එක ඒක පෙර පණිවිඩයට අදාළ කියලා හඳුනාගන්නවා!
                     if (history) {
-                        promptToSend = `පෙර සංවාදය:\n${history}\n\nවත්මන් ප්‍රශ්නය: ${fullUserPrompt}`;
+                        promptToSend = `මෙන්න User ලා සමඟ ඇති වූ පෙර කතාබහ (Conversation History):\n${history}\n\n\nදැන් User ගේ අලුත් පණිවිඩය: "${fullUserPrompt}".\n\nUser දැන් යවන පණිවිඩය පෙර Bot පණිවිඩයට අදාළ විය හැකියි. කරුණාකර පෙර කතාබහ මත පදනම්ව (පෙර පණිවිඩයේ තේරුම පැහැදිලි කරමින්) සරල සිංහල උත්තරයක් දෙන්න.`;
                     }
                     geminiRequestsToday++;
                     const result = await generateContentWithRetry(model, buildPromptWithKnowledge(promptToSend));
