@@ -813,7 +813,7 @@ CRITICAL CODE & TUTORIAL ANALYSIS RULES:
   3. Keep track of accurate question labeling (a, b, c, d, e) without swapping their code contents.
 `;
 
-// ✅ FIX: Valid Model Name (gemini-3.5-flash-lite)
+// ✅ FIX: Valid Model Name (gemini-2.5-flash-lite)
 let model = getNextGenAI().getGenerativeModel({
     model: "gemini-3.5-flash-lite", 
     systemInstruction: systemInstruction
@@ -821,7 +821,7 @@ let model = getNextGenAI().getGenerativeModel({
 
 function createModelWithCurrentKey() {
     return getNextGenAI().getGenerativeModel({
-        model: "gemini-3.1-flash-lite", 
+        model: "gemini-3.5-flash-lite", 
         systemInstruction: systemInstruction
     });
 }
@@ -1475,6 +1475,58 @@ async function connectToWhatsApp() {
             if (textLower === 'quiz' || textLower === 'quiz එකක්' || textLower === 'quiz ekk' || quizMatch) {
                 const moduleQuery = quizMatch ? quizMatch[1].trim() : ''; // තෝරපු module එක
                 await handleQuizCommand(sock, sender, msg, moduleQuery);
+                return;
+            }
+
+            // 🛠️ ADMIN MENU (Admin ට විතරක් පේන අලුත් Command එක)
+            if (textLower === 'admin' || textLower === 'admin menu' || textLower === 'menu admin' || textLower === 'adminhelp' || textLower === '/admin') {
+                if (!isSenderAdmin(sender)) {
+                    await sock.sendMessage(sender, { text: "❌ මේක බලන්න පුළුවන් Batch Rep ට විතරයි! 🚫" }, { quoted: msg });
+                    return;
+                }
+                
+                const adminHelpText = `🛠️ *Admin Control Panel* (Batch Rep Only) 🛡️
+
+📝 *add info: [text]* - අලුත් තොරතුරු save කරන්න
+📚 *list info* - Save කරලා තියෙන Info ටික බලන්න
+🗑️ *remove info [number]* - Info එකක් අයින් කරන්න
+
+📤 *add file: [keyword]* - PDF/Image එකක් save කරන්න
+📋 *list files* - Save කරලා තියෙන Files ටික බලන්න (Files ටිකත් එනවා!)
+🗑️ *remove file [number]* - File එකක් අයින් කරන්න
+
+📊 *status* - Bot එකේ තත්වය බලන්න
+🆔 *getid* - Group ID එක ගන්න (Group එක ඇතුලේ type කරන්න)
+
+💡 *Tip:* Student ලට බලන්න දෙන්නේ *help* command එක විතරයි. Admin Menu එක බලන්න *admin* කියලා type කරන්න.`;
+
+                await sock.sendMessage(sender, { text: adminHelpText }, { quoted: msg });
+                return;
+            }
+
+            // 📊 POLL COMMAND (Admin ට විතරක්)
+            if (textLower.startsWith('poll ') && isSenderAdmin(sender)) {
+                const pollArgs = rawMessageText.slice(5).split('|').map(s => s.trim());
+                
+                if (pollArgs.length < 3) {
+                    await sock.sendMessage(sender, { text: "⚠️ හරි Format එක: `poll ප්‍රශ්නය? | විකල්පය 1 | විකල්පය 2`" }, { quoted: msg });
+                    return;
+                }
+
+                const pollName = pollArgs[0];
+                const pollValues = pollArgs.slice(1, 13); // WhatsApp එකේ උපරිමයි විකල්ප 12යි
+
+                try {
+                    await sock.sendMessage(sender, {
+                        poll: {
+                            name: pollName,
+                            values: pollValues
+                        }
+                    }, { quoted: msg });
+                } catch (e) {
+                    console.error('Poll error:', e);
+                    await sock.sendMessage(sender, { text: "❌ Poll එක හදන්න අවුලක් වුණා." }, { quoted: msg });
+                }
                 return;
             }
 
