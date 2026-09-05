@@ -744,7 +744,6 @@ app.listen(PORT, () => console.log(`✅ Web server running on port ${PORT}`));
 // ================================================================
 //  🤖 GEMINI SETUP
 // ================================================================
-// (1) Support multiple keys:
 const apiKeys = [
     process.env.GEMINI_API_KEY_1,
     process.env.GEMINI_API_KEY_2,
@@ -814,21 +813,19 @@ CRITICAL CODE & TUTORIAL ANALYSIS RULES:
   3. Keep track of accurate question labeling (a, b, c, d, e) without swapping their code contents.
 `;
 
-// (2) Use a let variable that can be reassigned on key switch
+// ✅ FIX: Valid Model Name (gemini-3.5-flash-lite)
 let model = getNextGenAI().getGenerativeModel({
-    model: "gemini-3.1-flash-lite", 
+    model: "gemini-3.5-flash-lite", 
     systemInstruction: systemInstruction
 });
 
-// (3) Helper function to create a model with the current key and correct settings
 function createModelWithCurrentKey() {
     return getNextGenAI().getGenerativeModel({
-        model: "gemini-3.5-flash-lite", 
+        model: "gemini-3.1-flash-lite", 
         systemInstruction: systemInstruction
     });
 }
 
-// (4) Unified Retry + Key Rotation Logic
 async function generateContentWithRetry(modelInstance, request, maxRetries = 4) {
     let delay = 1000; // 1 second initial delay
 
@@ -836,14 +833,12 @@ async function generateContentWithRetry(modelInstance, request, maxRetries = 4) 
         try {
             return await modelInstance.generateContent(request);
         } catch (error) {
-            // 503 (Server Overload) හෝ 429 (Quota Exceeded) ආවොත්
             if (error.status === 503 || error.status === 429 || error.message.includes('503') || error.message.includes('429')) {
                 if (attempt === maxRetries) {
                     console.error('Max retries reached. Switching keys failed too:', error.message);
                     throw error;
                 }
                 
-                // (5) Key එක මාරු කරලා අලුත් Model එකක් හදනවා
                 model = createModelWithCurrentKey();
 
                 console.log(`Error ${error.status} detected. Switching to key #${currentKeyIndex} and retrying in ${delay/1000}s...`);
@@ -1039,47 +1034,57 @@ async function getCalendarEvents(start, end) {
 }
 
 // ================================================================
-//  ⏰ DAILY TIMETABLE AUTO-PUSH
+//  ⏰ DAILY TIMETABLE AUTO-PUSH (✅ රෑ 9:30 ට හෙට දවස, Group + Students)
 // ================================================================
 async function sendDailyTimetable(sock) {
-    if (studentRegistry.length === 0) {
-        console.log('No students registered yet, skipping daily push.');
+    if (studentRegistry.length === 0 && !GROUP_JID) {
+        console.log('No students or group registered yet, skipping tomorrow push.');
         return;
     }
 
-    const { start, end, targetDate } = getTargetDateRange('today');
+    // ✅ හෙට දවසේ Timetable එක ගන්නවා
+    const { start, end, targetDate } = getTargetDateRange('tomorrow');
 
-    // ✅ FIX: සති අන්තය (සෙනසුරාදා=6, ඉරිදා=0) නම් Message එක යවන්නේ නෑ.
+    // ✅ හෙට සති අන්තය නම් Message එක යවන්නේ නෑ.
     const dayOfWeek = targetDate.getDay(); 
     if (dayOfWeek === 0 || dayOfWeek === 6) {
-        console.log('සති අන්තයක් නිසා Daily Timetable එක යවන්නේ නැහැ.');
+        console.log('හෙට සති අන්තයක් නිසා Timetable එක යවන්නේ නැහැ.');
         return;
     }
 
     const events = await getCalendarEvents(start, end);
+
+    // ✅ හෙට Classes නැත්නම් Message එක යවන්නේ නෑ
+    if (!events || events.length === 0) {
+        console.log('හෙට Classes නැති නිසා Timetable Message එක යවන්නේ නැහැ.');
+        return;
+    }
+
     const formattedDate = targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' });
 
-    let msgText = `🌅 *Good Morning!* අද දවසේ Classes:\n📅 *${formattedDate}*\n\n`;
+    let msgText = `🌙 *Good Evening!* හෙට (Tomorrow) දවසේ Classes:\n📅 *${formattedDate}*\n\n`;
 
-    if (events && events.length > 0) {
-        events.forEach((ev, idx) => {
-            const startTime = new Date(ev.start?.dateTime || ev.start?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit' });
-            const endTime = new Date(ev.end?.dateTime || ev.end?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit' });
-            const location = ev.location || '';
-            msgText += `${idx + 1}. *${ev.summary || 'Untitled'}*\n   🕒 ${startTime} - ${endTime}\n`;
-            if (location) msgText += `   📍 ${location}\n\n`;
-        });
-    } else {
-        // (ඔයාට අවශ්‍ය නම් මේ "Free Day" message එකත් අයින් කරන්න පුළුවන්, ඒත් weekday holiday එකකදී මේක ප්‍රයෝජනවත් වෙන්න පුළුවන්)
-        msgText += "🎉 අද Classes නෑ! Free Day! 💯";
-    }
+    events.forEach((ev, idx) => {
+        const startTime = new Date(ev.start?.dateTime || ev.start?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit' });
+        const endTime = new Date(ev.end?.dateTime || ev.end?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit' });
+        const location = ev.location || '';
+        msgText += `${idx + 1}. *${ev.summary || 'Untitled'}*\n   🕒 ${startTime} - ${endTime}\n`;
+        if (location) msgText += `   📍 ${location}\n\n`;
+    });
 
     const wordKeys = Object.keys(academicWords);
     const randomWord = wordKeys[Math.floor(Math.random() * wordKeys.length)];
     msgText += `\n📚 *Word of the Day:* *${randomWord}* - ${academicWords[randomWord]}\n`;
 
-    msgText += `\n💡 *Tip:* පාඩම් කරන්න \`quiz\` කියලා type කරන්න!`;
+    const tips = [
+        "හෙට ලෙක්චර් එකට කලින් අදාළ නෝට්ස් බලන්න *\"pdf\"* කියලා type කරන්න. Files ලැබෙයි!",
+        "හෙට Classes වලට යන්න කලින් ලෙක්චර් නෝට්ස් බලන්න අමතක කරන්න එපා!",
+        "Bestie, හෙට ලෙක්චර් එකට කලින් *\"pdf\"* කියලා බලන්න, අදාළ notes ටික ready කරගන්න!"
+    ];
+    const randomTip = tips[Math.floor(Math.random() * tips.length)];
+    msgText += `\n💡 *Tip:* ${randomTip}`;
 
+    // ✅ Registered Students ලට යවනවා
     for (const jid of studentRegistry) {
         try {
             await sock.sendMessage(jid, { text: msgText });
@@ -1088,7 +1093,16 @@ async function sendDailyTimetable(sock) {
             console.error(`Failed to send to ${jid}:`, e.message);
         }
     }
-    console.log('✅ Daily Timetable pushed to all students!');
+
+    // ✅ Group එකටත් යවනවා
+    if (GROUP_JID) {
+        try {
+            await sock.sendMessage(GROUP_JID, { text: msgText });
+            console.log('✅ Group එකට හෙට දවසේ Timetable එක යවනවා!');
+        } catch (e) {
+            console.error(`Failed to send to group ${GROUP_JID}:`, e.message);
+        }
+    }
 }
 
 // ================================================================
@@ -1122,10 +1136,9 @@ async function handleQuizCommand(sock, sender, msg, specificModule = '') {
             return;
         }
 
-        // ✅ අලුත්: Module එකක් තෝරලා නැත්නම් ලිස්ට් එක පෙන්නනවා
         if (!specificModule) {
             if (todayModules.length === 1) {
-                specificModule = todayModules[0].code; // එකම module එකක් නම් ඒකම ගන්නවා
+                specificModule = todayModules[0].code; 
             } else {
                 const list = todayModules.map((m, i) => `${i+1}. *${m.code}* - ${m.fullName}`).join('\n');
                 await sock.sendMessage(sender, { 
@@ -1135,7 +1148,6 @@ async function handleQuizCommand(sock, sender, msg, specificModule = '') {
             }
         }
 
-        // ✅ තෝරපු Module එක හොයනවා
         const query = specificModule.toLowerCase();
         let targetModules = todayModules.filter(m => 
             m.code.toLowerCase().includes(query) || 
@@ -1148,7 +1160,6 @@ async function handleQuizCommand(sock, sender, msg, specificModule = '') {
             return;
         }
 
-        // ✅ තෝරපු Module එකට විතරක් ප්‍රශ්න 10ක් හදනවා
         for (const module of targetModules) {
             const moduleCode = module.code;
             const moduleName = module.fullName || moduleCode;
@@ -1303,46 +1314,19 @@ async function connectToWhatsApp() {
             }
         });
 
-        // ⏰ CRON JOB
-        cron.schedule('0 5 * * *', async () => {
-            console.log('⏰ Running Daily Timetable Push at 5:00 AM SL Time...');
+        // ⏰ CRON JOB (✅ හැමදාම රෑ 9:30 ට)
+        cron.schedule('30 21 * * *', async () => {
+            console.log('⏰ Running Tomorrow Timetable Push at 9:30 PM SL Time...');
             await sendDailyTimetable(sock);
         }, { timezone: 'Asia/Colombo' });
 
         // ----------------------------------------------------------------
-        //  processMessage
+        //  processMessage (✅ Duplicate Variables අයින් කරලා, Chat & File Fix Add කළා)
         // ----------------------------------------------------------------
         async function processMessage(sock, msg) {
             const sender = msg.key.remoteJid;
-            const isNewUser = addStudent(sender);
-            if (isNewUser) {
-                await sock.sendMessage(sender, { text: "🙌 ආයුබෝවන්! මම *HansanaBot*, ඔයාගේ AI සහායකයා! 👋\n\n*help* කියලා type කරලා මම කරන දේවල් බලන්න. 🚀" }, { quoted: msg });
-            }
 
-            const rateCheck = checkRateLimit(sender);
-            if (!rateCheck.allowed) {
-                await sock.sendMessage(sender, { text: rateCheck.reason }, { quoted: msg });
-                return;
-            }   
-            const isGroup = sender.endsWith('@g.us');
-
-            // 🔑 Admin ට විතරක් Group ID එක බලන්න ඉඩ දෙනවා
-            if (isGroup) {
-                if (isSenderAdmin(sender) && rawMessageText.toLowerCase().trim() === 'getid') {
-                    await sock.sendMessage(sender, { text: `🆔 *Group ID:* \`${sender}\`` }, { quoted: msg });
-                    return;
-                }
-
-                // 🚫 අනිත් ඔක්කොම messages ignore කරනවා
-                if (!GROUP_JID) {
-                    console.log(`📢 Group ID Found (Silent Log): ${sender}`);
-                }
-                return; 
-            }
-
-            await sock.readMessages([msg.key]);
-            await sock.sendPresenceUpdate('composing', sender);
-
+            // ✅ Variables ටික උඩින්ම define කරනවා (මේක අනිවාර්යයි!)
             const imgMsg = msg.message.imageMessage || msg.message.viewOnceMessage?.message?.imageMessage ||
                            msg.message.viewOnceMessageV2?.message?.imageMessage || msg.message.ephemeralMessage?.message?.imageMessage;
             const audioMsg = msg.message.audioMessage || msg.message.viewOnceMessage?.message?.audioMessage ||
@@ -1359,6 +1343,35 @@ async function connectToWhatsApp() {
 
             let fullUserPrompt = rawMessageText;
             if (quotedText) fullUserPrompt = `[Quoted: "${quotedText}"]\nUser: "${rawMessageText}"`;
+
+            // ✅ Group එකකින් ආවොත් ignore කරනවා
+            const isGroup = sender.endsWith('@g.us');
+            if (isGroup) {
+                if (isSenderAdmin(sender) && rawMessageText.toLowerCase().trim() === 'getid') {
+                    await sock.sendMessage(sender, { text: `🆔 *Group ID:* \`${sender}\`` }, { quoted: msg });
+                    return;
+                }
+
+                if (!GROUP_JID) {
+                    console.log(`📢 Group ID Found (Silent Log): ${sender}`);
+                }
+                return; 
+            }
+
+            // ✅ Group එකක් නෙවෙයි නම් විතරයි Student register වෙන්නේ
+            const isNewUser = addStudent(sender);
+            if (isNewUser) {
+                await sock.sendMessage(sender, { text: "Hello! I am *HansanaBot*, your AI assistant! 👋\n\nType *help* to see what I can do for you. 🚀" }, { quoted: msg });
+            }
+
+            const rateCheck = checkRateLimit(sender);
+            if (!rateCheck.allowed) {
+                await sock.sendMessage(sender, { text: rateCheck.reason }, { quoted: msg });
+                return;
+            }   
+
+            await sock.readMessages([msg.key]);
+            await sock.sendPresenceUpdate('composing', sender);
 
             // ---------- AUDIO ----------
             if (audioMsg) {
@@ -1451,7 +1464,7 @@ async function connectToWhatsApp() {
             // ---------- TEXT COMMANDS ----------
             const textLower = rawMessageText.toLowerCase().trim();
 
-                       // ---------- QUIZ COMMAND ----------
+            // ---------- QUIZ COMMAND ----------
             const quizMatch = textLower.match(/^quiz\s+(.+)$/); // "quiz oop", "quiz se1020" වගේ
             if (textLower === 'quiz' || textLower === 'quiz එකක්' || textLower === 'quiz ekk' || quizMatch) {
                 const moduleQuery = quizMatch ? quizMatch[1].trim() : ''; // තෝරපු module එක
@@ -1488,7 +1501,8 @@ async function connectToWhatsApp() {
             }
 
             // 🚨 SMART FILE HANDLING
-            const explicitFileWords = /\b(pdf|file|send|download|document|danna|ewanna|yawanna|evidence|source|uththara|sadaha|reference|prove|copy)\b/i;
+            // ✅ FIX: "read", "explain", "define", "what" ටික add කළා
+            const explicitFileWords = /\b(pdf|file|send|download|document|danna|ewanna|yawanna|evidence|source|uththara|sadaha|reference|prove|copy|read|explain|define|what)\b/i;
             const isExplicitFileRequest = explicitFileWords.test(textLower);
 
             let matchedFile = fileRegistry.find(f => {
@@ -1566,17 +1580,25 @@ async function connectToWhatsApp() {
             // AI INTENT
             const aiIntent = await getCalendarIntentFromAI(rawMessageText);
 
-            if (/exam|quiz|mid|test|assessment|date|kawadda|set wenne|විභාග|ප්‍රශ්න|කුසීස්|මචි/i.test(textLower)) {
+            // 🚨 අලුත් Fix: Chat වචන Blacklist (මේවා ආවොත් කවදාවත් Timetable එකට යන්නේ නෑ!)
+            const chatWords = /adaraya|adara|kohomada|kohomda|what is love|meka mokadda|mokadda|mokakda|ayubowan|suba|thanks|stuti/i;
+            if (chatWords.test(textLower)) {
                 aiIntent.intent = 'chat';
                 aiIntent.date_keyword = null;
-            }
-            const isDayMonthQuery = /sanduda|saduda|sikurda|sikurada|eelaga|laban|balanna|ada|heta|anidda|monday|tuesday|wednesday|thursday|friday|saturday|sunday|janawari|february|march|april|may|june|july|august|september|october|november|december|සිකුරාදා|සඳුදා|අඟහරුවාදා|බදාදා|බ්‍රහස්පතින්දා|සෙනසුරාදා|ඉරිදා/i.test(textLower);
-            if (isDayMonthQuery) {
-               aiIntent.intent = 'calendar';
-               if (!aiIntent.date_keyword) {
-                   aiIntent.date_keyword = textLower;
+            } else {
+                if (/exam|quiz|mid|test|assessment|date|kawadda|set wenne|විභාග|ප්‍රශ්න|කුසීස්|මචි/i.test(textLower)) {
+                    aiIntent.intent = 'chat';
+                    aiIntent.date_keyword = null;
                 }
-            }     
+                // ✅ \b ටික add කරලා "ada" එක "adaraya" එකේ match වෙන එක නැවැත්තුවා
+                const isDayMonthQuery = /\b(sanduda|saduda|sikurda|sikurada|eelaga|laban|balanna|ada|heta|anidda|monday|tuesday|wednesday|thursday|friday|saturday|sunday|janawari|february|march|april|may|june|july|august|september|october|november|december)\b/i.test(textLower);
+                if (isDayMonthQuery) {
+                   aiIntent.intent = 'calendar';
+                   if (!aiIntent.date_keyword) {
+                       aiIntent.date_keyword = textLower;
+                    }
+                } 
+            }
 
             if (aiIntent.intent === 'calendar') {
                 const { start, end, targetDate } = getTargetDateRange(aiIntent.date_keyword || textLower);
@@ -1599,7 +1621,20 @@ async function connectToWhatsApp() {
                     msgText += `\n🔗 *Full Calendar:* https://calendar.google.com/calendar/u/0?cid=${encodeURIComponent(CALENDAR_ID)}`;
                     await sock.sendMessage(sender, { text: msgText }, { quoted: msg });
                 } else {
-                    await sock.sendMessage(sender, { text: `🎉 *${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })}* දිනට Classes නෑ!` }, { quoted: msg });
+                    // ✅ දවස සංසන්දනය කරලා බලනවා (අදට වඩා ඉදිරියෙන්ද කියලා)
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    const futureDate = new Date(targetDate);
+                    futureDate.setHours(0, 0, 0, 0);
+                    const diffDays = Math.ceil((futureDate - today) / (1000 * 60 * 60 * 24));
+
+                    // ඉල්ලපු දවස අදට වඩා දින 3ක් හෝ ඊට වැඩියෙන් ඉදිරියෙන් නම් (Next Week වගේ)
+                    if (diffDays >= 3) {
+                        await sock.sendMessage(sender, { text: `⚠️ *${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })}* දිනට අදාළ Timetable එක තාම Google Calendar එකට එකතු කරලා නැහැ. ටික වේලාවකින් ආයේ අහන්න, නැත්නම් Batch Rep ට දැනුම් දෙන්න!` }, { quoted: msg });
+                    } else {
+                        // අද, හෙට, අනිද්දා වගේ දවස් වලට පමණයි "Classes නෑ" කියන්නේ
+                        await sock.sendMessage(sender, { text: `🎉 *${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })}* දිනට Classes නෑ!` }, { quoted: msg });
+                    }
                 }
                 return;
             }
