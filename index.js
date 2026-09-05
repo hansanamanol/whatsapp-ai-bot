@@ -26,6 +26,7 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 const ADMIN_PHONE_NUMBER = "94762513957";
 const ADMIN_LID = "178481912627279";
 const ADMIN_JIDS = [`${ADMIN_LID}@lid`];
+const GROUP_JID = process.env.GROUP_JID; 
 
 function isSenderAdmin(sender) {
     const normalized = jidNormalizedUser(sender) || sender;
@@ -1325,14 +1326,17 @@ async function connectToWhatsApp() {
             }   
             const isGroup = sender.endsWith('@g.us');
 
-            // 🚫 Group එකට එන හැම Message එකක්ම Ignore කරනවා
+            // 🔑 Admin ට විතරක් Group ID එක බලන්න ඉඩ දෙනවා
             if (isGroup) {
-                // 🕵️‍♂️ GROUP_JID එක තාම හිස් නම් විතරයි Log එකට ID එක print කරන්නේ
+                if (isSenderAdmin(sender) && rawMessageText.toLowerCase().trim() === 'getid') {
+                    await sock.sendMessage(sender, { text: `🆔 *Group ID:* \`${sender}\`` }, { quoted: msg });
+                    return;
+                }
+
+                // 🚫 අනිත් ඔක්කොම messages ignore කරනවා
                 if (!GROUP_JID) {
                     console.log(`📢 Group ID Found (Silent Log): ${sender}`);
                 }
-                
-                // ✅ Bot එක කිසිම reply එකක් Group එකට යවන්නේ නැහැ. කෙලින්ම return වෙනවා.
                 return; 
             }
 
