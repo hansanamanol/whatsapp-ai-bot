@@ -813,7 +813,7 @@ CRITICAL CODE & TUTORIAL ANALYSIS RULES:
   3. Keep track of accurate question labeling (a, b, c, d, e) without swapping their code contents.
 `;
 
-// ✅ FIX: Valid Model Name (gemini-2.5-flash-lite)
+// ✅ අවසාන වශයෙන් හදපු Model Name (මේක නැතුව බොට් එක වැඩ නෑ!)
 let model = getNextGenAI().getGenerativeModel({
     model: "gemini-3.5-flash-lite", 
     systemInstruction: systemInstruction
@@ -1575,16 +1575,16 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // 🚨 SMART FILE HANDLING (✅ Image සහ PDF දෙකටම වැඩ කරන අලුත්ම Fix)
-            const explicitFileWords = /\b(pdf|file|send|download|document|danna|ewanna|yawanna|evidence|source|uththara|sadaha|reference|prove|copy|read|explain|define|what)\b/i;
+            // 🚨 SMART FILE HANDLING (✅ අවසාන ෆික්ස්! වෙනස 1 සහ වෙනස 2)
+            const explicitFileWords = /\b(pdf|file|send|download|document|danna|ewanna|yawanna|evidence|source|uththara|sadaha|reference|prove|copy)\b/i;
             const isExplicitFileRequest = explicitFileWords.test(textLower);
 
             // ✅ සාමාන්‍ය Chat ප්‍රශ්න නම් File Block එකට යන්න දෙන්නේ නෑ!
             const generalChatRegex = /adaraya|adara|kohomada|kohomda|what is love|meka mokadda|mokadda|mokakda|ayubowan|suba|thanks|stuti|mata|mage|kelle|kella|set|kohome|wage|kenek|kohomada|mokakda|meka|kohomada|kohomda|ආදරය|කෙල්ල|කොහොමද|මොකක්ද/i;
             const isGeneralChat = generalChatRegex.test(textLower);
 
-            // ඒ නිසා General Chat නම්, File එක සෙවීම සම්පූර්ණයෙන්ම Skip කරනවා
-            if (!isGeneralChat) {
+            // 🚨 වෙනස 2: File එක සොයන්නේ "Explicit Request" එකක් ආවොත් විතරයි!
+            if (!isGeneralChat && isExplicitFileRequest) {
                 let matchedFile = fileRegistry.find(f => {
                     const kw = f.keyword.toLowerCase();
                     const kwWords = kw.split(/[\s,:.!?()]+/).filter(w => w.length >= 2);
@@ -1643,7 +1643,7 @@ async function connectToWhatsApp() {
                         return;
                     }
 
-                    // 3️⃣ 🖼️ Image File එකක් නම් ඒක Read කරලා උත්තර දෙනවා! (ඔයා ඉල්ලපු අලුත්ම දේ)
+                    // 3️⃣ 🖼️ Image File එකක් නම් ඒක Read කරලා උත්තර දෙනවා!
                     if (matchedFile.mimetype && matchedFile.mimetype.startsWith('image/')) {
                         try {
                             await sock.sendMessage(sender, { text: "🖼️ **Image එක විශ්ලේෂණය කරමින්...**" }, { quoted: msg });
