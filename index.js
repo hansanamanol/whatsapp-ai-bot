@@ -1392,8 +1392,8 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // ---------- ADD FILE (Admin) ----------
-            if (docMsg && /^add file\b/i.test(rawMessageText.toLowerCase().trim())) {
+                       // ---------- ADD FILE (Admin) ✅ (Image & Document දෙකටම වැඩ කරන අලුත් Fix) ----------
+            if ((docMsg || imgMsg) && /^add file\b/i.test(rawMessageText.toLowerCase().trim())) {
                 if (!isSenderAdmin(sender)) {
                     await sock.sendMessage(sender, { text: "❌ මේක කරන්න පුළුවන් Batch Rep ට විතරයි!" }, { quoted: msg });
                     return;
@@ -1404,20 +1404,23 @@ async function connectToWhatsApp() {
                     return;
                 }
                 try {
+                    // 📥 Media එක Download කරනවා
                     const buffer = await downloadMediaMessage(msg, 'buffer', {});
-                    const ext = path.extname(docMsg.fileName || '') || '.pdf';
+                    const media = docMsg || imgMsg;
+                    const ext = path.extname(media.fileName || '') || (docMsg ? '.pdf' : '.jpg');
                     const storedFileName = `${crypto.randomUUID()}${ext}`;
                     fs.writeFileSync(path.join(FILES_DIR, storedFileName), buffer);
                     fileRegistry.push({
-                        keyword, fileName: docMsg.fileName || `${keyword}${ext}`,
-                        mimetype: docMsg.mimetype || 'application/pdf',
+                        keyword,
+                        fileName: media.fileName || `${keyword}${ext}`,
+                        mimetype: media.mimetype || (docMsg ? 'application/pdf' : 'image/jpeg'),
                         storedFileName
                     });
                     saveFileRegistry();
                     await sock.sendMessage(sender, { text: `✅ File save කළා! Keyword: "${keyword}"` }, { quoted: msg });
                 } catch (err) {
                     console.error('Save file error:', err);
-                    await sock.sendMessage(sender, { text: "❌ File save කිරීම අසාර්ථකයි." }, { quoted: msg });
+                    await sock.sendMessage(sender, { text: "❌ File save කිරීම අසාර්ථකයි. Railway Logs එකේ `Save file error` කියලා බලන්න." }, { quoted: msg });
                 }
                 return;
             }
