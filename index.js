@@ -1506,11 +1506,28 @@ async function connectToWhatsApp() {
                 return;
             }
 
-                        // 🚨 SMART FILE HANDLING
+            // ✅ pdf කියූ විගස කලින් කියවපු File එකම යවනවා (Last File Context)
+            if ((textLower === 'pdf' || textLower === 'file' || textLower === 'danna' || textLower === 'ewanna') && lastFileContext[sender]) {
+                const lastFile = lastFileContext[sender];
+                const lastFilePath = path.join(FILES_DIR, lastFile.storedFileName);
+                if (fs.existsSync(lastFilePath)) {
+                    const buffer = fs.readFileSync(lastFilePath);
+                    await sock.sendMessage(sender, {
+                        document: buffer,
+                        mimetype: lastFile.mimetype || 'application/pdf',
+                        fileName: lastFile.fileName || 'document.pdf'
+                    }, { quoted: msg });
+                } else {
+                    await sock.sendMessage(sender, { text: "❌ File එක නෑ. Admin ට කියලා ආයේ Add කරන්න." }, { quoted: msg });
+                }
+                return;
+            }
+
+            // 🚨 SMART FILE HANDLING (✅ Image සහ PDF දෙකටම වැඩ කරන අලුත්ම Fix)
             const explicitFileWords = /\b(pdf|file|send|download|document|danna|ewanna|yawanna|evidence|source|uththara|sadaha|reference|prove|copy|read|explain|define|what)\b/i;
             const isExplicitFileRequest = explicitFileWords.test(textLower);
 
-            // ✅ අලුත්ම FIX: සාමාන්‍ය Chat ප්‍රශ්න නම් File Block එකට යන්න දෙන්නේ නෑ!
+            // ✅ සාමාන්‍ය Chat ප්‍රශ්න නම් File Block එකට යන්න දෙන්නේ නෑ!
             const generalChatRegex = /adaraya|adara|kohomada|kohomda|what is love|meka mokadda|mokadda|mokakda|ayubowan|suba|thanks|stuti|mata|mage|kelle|kella|set|kohome|wage|kenek|kohomada|mokakda|meka|kohomada|kohomda|ආදරය|කෙල්ල|කොහොමද|මොකක්ද/i;
             const isGeneralChat = generalChatRegex.test(textLower);
 
@@ -1525,7 +1542,8 @@ async function connectToWhatsApp() {
                 if (matchedFile) {
                     const filePath = path.join(FILES_DIR, matchedFile.storedFileName);
 
-                    if (isExplicitFileRequest || matchedFile.mimetype !== 'application/pdf') {
+                    // 1️⃣ දරුවා "pdf", "file", "send" වගේ explicit එකක් ඇහුවම File එක කෙලින්ම යවනවා
+                    if (isExplicitFileRequest) {
                         try {
                             if (fs.existsSync(filePath)) {
                                 const buffer = fs.readFileSync(filePath);
@@ -1544,29 +1562,78 @@ async function connectToWhatsApp() {
                         return;
                     }
 
+                    // 2️⃣ PDF File එකක් නම් Read කරලා උත්තර දෙනවා
+                    if (matchedFile.mimetype === 'application/pdf') {
+                        try {
+                            if (fs.existsSync(filePath)) {
+                                const pdfBuffer = fs.readFileSync(filePath);
+                                const base64Pdf = pdfBuffer.toString('base64');
+                                const pdfPart = { inlineData: { data: base64Pdf, mimeType: 'application/pdf' } };
+
+                                const queryPrompt = `Read the attached PDF file. The user has asked: "${rawMessageText}".\n\nAnswer the user's question directly, briefly, and clearly based *ONLY* on the information in the PDF file. If the answer is not in the PDF, say "Sorry, this information is not in the file." Do not mention the file name unless necessary.`;
+
+                                geminiRequestsToday++;
+                                const result = await generateContentWithRetry(model, [queryPrompt, pdfPart]);
+                                const reply = formatMathForWhatsApp(result.response.text());
+
+                                lastFileContext[sender] = matchedFile;
+
+                                const userGuide = `\n\n📄 *ඔයාට මේ තොරතුරු වල සාක්ෂි (Evidence) බලන්න ඕනද?*\n👉 එතකොට *"pdf"* කියලා type කරන්න.`;
+
+                                await sock.sendMessage(sender, { text: reply + userGuide }, { quoted: msg });
+                            } else {
+                                await sock.sendMessage(sender, { text: "❌ File එක නෑ. Admin ට කියලා ආයේ Add කරන්න." }, { quoted: msg });
+                            }
+                        } catch (error) {
+                            console.error('AI File Query Error:', error);
+                            await sock.sendMessage(sender, { text: "❌ File එක විවෘත කරන්න බැරි වුණා. ආයේ උත්සාහ කරන්න." }, { quoted: msg });
+                        }
+                        return;
+                    }
+
+                    // 3️⃣ 🖼️ Image File එකක් නම් ඒක Read කරලා උත්තර දෙනවා! (ඔයා ඉල්ලපු අලුත්ම දේ)
+                    if (matchedFile.mimetype && matchedFile.mimetype.startsWith('image/')) {
+                        try {
+                            await sock.sendMessage(sender, { text: "🖼️ **Image එක විශ්ලේෂණය කරමින්...**" }, { quoted: msg });
+                            if (fs.existsSync(filePath)) {
+                                const imageBuffer = fs.readFileSync(filePath);
+                                const base64Image = imageBuffer.toString('base64');
+                                const imagePart = { inlineData: { data: base64Image, mimeType: matchedFile.mimetype } };
+
+                                const queryPrompt = `Please analyze the attached image. The user has asked: "${rawMessageText}".\n\nAnswer the user's question directly, briefly, and clearly based *ONLY* on the information in the image. If the answer is not in the image, say "Sorry, this information is not in the image."`;
+
+                                geminiRequestsToday++;
+                                const result = await generateContentWithRetry(model, [queryPrompt, imagePart]);
+                                const reply = formatMathForWhatsApp(result.response.text());
+
+                                lastFileContext[sender] = matchedFile;
+
+                                await sock.sendMessage(sender, { text: reply }, { quoted: msg });
+                            } else {
+                                await sock.sendMessage(sender, { text: "❌ File එක නෑ. Admin ට කියලා ආයේ Add කරන්න." }, { quoted: msg });
+                            }
+                        } catch (error) {
+                            console.error('AI Image Query Error:', error);
+                            await sock.sendMessage(sender, { text: "❌ Image එක කියවන්න බැරි වුණා. ආයේ උත්සාහ කරන්න." }, { quoted: msg });
+                        }
+                        return;
+                    }
+
+                    // 4️⃣ වෙනත් ඕනෑම Type එකක් නම් File එක කෙලින්ම යවනවා
                     try {
                         if (fs.existsSync(filePath)) {
-                            const pdfBuffer = fs.readFileSync(filePath);
-                            const base64Pdf = pdfBuffer.toString('base64');
-                            const pdfPart = { inlineData: { data: base64Pdf, mimeType: 'application/pdf' } };
-
-                            const queryPrompt = `Read the attached PDF file. The user has asked: "${rawMessageText}".\n\nAnswer the user's question directly, briefly, and clearly based *ONLY* on the information in the PDF file. If the answer is not in the PDF, say "Sorry, this information is not in the file." Do not mention the file name unless necessary.`;
-
-                            geminiRequestsToday++;
-                            const result = await generateContentWithRetry(model, [queryPrompt, pdfPart]);
-                            const reply = formatMathForWhatsApp(result.response.text());
-
-                            lastFileContext[sender] = matchedFile;
-
-                            const userGuide = `\n\n📄 *ඔයාට මේ තොරතුරු වල සාක්ෂි (Evidence) බලන්න ඕනද?*\n👉 එතකොට *"pdf"* කියලා type කරන්න.`;
-
-                            await sock.sendMessage(sender, { text: reply + userGuide }, { quoted: msg });
+                            const buffer = fs.readFileSync(filePath);
+                            await sock.sendMessage(sender, {
+                                document: buffer,
+                                mimetype: matchedFile.mimetype || 'application/pdf',
+                                fileName: matchedFile.fileName || 'document.pdf'
+                            }, { quoted: msg });
                         } else {
                             await sock.sendMessage(sender, { text: "❌ File එක නෑ. Admin ට කියලා ආයේ Add කරන්න." }, { quoted: msg });
                         }
-                    } catch (error) {
-                        console.error('AI File Query Error:', error);
-                        await sock.sendMessage(sender, { text: "❌ File එක විවෘත කරන්න බැරි වුණා. ආයේ උත්සාහ කරන්න." }, { quoted: msg });
+                    } catch (err) {
+                        console.error('❌ Error sending file:', err);
+                        await sock.sendMessage(sender, { text: "❌ File එක යවන්න අවුලක් වුණා. නැවත try කරන්න." }, { quoted: msg });
                     }
                     return;
                 }
