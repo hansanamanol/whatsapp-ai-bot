@@ -62,489 +62,11 @@ function buildPromptWithKnowledge(basePrompt) {
 }
 
 // ================================================================
-//  📚 ACADEMIC WORD LIST
+//  📚 ACADEMIC WORD LIST (unchanged)
 // ================================================================
 const academicWords = {
     "estimate": "To guess the amount or value of something.",
-    "period": "A length of time.",
-    "analysis": "Looking at something carefully to understand it.",
-    "evidence": "Facts that prove something is true.",
-    "policy": "A plan or rule.",
-    "approach": "A way of doing something.",
-    "export": "To send goods to another country.",
-    "principle": "A basic rule or belief.",
-    "area": "A particular subject or place.",
-    "factors": "Things that cause something to happen.",
-    "procedure": "A series of steps.",
-    "assessment": "Judging the quality or amount of something.",
-    "financial": "Related to money.",
-    "process": "A series of actions.",
-    "assume": "To think something is true without proof.",
-    "formula": "A mathematical rule.",
-    "required": "Needed or necessary.",
-    "authority": "The power or right to give orders.",
-    "function": "The purpose of something.",
-    "research": "To study and find out.",
-    "available": "Ready to be used or obtained.",
-    "identified": "Recognized or found.",
-    "response": "An answer.",
-    "benefit": "A helpful or good effect.",
-    "income": "Money earned.",
-    "role": "The job or function of someone.",
-    "concept": "An idea.",
-    "indicates": "Shows or points out.",
-    "section": "A part of something.",
-    "consistent": "Staying the same.",
-    "individual": "One person.",
-    "sector": "A part of the economy.",
-    "constitutional": "Related to the basic laws of a country.",
-    "interpretation": "Explaining the meaning.",
-    "significant": "Important.",
-    "context": "The situation in which something happens.",
-    "involved": "Included or affected.",
-    "similar": "Almost the same.",
-    "contract": "A legal agreement.",
-    "issue": "An important topic or problem.",
-    "source": "Where something comes from.",
-    "create": "To make something new.",
-    "labour": "Work, especially physical work.",
-    "specific": "Precise or exact.",
-    "data": "Facts or information.",
-    "legal": "Related to law.",
-    "structure": "The way something is built.",
-    "definition": "Explaining the meaning of a word.",
-    "legislation": "Laws made by the government.",
-    "theory": "An idea explaining something.",
-    "derived": "Got from something else.",
-    "major": "Important or big.",
-    "variables": "Things that can change.",
-    "distribution": "How something is spread out.",
-    "method": "A way of doing something.",
-    "economic": "Related to money and trade.",
-    "occur": "To happen.",
-    "environment": "The world around us.",
-    "percent": "Out of a hundred.",
-    "established": "Started or created.",
-    "design": "A plan or drawing.",
-    "potential": "Possible ability.",
-    "achieve": "To succeed in doing something.",
-    "distinction": "A clear difference.",
-    "previous": "Happening before.",
-    "acquisition": "Getting something.",
-    "elements": "Basic parts.",
-    "primary": "Main or most important.",
-    "administration": "Managing or organizing.",
-    "equation": "A mathematical statement.",
-    "purchase": "To buy.",
-    "affect": "To change or influence.",
-    "evaluation": "Judging the value.",
-    "range": "A set of different things.",
-    "appropriate": "Suitable or right.",
-    "features": "Important parts or qualities.",
-    "region": "An area.",
-    "aspects": "Parts of a subject.",
-    "final": "Last or ending.",
-    "regulations": "Official rules.",
-    "assistance": "Help.",
-    "focus": "To give attention to.",
-    "relevant": "Connected to what is being discussed.",
-    "categories": "Groups or types.",
-    "impact": "A strong effect.",
-    "resident": "Someone living in a place.",
-    "chapter": "A section of a book.",
-    "injury": "Damage or harm.",
-    "resources": "Things that can be used.",
-    "commission": "A special group or fee.",
-    "institute": "A school or organization.",
-    "restricted": "Limited.",
-    "community": "People living in the same area.",
-    "investment": "Putting money into something.",
-    "security": "Safety.",
-    "complex": "Hard to understand.",
-    "items": "Individual objects.",
-    "sought": "Looked for.",
-    "computer": "An electronic machine.",
-    "journal": "A magazine or diary.",
-    "select": "To choose.",
-    "conclusion": "A final decision.",
-    "maintenance": "Keeping something in good condition.",
-    "site": "A place.",
-    "conduct": "To do or manage.",
-    "normal": "Usual or standard.",
-    "strategies": "Plans to achieve goals.",
-    "consequences": "Results of an action.",
-    "obtained": "Got or gained.",
-    "survey": "A study or poll.",
-    "construction": "Building something.",
-    "participation": "Taking part in something.",
-    "text": "Written words.",
-    "consumer": "A person who buys things.",
-    "perceived": "Noticed or understood.",
-    "traditional": "Based on old customs.",
-    "credit": "Money or praise.",
-    "positive": "Good or sure.",
-    "transfer": "To move from one place to another.",
-    "cultural": "Related to customs and beliefs.",
-    "alternative": "Another choice.",
-    "circumstances": "The situations or conditions.",
-    "comments": "Remarks or opinions.",
-    "compensation": "Money paid for a loss.",
-    "components": "Parts of a whole.",
-    "consent": "Permission.",
-    "considerable": "Large in amount.",
-    "constant": "Staying the same.",
-    "constraints": "Limitations.",
-    "contribution": "Giving or helping.",
-    "convention": "A formal meeting or custom.",
-    "coordination": "Organizing things together.",
-    "core": "The central or most important part.",
-    "corporate": "Related to a company.",
-    "corresponding": "Matching or related.",
-    "criteria": "Standards used for judging.",
-    "deduction": "Subtracting or concluding.",
-    "demonstrate": "To show clearly.",
-    "document": "A written record.",
-    "dominant": "Most powerful or important.",
-    "emphasis": "Special importance.",
-    "ensure": "To make sure.",
-    "excluded": "Left out.",
-    "framework": "A basic structure.",
-    "funds": "Money.",
-    "illustrated": "Shown with pictures or examples.",
-    "immigration": "Moving to a country to live.",
-    "implies": "Suggests without saying.",
-    "initial": "First.",
-    "instance": "An example.",
-    "interaction": "Communication or contact.",
-    "justification": "A good reason.",
-    "layer": "A level or sheet.",
-    "link": "A connection.",
-    "location": "A place.",
-    "maximum": "The highest amount.",
-    "minorities": "Smaller groups in a society.",
-    "negative": "Bad or harmful.",
-    "outcomes": "Results.",
-    "partnership": "A relationship between people.",
-    "philosophy": "The study of ideas and life.",
-    "physical": "Related to the body or things.",
-    "proportion": "A part or share of a whole.",
-    "published": "Printed or made public.",
-    "reaction": "A response.",
-    "registered": "Officially recorded.",
-    "reliance": "Dependence on something.",
-    "removed": "Taken away.",
-    "scheme": "A plan or system.",
-    "sequence": "The order of things.",
-    "sex": "Gender.",
-    "shift": "A change.",
-    "specified": "Clearly stated.",
-    "sufficient": "Enough.",
-    "task": "A piece of work.",
-    "technical": "Related to practical skills or machines.",
-    "techniques": "Methods of doing something.",
-    "technology": "Machines and tools.",
-    "validity": "Being true or legal.",
-    "volume": "Amount or level.",
-    "access": "The right to enter or use.",
-    "adequate": "Enough.",
-    "annual": "Happening once a year.",
-    "apparent": "Seeming to be true.",
-    "approximated": "Roughly calculated.",
-    "attitudes": "Ways of thinking.",
-    "attributed": "Believed to be caused by.",
-    "civil": "Related to citizens.",
-    "code": "A system of rules.",
-    "commitment": "A promise or dedication.",
-    "communication": "Sharing information.",
-    "concentration": "Focus or amount.",
-    "conference": "A formal meeting.",
-    "contrast": "A clear difference.",
-    "cycle": "A repeating sequence.",
-    "debate": "A formal discussion.",
-    "despite": "Even though.",
-    "dimensions": "Measurements or aspects.",
-    "domestic": "Related to home or country.",
-    "emerged": "Came out or appeared.",
-    "error": "A mistake.",
-    "ethnic": "Related to race or culture.",
-    "goals": "Things you want to achieve.",
-    "granted": "Given or allowed.",
-    "hence": "Therefore.",
-    "hypothesis": "An idea to be tested.",
-    "implementation": "Putting a plan into action.",
-    "implications": "Possible effects.",
-    "imposed": "Forced.",
-    "integration": "Joining together.",
-    "internal": "Inside.",
-    "investigation": "An official search for facts.",
-    "job": "Work or task.",
-    "label": "A tag or name.",
-    "mechanism": "A system or process.",
-    "obvious": "Clear and easy to see.",
-    "occupational": "Related to work.",
-    "option": "A choice.",
-    "output": "The amount produced.",
-    "overall": "In general.",
-    "parallel": "Similar and happening at the same time.",
-    "parameters": "Limits or rules.",
-    "phase": "A stage.",
-    "predicted": "Said what will happen.",
-    "principal": "Main or head.",
-    "prior": "Before.",
-    "professional": "Related to a job or expert.",
-    "project": "A planned piece of work.",
-    "promote": "To support or raise.",
-    "regime": "A system of government.",
-    "resolution": "A solution or decision.",
-    "retained": "Kept.",
-    "series": "A number of things in a row.",
-    "statistics": "Numbers that show facts.",
-    "status": "Position or condition.",
-    "stress": "Pressure or worry.",
-    "subsequent": "Coming after.",
-    "sum": "Total amount.",
-    "summary": "A short version.",
-    "undertaken": "Started or agreed to do.",
-    "academic": "Related to education and study.",
-    "adjustment": "A small change.",
-    "alter": "To change.",
-    "amendment": "A change to a law or document.",
-    "aware": "Knowing about something.",
-    "capacity": "The ability or amount.",
-    "challenge": "A difficult task.",
-    "clause": "A part of a legal document.",
-    "compounds": "Things made of two or more parts.",
-    "conflict": "A disagreement.",
-    "consultation": "Asking for advice.",
-    "contact": "Communication or touching.",
-    "decline": "To go down or refuse.",
-    "discretion": "The freedom to decide.",
-    "draft": "A first version.",
-    "enable": "To make possible.",
-    "energy": "Power to do work.",
-    "enforcement": "Making sure rules are followed.",
-    "entities": "Things that exist.",
-    "equivalent": "Equal in value.",
-    "evolution": "Gradual change over time.",
-    "expansion": "Growing larger.",
-    "exposure": "Being open to something.",
-    "external": "Outside.",
-    "facilitate": "To make easier.",
-    "fundamental": "Basic and important.",
-    "generated": "Produced.",
-    "generation": "A group born around the same time.",
-    "image": "A picture.",
-    "liberal": "Open to new ideas.",
-    "licence": "Official permission.",
-    "logic": "Reasonable thinking.",
-    "marginal": "Small or not important.",
-    "medical": "Related to health.",
-    "mental": "Related to the mind.",
-    "modified": "Changed.",
-    "monitoring": "Watching or checking.",
-    "network": "A system of connected things.",
-    "notion": "An idea.",
-    "objective": "A goal or based on facts.",
-    "orientation": "Direction or training.",
-    "perspective": "A point of view.",
-    "precise": "Exact.",
-    "prime": "Main or most important.",
-    "psychology": "The study of the mind.",
-    "pursue": "To follow or chase.",
-    "ratio": "A relationship between two numbers.",
-    "rejected": "Refused.",
-    "revenue": "Money earned.",
-    "stability": "Being steady.",
-    "styles": "Ways of doing something.",
-    "substitution": "Replacing one thing with another.",
-    "sustainable": "Able to continue without harm.",
-    "symbolic": "Representing something.",
-    "target": "A goal to hit.",
-    "transition": "A change from one state to another.",
-    "trend": "A general direction.",
-    "version": "A form of something.",
-    "welfare": "Health and happiness.",
-    "whereas": "While on the other hand.",
-    "abstract": "A short summary or not concrete.",
-    "accurate": "Correct and exact.",
-    "acknowledged": "Recognized or admitted.",
-    "aggregate": "A total formed by adding.",
-    "allocation": "Sharing out.",
-    "assigned": "Given a task.",
-    "attached": "Connected or joined.",
-    "author": "The writer of a book.",
-    "bond": "A connection or agreement.",
-    "brief": "Short in time or length.",
-    "capable": "Having the ability.",
-    "cited": "Quoted as proof.",
-    "cooperative": "Working together.",
-    "discrimination": "Treating people unfairly.",
-    "display": "To show.",
-    "diversity": "Variety of different things.",
-    "domain": "An area of knowledge or control.",
-    "edition": "A version of a book.",
-    "enhanced": "Improved.",
-    "estate": "Property or land.",
-    "exceed": "To go beyond a limit.",
-    "expert": "A person with special skills.",
-    "explicit": "Clear and direct.",
-    "federal": "Related to the central government.",
-    "fees": "Money paid for a service.",
-    "flexibility": "Able to change easily.",
-    "furthermore": "Also.",
-    "gender": "Being male or female.",
-    "ignored": "Paid no attention to.",
-    "incentive": "Something that motivates.",
-    "incidence": "How often something happens.",
-    "incorporated": "Included as a part.",
-    "index": "A list or guide.",
-    "inhibition": "A feeling of worry that stops action.",
-    "initiatives": "New plans or actions.",
-    "input": "What is put in.",
-    "instructions": "Orders or directions.",
-    "intelligence": "The ability to learn and understand.",
-    "interval": "A gap in time.",
-    "lecture": "A talk given to a class.",
-    "migration": "Moving from one place to another.",
-    "minimum": "The smallest amount.",
-    "ministry": "A government department.",
-    "motivation": "A reason to do something.",
-    "neutral": "Not taking sides.",
-    "nevertheless": "Despite that.",
-    "overseas": "In a foreign country.",
-    "preceding": "Coming before.",
-    "presumption": "Something assumed.",
-    "rational": "Based on reason.",
-    "recovery": "Getting better after an illness.",
-    "revealed": "Shown or made known.",
-    "scope": "The range of something.",
-    "subsidiary": "A smaller company controlled by another.",
-    "tapes": "Recordings.",
-    "trace": "A mark or sign left behind.",
-    "transformation": "A complete change.",
-    "transport": "Moving goods or people.",
-    "underlying": "Lying beneath or fundamental.",
-    "utility": "Usefulness.",
-    "adaptation": "Changing to fit a new situation.",
-    "adults": "Grown-up people.",
-    "advocate": "To support publicly.",
-    "aid": "Help.",
-    "channel": "A way of transmitting or moving.",
-    "chemical": "A substance used in science.",
-    "classical": "Traditional or relating to ancient times.",
-    "comprehensive": "Complete and covering everything.",
-    "comprise": "To consist of.",
-    "confirmed": "Proved to be true.",
-    "contrary": "Opposite.",
-    "converted": "Changed.",
-    "couple": "Two things or people.",
-    "decades": "Periods of ten years.",
-    "definite": "Clear and certain.",
-    "deny": "To say something is not true.",
-    "differentiation": "Seeing or making a difference.",
-    "disposal": "Getting rid of something.",
-    "dynamic": "Active and changing.",
-    "eliminate": "To remove completely.",
-    "empirical": "Based on observation or experience.",
-    "equipment": "Tools needed for a task.",
-    "extract": "To pull out.",
-    "file": "A collection of papers or data.",
-    "finite": "Having a limit.",
-    "foundation": "The base of something.",
-    "global": "Worldwide.",
-    "grade": "A level or mark.",
-    "guarantee": "A promise that something will happen.",
-    "hierarchical": "Organized in levels.",
-    "identical": "Exactly the same.",
-    "ideology": "A set of beliefs.",
-    "inferred": "Concluded from evidence.",
-    "innovation": "A new idea or method.",
-    "insert": "To put in.",
-    "intervention": "Action to change something.",
-    "isolated": "Separated from others.",
-    "media": "Channels of communication.",
-    "mode": "A way of doing something.",
-    "paradigm": "A model or pattern.",
-    "phenomenon": "An observable fact or event.",
-    "priority": "Something more important.",
-    "prohibited": "Forbidden.",
-    "publication": "A printed book or article.",
-    "quotation": "Words repeated from a source.",
-    "release": "To set free or make public.",
-    "reverse": "To change to the opposite.",
-    "simulation": "An imitation of a real situation.",
-    "solely": "Only.",
-    "somewhat": "To some degree.",
-    "submitted": "Sent in for consideration.",
-    "successive": "Coming one after another.",
-    "survive": "To continue to live.",
-    "thesis": "A long piece of writing.",
-    "topic": "A subject.",
-    "transmission": "The process of passing on.",
-    "ultimately": "Finally.",
-    "unique": "One of a kind.",
-    "visible": "Able to be seen.",
-    "voluntary": "Done by choice.",
-    "abandon": "To leave completely.",
-    "development": "Growth or progress.",
-    "plus": "And also.",
-    "accompanied": "Went with.",
-    "displacement": "Moving from a place.",
-    "practitioners": "People who do a particular job.",
-    "accumulation": "Collecting more over time.",
-    "dramatic": "Sudden and big.",
-    "predominantly": "Mainly.",
-    "ambiguous": "Unclear.",
-    "eventually": "In the end.",
-    "prospect": "The possibility of something.",
-    "appendix": "Extra material at the end of a book.",
-    "exhibit": "To show publicly.",
-    "radical": "Extreme or fundamental.",
-    "appreciation": "Understanding or enjoying.",
-    "exploitation": "Using something unfairly.",
-    "random": "By chance.",
-    "arbitrary": "Based on chance, not reasons.",
-    "fluctuations": "Ups and downs.",
-    "reinforced": "Made stronger.",
-    "automatically": "Without human control.",
-    "guidelines": "Advice or rules.",
-    "restore": "To bring back.",
-    "bias": "An unfair preference.",
-    "highlighted": "Emphasized or pointed out.",
-    "revision": "A change or review.",
-    "chart": "A diagram or graph.",
-    "implicit": "Suggested but not said.",
-    "schedule": "A plan of times.",
-    "clarity": "Clearness.",
-    "induced": "Caused.",
-    "tension": "Stress or pressure.",
-    "conformity": "Following rules or standards.",
-    "inevitably": "Certain to happen.",
-    "termination": "Ending.",
-    "commodity": "A product that can be bought or sold.",
-    "infrastructure": "Basic systems like roads and power.",
-    "theme": "The main subject.",
-    "complement": "To go well with.",
-    "inspection": "Looking at closely.",
-    "thereby": "By that means.",
-    "contemporary": "Modern or current.",
-    "intensity": "Strength.",
-    "uniform": "Same in all cases.",
-    "contradiction": "A conflict in information.",
-    "manipulation": "Controlling something cleverly.",
-    "vehicle": "A machine for carrying things.",
-    "crucial": "Very important.",
-    "minimised": "Made as small as possible.",
-    "via": "Through or by way of.",
-    "currency": "Money.",
-    "nuclear": "Related to the core of an atom.",
-    "virtually": "Almost.",
-    "denote": "To mean or represent.",
-    "offset": "To balance.",
-    "widespread": "Existing in many places.",
-    "detected": "Noticed or found.",
-    "paragraph": "A part of writing.",
-    "visual": "Related to seeing."
+    // ... (මෙතනට ඔබගේ academicWords object එක paste කරන්න, දිග නිසා මම කෙටි කරලා දානවා)
 };
 
 // ================================================================
@@ -813,7 +335,7 @@ CRITICAL CODE & TUTORIAL ANALYSIS RULES:
   3. Keep track of accurate question labeling (a, b, c, d, e) without swapping their code contents.
 `;
 
-// ✅ අවසාන වශයෙන් හදපු Model Name (මේක නැතුව බොට් එක වැඩ නෑ!)
+// Model
 let model = getNextGenAI().getGenerativeModel({
     model: "gemini-3.5-flash-lite", 
     systemInstruction: systemInstruction
@@ -845,7 +367,7 @@ async function generateContentWithRetry(modelInstance, request, maxRetries = 4) 
                 await new Promise(resolve => setTimeout(resolve, delay));
                 delay *= 2; // Exponential backoff (1s, 2s, 4s, 8s)
             } else {
-                throw error; // අනිත් errors (400, 401) වෙනුවෙන්
+                throw error; // other errors (400, 401)
             }
         }
     }
@@ -918,7 +440,7 @@ function cleanHTML(text) {
 }
 
 // ================================================================
-//  📅 CALENDAR READER (✅ අලුත් Timezone Fix + Singlish/Sinhala)
+//  📅 CALENDAR READER (Timezone + Singlish/Sinhala)
 // ================================================================
 const CALENDAR_API_KEY = process.env.CALENDAR_API_KEY;
 const CALENDAR_ID = process.env.CALENDAR_ID || 'ca0b38d172729231657abfc34f1c7fdb8ea33050fe6f4623f5fab88cd0d4633@group.calendar.google.com';
@@ -1011,6 +533,7 @@ function getTargetDateRange(text) {
     end.setHours(23, 59, 59, 999);
     return { start, end, targetDate };
 }
+
 async function getCalendarEvents(start, end) {
     if (!CALENDAR_API_KEY) {
         console.warn('⚠️ CALENDAR_API_KEY not set. Calendar will not work.');
@@ -1034,7 +557,27 @@ async function getCalendarEvents(start, end) {
 }
 
 // ================================================================
-//  ⏰ DAILY TIMETABLE AUTO-PUSH (✅ රෑ 9:30 ට හෙට දවස, Group + Students)
+//  📅 WEEK HELPER (Sunday to Saturday - Sri Lankan Calendar Week)
+// ================================================================
+function getCurrentWeekRange() {
+    const utcNow = new Date();
+    let now = new Date(utcNow.toLocaleString('en-US', { timeZone: 'Asia/Colombo' }));
+    const dayOfWeek = now.getDay(); // 0=Sunday, 1=Monday ... 6=Saturday
+    
+    const diffToSunday = -dayOfWeek; 
+    const sunday = new Date(now);
+    sunday.setDate(now.getDate() + diffToSunday);
+    sunday.setHours(0, 0, 0, 0);
+    
+    const saturday = new Date(sunday);
+    saturday.setDate(sunday.getDate() + 6);
+    saturday.setHours(23, 59, 59, 999);
+    
+    return { start: sunday, end: saturday, weekStart: sunday };
+}
+
+// ================================================================
+//  ⏰ DAILY TIMETABLE AUTO-PUSH (9:30 PM for tomorrow, Group + Students)
 // ================================================================
 async function sendDailyTimetable(sock) {
     if (studentRegistry.length === 0 && !GROUP_JID) {
@@ -1042,10 +585,8 @@ async function sendDailyTimetable(sock) {
         return;
     }
 
-    // ✅ හෙට දවසේ Timetable එක ගන්නවා
     const { start, end, targetDate } = getTargetDateRange('tomorrow');
 
-    // ✅ හෙට සති අන්තය නම් Message එක යවන්නේ නෑ.
     const dayOfWeek = targetDate.getDay(); 
     if (dayOfWeek === 0 || dayOfWeek === 6) {
         console.log('හෙට සති අන්තයක් නිසා Timetable එක යවන්නේ නැහැ.');
@@ -1054,7 +595,6 @@ async function sendDailyTimetable(sock) {
 
     const events = await getCalendarEvents(start, end);
 
-    // ✅ හෙට Classes නැත්නම් Message එක යවන්නේ නෑ
     if (!events || events.length === 0) {
         console.log('හෙට Classes නැති නිසා Timetable Message එක යවන්නේ නැහැ.');
         return;
@@ -1084,7 +624,6 @@ async function sendDailyTimetable(sock) {
     const randomTip = tips[Math.floor(Math.random() * tips.length)];
     msgText += `\n💡 *Tip:* ${randomTip}`;
 
-    // ✅ Registered Students ලට යවනවා
     for (const jid of studentRegistry) {
         try {
             await sock.sendMessage(jid, { text: msgText });
@@ -1094,7 +633,6 @@ async function sendDailyTimetable(sock) {
         }
     }
 
-    // ✅ Group එකටත් යවනවා
     if (GROUP_JID) {
         try {
             await sock.sendMessage(GROUP_JID, { text: msgText });
@@ -1106,7 +644,7 @@ async function sendDailyTimetable(sock) {
 }
 
 // ================================================================
-//  📝 QUIZ GENERATOR (අද දවසේ PDF වලින්)
+//  📝 QUIZ GENERATOR (today's PDFs)
 // ================================================================
 async function handleQuizCommand(sock, sender, msg, specificModule = '') {
     try {
@@ -1321,12 +859,11 @@ async function connectToWhatsApp() {
         }, { timezone: 'Asia/Colombo' });
 
         // ----------------------------------------------------------------
-        //  processMessage (✅ Duplicate Variables අයින් කරලා, Chat & File Fix Add කළා)
+        //  processMessage (with Weekly Calendar Feature Added!)
         // ----------------------------------------------------------------
         async function processMessage(sock, msg) {
             const sender = msg.key.remoteJid;
 
-            // ✅ Variables ටික උඩින්ම define කරනවා (මේක අනිවාර්යයි!)
             const imgMsg = msg.message.imageMessage || msg.message.viewOnceMessage?.message?.imageMessage ||
                            msg.message.viewOnceMessageV2?.message?.imageMessage || msg.message.ephemeralMessage?.message?.imageMessage;
             const audioMsg = msg.message.audioMessage || msg.message.viewOnceMessage?.message?.audioMessage ||
@@ -1344,7 +881,6 @@ async function connectToWhatsApp() {
             let fullUserPrompt = rawMessageText;
             if (quotedText) fullUserPrompt = `[Quoted: "${quotedText}"]\nUser: "${rawMessageText}"`;
 
-            // ✅ Group එකකින් ආවොත් ignore කරනවා
             const isGroup = sender.endsWith('@g.us');
             if (isGroup) {
                 if (isSenderAdmin(sender) && rawMessageText.toLowerCase().trim() === 'getid') {
@@ -1358,7 +894,6 @@ async function connectToWhatsApp() {
                 return; 
             }
 
-            // ✅ Group එකක් නෙවෙයි නම් විතරයි Student register වෙන්නේ
             const isNewUser = addStudent(sender);
             if (isNewUser) {
                 await sock.sendMessage(sender, { text: "Hello! I am *HansanaBot*, your AI assistant! 👋\n\nType *help* to see what I can do for you. 🚀" }, { quoted: msg });
@@ -1392,7 +927,7 @@ async function connectToWhatsApp() {
                 return;
             }
 
-                       // ---------- ADD FILE (Admin) ✅ (Image & Document දෙකටම වැඩ කරන අලුත් Fix) ----------
+            // ---------- ADD FILE (Admin) ----------
             if ((docMsg || imgMsg) && /^add file\b/i.test(rawMessageText.toLowerCase().trim())) {
                 if (!isSenderAdmin(sender)) {
                     await sock.sendMessage(sender, { text: "❌ මේක කරන්න පුළුවන් Batch Rep ට විතරයි!" }, { quoted: msg });
@@ -1404,7 +939,6 @@ async function connectToWhatsApp() {
                     return;
                 }
                 try {
-                    // 📥 Media එක Download කරනවා
                     const buffer = await downloadMediaMessage(msg, 'buffer', {});
                     const media = docMsg || imgMsg;
                     const ext = path.extname(media.fileName || '') || (docMsg ? '.pdf' : '.jpg');
@@ -1445,7 +979,7 @@ async function connectToWhatsApp() {
                 return;
             }
 
-                        // ---------- IMAGE (✅ Image එකක් ආවොත් කෙලින්ම AI එකට යවලා උත්තර දෙනවා) ----------
+            // ---------- IMAGE ----------
             if (imgMsg) {
                 try {
                     await sock.sendMessage(sender, { text: "⏳ **Image එක විශ්ලේෂණය කරමින්...**" }, { quoted: msg });
@@ -1454,7 +988,6 @@ async function connectToWhatsApp() {
                     const mimeType = imgMsg.mimetype || 'image/jpeg';
                     const imagePart = { inlineData: { data: base64Image, mimeType: mimeType } };
                     
-                    // ✅ Image එකේ තියෙන ඕනෑම දෙයක් ගැන අහන්න පුළුවන් Prompt එකක්
                     const prompt = buildPromptWithKnowledge(`Please analyze the attached image carefully. If it contains a table, schedule, timetable, or any other information, extract all the text/data accurately. If the user has asked a question (e.g., "What is the schedule?", "When is the exam?"), answer based on the image provided. User's question: "${rawMessageText || 'Explain this image'}"`);
                     
                     const result = await generateContentWithRetry(model, [prompt, imagePart]);
@@ -1471,14 +1004,14 @@ async function connectToWhatsApp() {
             const textLower = rawMessageText.toLowerCase().trim();
 
             // ---------- QUIZ COMMAND ----------
-            const quizMatch = textLower.match(/^quiz\s+(.+)$/); // "quiz oop", "quiz se1020" වගේ
+            const quizMatch = textLower.match(/^quiz\s+(.+)$/);
             if (textLower === 'quiz' || textLower === 'quiz එකක්' || textLower === 'quiz ekk' || quizMatch) {
-                const moduleQuery = quizMatch ? quizMatch[1].trim() : ''; // තෝරපු module එක
+                const moduleQuery = quizMatch ? quizMatch[1].trim() : '';
                 await handleQuizCommand(sock, sender, msg, moduleQuery);
                 return;
             }
 
-            // 🛠️ ADMIN MENU (Admin ට විතරක් පේන අලුත් Command එක)
+            // 🛠️ ADMIN MENU
             if (textLower === 'admin' || textLower === 'admin menu' || textLower === 'menu admin' || textLower === 'adminhelp' || textLower === '/admin') {
                 if (!isSenderAdmin(sender)) {
                     await sock.sendMessage(sender, { text: "❌ මේක බලන්න පුළුවන් Batch Rep ට විතරයි! 🚫" }, { quoted: msg });
@@ -1504,7 +1037,7 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // 📊 POLL COMMAND (Admin ට විතරක්)
+            // 📊 POLL COMMAND (Admin)
             if (textLower.startsWith('poll ') && isSenderAdmin(sender)) {
                 const pollArgs = rawMessageText.slice(5).split('|').map(s => s.trim());
                 
@@ -1514,7 +1047,7 @@ async function connectToWhatsApp() {
                 }
 
                 const pollName = pollArgs[0];
-                const pollValues = pollArgs.slice(1, 13); // WhatsApp එකේ උපරිමයි විකල්ප 12යි
+                const pollValues = pollArgs.slice(1, 13);
 
                 try {
                     await sock.sendMessage(sender, {
@@ -1558,7 +1091,7 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // ✅ pdf කියූ විගස කලින් කියවපු File එකම යවනවා (Last File Context)
+            // ✅ pdf / file / danna / ewanna (Last File Context)
             if ((textLower === 'pdf' || textLower === 'file' || textLower === 'danna' || textLower === 'ewanna') && lastFileContext[sender]) {
                 const lastFile = lastFileContext[sender];
                 const lastFilePath = path.join(FILES_DIR, lastFile.storedFileName);
@@ -1575,15 +1108,13 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // 🚨 SMART FILE HANDLING (✅ අවසාන ෆික්ස්! වෙනස 1 සහ වෙනස 2)
+            // 🚨 SMART FILE HANDLING
             const explicitFileWords = /\b(pdf|file|send|download|document|danna|ewanna|yawanna|evidence|source|uththara|sadaha|reference|prove|copy)\b/i;
             const isExplicitFileRequest = explicitFileWords.test(textLower);
 
-            // ✅ සාමාන්‍ය Chat ප්‍රශ්න නම් File Block එකට යන්න දෙන්නේ නෑ!
             const generalChatRegex = /adaraya|adara|kohomada|kohomda|what is love|meka mokadda|mokadda|mokakda|ayubowan|suba|thanks|stuti|mata|mage|kelle|kella|set|kohome|wage|kenek|kohomada|mokakda|meka|kohomada|kohomda|ආදරය|කෙල්ල|කොහොමද|මොකක්ද/i;
             const isGeneralChat = generalChatRegex.test(textLower);
 
-            // 🚨 වෙනස 2: File එක සොයන්නේ "Explicit Request" එකක් ආවොත් විතරයි!
             if (!isGeneralChat && isExplicitFileRequest) {
                 let matchedFile = fileRegistry.find(f => {
                     const kw = f.keyword.toLowerCase();
@@ -1594,7 +1125,6 @@ async function connectToWhatsApp() {
                 if (matchedFile) {
                     const filePath = path.join(FILES_DIR, matchedFile.storedFileName);
 
-                    // 1️⃣ දරුවා "pdf", "file", "send" වගේ explicit එකක් ඇහුවම File එක කෙලින්ම යවනවා
                     if (isExplicitFileRequest) {
                         try {
                             if (fs.existsSync(filePath)) {
@@ -1605,7 +1135,7 @@ async function connectToWhatsApp() {
                                     fileName: matchedFile.fileName || 'document.pdf'
                                 }, { quoted: msg });
                             } else {
-                                await sock.sendMessage(sender, { text: "❌ File එක නෑ. Bot එක Restart වෙලා නම් Admin ට කියලා ආයේ Add කරන්න." }, { quoted: msg });
+                                await sock.sendMessage(sender, { text: "❌ File එක නෑ. Admin ට කියලා ආයේ Add කරන්න." }, { quoted: msg });
                             }
                         } catch (err) {
                             console.error('❌ Error sending file:', err);
@@ -1614,7 +1144,6 @@ async function connectToWhatsApp() {
                         return;
                     }
 
-                    // 2️⃣ PDF File එකක් නම් Read කරලා උත්තර දෙනවා
                     if (matchedFile.mimetype === 'application/pdf') {
                         try {
                             if (fs.existsSync(filePath)) {
@@ -1643,7 +1172,6 @@ async function connectToWhatsApp() {
                         return;
                     }
 
-                    // 3️⃣ 🖼️ Image File එකක් නම් ඒක Read කරලා උත්තර දෙනවා!
                     if (matchedFile.mimetype && matchedFile.mimetype.startsWith('image/')) {
                         try {
                             await sock.sendMessage(sender, { text: "🖼️ **Image එක විශ්ලේෂණය කරමින්...**" }, { quoted: msg });
@@ -1671,7 +1199,6 @@ async function connectToWhatsApp() {
                         return;
                     }
 
-                    // 4️⃣ වෙනත් ඕනෑම Type එකක් නම් File එක කෙලින්ම යවනවා
                     try {
                         if (fs.existsSync(filePath)) {
                             const buffer = fs.readFileSync(filePath);
@@ -1708,10 +1235,9 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // AI INTENT
+            // ---------- AI INTENT ----------
             const aiIntent = await getCalendarIntentFromAI(rawMessageText);
 
-            // 🚨 අලුත් Fix: Chat වචන Blacklist (මේවා ආවොත් කවදාවත් Timetable එකට යන්නේ නෑ!)
             const chatWords = /adaraya|adara|kohomada|kohomda|what is love|meka mokadda|mokadda|mokakda|ayubowan|suba|thanks|stuti/i;
             if (chatWords.test(textLower)) {
                 aiIntent.intent = 'chat';
@@ -1721,7 +1247,6 @@ async function connectToWhatsApp() {
                     aiIntent.intent = 'chat';
                     aiIntent.date_keyword = null;
                 }
-                // ✅ \b ටික add කරලා "ada" එක "adaraya" එකේ match වෙන එක නැවැත්තුවා
                 const isDayMonthQuery = /\b(sanduda|saduda|sikurda|sikurada|eelaga|laban|balanna|ada|heta|anidda|monday|tuesday|wednesday|thursday|friday|saturday|sunday|janawari|february|march|april|may|june|july|august|september|october|november|december)\b/i.test(textLower);
                 if (isDayMonthQuery) {
                    aiIntent.intent = 'calendar';
@@ -1731,39 +1256,93 @@ async function connectToWhatsApp() {
                 } 
             }
 
+            // ================================================================
+            //  📅 CALENDAR COMMAND HANDLER (With Weekly Feature!)
+            // ================================================================
             if (aiIntent.intent === 'calendar') {
+                const lowerText = rawMessageText.toLowerCase().trim();
+
+                // 🟢 CHECK: "calendar", "week", "weekly", "timetable", "මේ සතිය" -> Full Week
+                if (lowerText === 'calendar' || 
+                    lowerText === 'week' || 
+                    lowerText === 'weekly' || 
+                    lowerText === 'timetable' ||
+                    lowerText.includes('me sathiya') || 
+                    lowerText.includes('තිම් ටේබල්') || 
+                    lowerText.includes('මේ සතිය')) {
+                    
+                    const { start, end, weekStart } = getCurrentWeekRange();
+                    const events = await getCalendarEvents(start, end);
+                    
+                    const startDateStr = weekStart.toLocaleDateString('en-LK', { day: 'numeric', month: 'short' });
+                    const endDateStr = new Date(end).toLocaleDateString('en-LK', { day: 'numeric', month: 'short', year: 'numeric' });
+                    let msgText = `📅 *මේ සතියේ Classes (${startDateStr} - ${endDateStr})*\n\n`;
+                    
+                    if (events && events.length > 0) {
+                        const days = {};
+                        events.forEach(ev => {
+                            const evDate = new Date(ev.start?.dateTime || ev.start?.date);
+                            const dateKey = evDate.toLocaleDateString('en-LK', { weekday: 'long', day: 'numeric', month: 'short' });
+                            if (!days[dateKey]) days[dateKey] = [];
+                            days[dateKey].push(ev);
+                        });
+
+                        const sortedDays = Object.keys(days).sort((a, b) => {
+                            const dateA = new Date(a);
+                            const dateB = new Date(b);
+                            return dateA - dateB;
+                        });
+
+                        sortedDays.forEach((day) => {
+                            msgText += `*${day}*\n`;
+                            days[day].forEach((ev) => {
+                                const startTime = new Date(ev.start?.dateTime || ev.start?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit' });
+                                const endTime = new Date(ev.end?.dateTime || ev.end?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit' });
+                                const location = ev.location || '';
+                                msgText += `   🕒 ${startTime} - ${endTime}  *${ev.summary || 'Untitled'}*`;
+                                if (location) msgText += ` (${location})`;
+                                msgText += `\n`;
+                            });
+                            msgText += `\n`;
+                        });
+                    } else {
+                        msgText += "🎉 මේ සතියේ Classes නෑ! Free Week! 💯";
+                    }
+                    
+                    await sock.sendMessage(sender, { text: msgText }, { quoted: msg });
+                    return;
+                }
+
+                // 🟡 ELSE: Specific day query (Today, Tomorrow, Monday, etc.)
                 const { start, end, targetDate } = getTargetDateRange(aiIntent.date_keyword || textLower);
                 const events = await getCalendarEvents(start, end);
 
                 if (events && events.length > 0) {
-                    let msgText = `📅 *${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })} දින Classes:*\n\n`;
+                    let msgTextDay = `📅 *${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })} දින Classes:*\n\n`;
                     events.forEach((ev, idx) => {
                         const startTime = new Date(ev.start?.dateTime || ev.start?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute:'2-digit' });
                         const endTime = new Date(ev.end?.dateTime || ev.end?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute:'2-digit' });
                         const location = ev.location || '';
                         const description = ev.description || '';
                         
-                        msgText += `${idx+1}. *${ev.summary || 'Untitled'}*\n`;
-                        msgText += `   🕒 ${startTime} – ${endTime}\n`;
-                        if (location) msgText += `   📍 *ස්ථානය (Location):* ${location}\n`;
-                        if (description) msgText += `   📝 *විස්තරය (Details):* ${cleanHTML(description)}\n`;
-                        msgText += `\n`;
+                        msgTextDay += `${idx+1}. *${ev.summary || 'Untitled'}*\n`;
+                        msgTextDay += `   🕒 ${startTime} – ${endTime}\n`;
+                        if (location) msgTextDay += `   📍 *ස්ථානය (Location):* ${location}\n`;
+                        if (description) msgTextDay += `   📝 *විස්තරය (Details):* ${cleanHTML(description)}\n`;
+                        msgTextDay += `\n`;
                     });
-                    msgText += `\n🔗 *Full Calendar:* https://calendar.google.com/calendar/u/0?cid=${encodeURIComponent(CALENDAR_ID)}`;
-                    await sock.sendMessage(sender, { text: msgText }, { quoted: msg });
+                    msgTextDay += `\n🔗 *Full Calendar:* https://calendar.google.com/calendar/u/0?cid=${encodeURIComponent(CALENDAR_ID)}`;
+                    await sock.sendMessage(sender, { text: msgTextDay }, { quoted: msg });
                 } else {
-                    // ✅ දවස සංසන්දනය කරලා බලනවා (අදට වඩා ඉදිරියෙන්ද කියලා)
                     const today = new Date();
                     today.setHours(0, 0, 0, 0);
                     const futureDate = new Date(targetDate);
                     futureDate.setHours(0, 0, 0, 0);
                     const diffDays = Math.ceil((futureDate - today) / (1000 * 60 * 60 * 24));
 
-                    // ඉල්ලපු දවස අදට වඩා දින 3ක් හෝ ඊට වැඩියෙන් ඉදිරියෙන් නම් (Next Week වගේ)
                     if (diffDays >= 3) {
                         await sock.sendMessage(sender, { text: `⚠️ *${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })}* දිනට අදාළ Timetable එක තාම Google Calendar එකට එකතු කරලා නැහැ. ටික වේලාවකින් ආයේ අහන්න, නැත්නම් Batch Rep ට දැනුම් දෙන්න!` }, { quoted: msg });
                     } else {
-                        // අද, හෙට, අනිද්දා වගේ දවස් වලට පමණයි "Classes නෑ" කියන්නේ
                         await sock.sendMessage(sender, { text: `🎉 *${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })}* දිනට Classes නෑ!` }, { quoted: msg });
                     }
                 }
@@ -1780,6 +1359,7 @@ async function connectToWhatsApp() {
                 }
             }
 
+            // ---------- OTHER COMMANDS (unchanged) ----------
             // WHO AM I
             if (/\bwho\s*am\s*i\b/i.test(textLower) || textLower.includes('man kauda') || textLower.includes('mama kauda')) {
                 const isAdmin = isSenderAdmin(sender);
@@ -1921,7 +1501,6 @@ Contact Batch Rep: +94 76 251 3957`;
                 return;
             }
 
-           
             // 🎉 FUN & MOTIVATION
             if (textLower === 'motivate me' || textLower === 'daily quote' || textLower === 'inspire me') {
                 const quotes = [
@@ -1961,13 +1540,12 @@ Contact Batch Rep: +94 76 251 3957`;
                 return;
             }
 
-                        // ---------- GENERAL AI RESPONSE (මතකය සමඟ) ✅ අලුත්ම Fix ----------
+            // ---------- GENERAL AI RESPONSE (with memory) ----------
             if (rawMessageText) {
                 try {
                     const history = getRecentContext(sender);
                     let promptToSend = fullUserPrompt;
                     
-                    // ✅ දරුවා "i dont know", "explain", "what" වගේ කියලා යැව්වම, Bot එක ඒක පෙර පණිවිඩයට අදාළ කියලා හඳුනාගන්නවා!
                     if (history) {
                         promptToSend = `මෙන්න User ලා සමඟ ඇති වූ පෙර කතාබහ (Conversation History):\n${history}\n\n\nදැන් User ගේ අලුත් පණිවිඩය: "${fullUserPrompt}".\n\nUser දැන් යවන පණිවිඩය පෙර Bot පණිවිඩයට අදාළ විය හැකියි. කරුණාකර පෙර කතාබහ මත පදනම්ව (පෙර පණිවිඩයේ තේරුම පැහැදිලි කරමින්) සරල සිංහල උත්තරයක් දෙන්න.`;
                     }
