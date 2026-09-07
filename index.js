@@ -594,7 +594,8 @@ function getCurrentWeekRange() {
 }
 
 // ================================================================
-//  ⏰ DAILY TIMETABLE AUTO-PUSH (9:00 PM for tomorrow, Group + Students)
+// ================================================================
+//  ⏰ DAILY TIMETABLE AUTO-PUSH (9:00 PM - No Tip, No Quiz)
 // ================================================================
 async function sendDailyTimetable(sock) {
     if (studentRegistry.length === 0 && !GROUP_JID) {
@@ -629,18 +630,14 @@ async function sendDailyTimetable(sock) {
         if (location) msgText += `   📍 ${location}\n\n`;
     });
 
+    // 📚 Word of the Day (පමණයි - Tip එකක් නැහැ!)
     const wordKeys = Object.keys(academicWords);
     const randomWord = wordKeys[Math.floor(Math.random() * wordKeys.length)];
     msgText += `\n📚 *Word of the Day:* *${randomWord}* - ${academicWords[randomWord]}\n`;
 
-    const tips = [
-        "හෙට ලෙක්චර් එකට කලින් අදාළ නෝට්ස් බලන්න *\"pdf\"* කියලා type කරන්න. Files ලැබෙයි!",
-        "හෙට Classes වලට යන්න කලින් ලෙක්චර් නෝට්ස් බලන්න අමතක කරන්න එපා!",
-        "Bestie, හෙට ලෙක්චර් එකට කලින් *\"pdf\"* කියලා බලන්න, අදාළ notes ටික ready කරගන්න!"
-    ];
-    const randomTip = tips[Math.floor(Math.random() * tips.length)];
-    msgText += `\n💡 *Tip:* ${randomTip}`;
+    // ✅ Tip / Quiz එකක් නැහැ, ඉවත් කරලා!
 
+    // Send to students
     for (const jid of studentRegistry) {
         try {
             await sock.sendMessage(jid, { text: msgText });
@@ -650,6 +647,7 @@ async function sendDailyTimetable(sock) {
         }
     }
 
+    // Send to group
     if (GROUP_JID) {
         try {
             await sock.sendMessage(GROUP_JID, { text: msgText });
@@ -659,7 +657,6 @@ async function sendDailyTimetable(sock) {
         }
     }
 }
-
 // ================================================================
 //  📝 QUIZ GENERATOR (today's PDFs - auto first module, with more/next)
 // ================================================================
