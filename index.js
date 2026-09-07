@@ -354,13 +354,13 @@ CRITICAL CODE & TUTORIAL ANALYSIS RULES:
 
 // Model
 let model = getNextGenAI().getGenerativeModel({
-    model: "gemini-1.5-flash", 
+    model: "gemini-3.5-flash-lite", 
     systemInstruction: systemInstruction
 });
 
 function createModelWithCurrentKey() {
     return getNextGenAI().getGenerativeModel({
-        model: "gemini-1.5-flash", 
+        model: "gemini-3.5-flash-lite", 
         systemInstruction: systemInstruction
     });
 }
