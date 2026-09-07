@@ -62,11 +62,14 @@ function buildPromptWithKnowledge(basePrompt) {
 }
 
 // ================================================================
-//  📚 ACADEMIC WORD LIST (unchanged)
+//  📚 ACADEMIC WORD LIST (sample – ඔබට ඔබගේ complete list එක paste කරන්න)
 // ================================================================
 const academicWords = {
     "estimate": "To guess the amount or value of something.",
-    // ... (මෙතනට ඔබගේ academicWords object එක paste කරන්න, දිග නිසා මම කෙටි කරලා දානවා)
+    "analyze": "To examine in detail.",
+    "evaluate": "To judge the value or condition.",
+    "synthesize": "To combine parts into a whole.",
+    "hypothesis": "A proposed explanation."
 };
 
 // ================================================================
@@ -155,6 +158,20 @@ const messageQueue = new ConcurrencyQueue(MAX_CONCURRENT);
 // ================================================================
 const userMemory = {};
 const lastFileContext = {};
+
+// Quiz state initialization
+function initQuizState(sender) {
+    if (!userMemory[sender]) userMemory[sender] = {};
+    if (!userMemory[sender].quizState) {
+        userMemory[sender].quizState = {
+            moduleCode: null,
+            moduleIndex: -1,
+            questionCount: 10,
+            lastQuizTime: 0,
+            waitingForResponse: false
+        };
+    }
+}
 
 function getRecentContext(userId) {
     const history = userMemory[userId];
@@ -337,19 +354,19 @@ CRITICAL CODE & TUTORIAL ANALYSIS RULES:
 
 // Model
 let model = getNextGenAI().getGenerativeModel({
-    model: "gemini-3.5-flash-lite", 
+    model: "gemini-1.5-flash", 
     systemInstruction: systemInstruction
 });
 
 function createModelWithCurrentKey() {
     return getNextGenAI().getGenerativeModel({
-        model: "gemini-3.5-flash-lite", 
+        model: "gemini-1.5-flash", 
         systemInstruction: systemInstruction
     });
 }
 
 async function generateContentWithRetry(modelInstance, request, maxRetries = 4) {
-    let delay = 1000; // 1 second initial delay
+    let delay = 1000;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
         try {
@@ -365,9 +382,9 @@ async function generateContentWithRetry(modelInstance, request, maxRetries = 4) 
 
                 console.log(`Error ${error.status} detected. Switching to key #${currentKeyIndex} and retrying in ${delay/1000}s...`);
                 await new Promise(resolve => setTimeout(resolve, delay));
-                delay *= 2; // Exponential backoff (1s, 2s, 4s, 8s)
+                delay *= 2;
             } else {
-                throw error; // other errors (400, 401)
+                throw error;
             }
         }
     }
@@ -562,7 +579,7 @@ async function getCalendarEvents(start, end) {
 function getCurrentWeekRange() {
     const utcNow = new Date();
     let now = new Date(utcNow.toLocaleString('en-US', { timeZone: 'Asia/Colombo' }));
-    const dayOfWeek = now.getDay(); // 0=Sunday, 1=Monday ... 6=Saturday
+    const dayOfWeek = now.getDay();
     
     const diffToSunday = -dayOfWeek; 
     const sunday = new Date(now);
@@ -577,7 +594,7 @@ function getCurrentWeekRange() {
 }
 
 // ================================================================
-//  ⏰ DAILY TIMETABLE AUTO-PUSH (9:30 PM for tomorrow, Group + Students)
+//  ⏰ DAILY TIMETABLE AUTO-PUSH (9:00 PM for tomorrow, Group + Students)
 // ================================================================
 async function sendDailyTimetable(sock) {
     if (studentRegistry.length === 0 && !GROUP_JID) {
@@ -644,7 +661,7 @@ async function sendDailyTimetable(sock) {
 }
 
 // ================================================================
-//  📝 QUIZ GENERATOR (today's PDFs)
+//  📝 QUIZ GENERATOR (today's PDFs - auto first module, with more/next)
 // ================================================================
 async function handleQuizCommand(sock, sender, msg, specificModule = '') {
     try {
@@ -670,70 +687,89 @@ async function handleQuizCommand(sock, sender, msg, specificModule = '') {
         });
 
         if (todayModules.length === 0) {
-            await sock.sendMessage(sender, { text: "📭 අද Classes තියෙනවා, ඒත් Module Codes හඳුනාගන්න බැරි වුණා. Quiz එකක් හදන්න බැහැ." }, { quoted: msg });
+            await sock.sendMessage(sender, { text: "📭 අද Classes තියෙනවා, ඒත් Module Codes හඳුනාගන්න බැරි වුණා." }, { quoted: msg });
             return;
         }
 
-        if (!specificModule) {
-            if (todayModules.length === 1) {
-                specificModule = todayModules[0].code; 
+        // Determine which module to use
+        let selectedModule = null;
+        let selectedIndex = 0;
+
+        if (specificModule) {
+            const matched = todayModules.find(m => 
+                m.code.toLowerCase().includes(specificModule.toLowerCase()) ||
+                m.fullName.toLowerCase().includes(specificModule.toLowerCase())
+            );
+            if (matched) {
+                selectedModule = matched;
+                selectedIndex = todayModules.indexOf(matched);
             } else {
-                const list = todayModules.map((m, i) => `${i+1}. *${m.code}* - ${m.fullName}`).join('\n');
+                selectedModule = todayModules[0];
+                selectedIndex = 0;
                 await sock.sendMessage(sender, { 
-                    text: `📚 අද තියෙන Modules කිහිපයක් තියෙනවා. ඔයාට ඕන Module එක තෝරන්න:\n\n${list}\n\n👉 *Type කරන්න:* \`Quiz ${todayModules[0].code}\` (උදා: Quiz SE1020)` 
+                    text: `⚠️ ඔබ ඇසූ Module එක අද තියෙන්නේ නැහැ. පළමු Module එකෙන් Quiz එකක් හදන්නම්!` 
                 }, { quoted: msg });
-                return;
+            }
+        } else {
+            initQuizState(sender);
+            const state = userMemory[sender].quizState;
+            if (state.moduleCode && state.waitingForResponse) {
+                const existing = todayModules.find(m => m.code === state.moduleCode);
+                if (existing) {
+                    selectedModule = existing;
+                    selectedIndex = todayModules.indexOf(existing);
+                } else {
+                    selectedModule = todayModules[0];
+                    selectedIndex = 0;
+                }
+            } else {
+                selectedModule = todayModules[0];
+                selectedIndex = 0;
             }
         }
 
-        const query = specificModule.toLowerCase();
-        let targetModules = todayModules.filter(m => 
-            m.code.toLowerCase().includes(query) || 
-            m.fullName.toLowerCase().includes(query)
-        );
+        initQuizState(sender);
+        userMemory[sender].quizState.moduleCode = selectedModule.code;
+        userMemory[sender].quizState.moduleIndex = selectedIndex;
+        userMemory[sender].quizState.questionCount = 10;
+        userMemory[sender].quizState.lastQuizTime = Date.now();
+        userMemory[sender].quizState.waitingForResponse = false;
 
-        if (targetModules.length === 0) {
-            const list = todayModules.map(m => m.code).join(', ');
-            await sock.sendMessage(sender, { text: `⚠️ ඒ Module එක අද තියෙන්නේ නෑ! අද තියෙන Modules: *${list}*\n\nඋදාහරණයක් විදිහට: \`Quiz SE1020\`` }, { quoted: msg });
+        const moduleCode = selectedModule.code;
+        const moduleName = selectedModule.fullName || moduleCode;
+
+        const moduleKeywords = MODULE_FILE_MAP[moduleCode] || [moduleCode.toLowerCase()];
+        const file = fileRegistry.find(f => {
+            const keyword = f.keyword.toLowerCase();
+            return moduleKeywords.some(kw => keyword.includes(kw)) || 
+                   moduleKeywords.some(kw => (f.fileName || '').toLowerCase().includes(kw));
+        });
+
+        if (!file) {
+            let message;
+            if (isSenderAdmin(sender)) {
+                message = `📭 ${moduleCode} සඳහා PDF File එකක් හම්බුනේ නැහැ.\n\n💡 *උපදෙස්:* අදාළ PDF එක \`add file: ${moduleCode} notes\` ලෙස Save කරන්න.`;
+            } else {
+                message = `📭 ${moduleCode} සඳහා PDF File එකක් තාම Add කරලා නැහැ. Batch Rep ට දැනුම් දෙන්න.`;
+            }
+            await sock.sendMessage(sender, { text: message }, { quoted: msg });
             return;
         }
 
-        for (const module of targetModules) {
-            const moduleCode = module.code;
-            const moduleName = module.fullName || moduleCode;
+        const filePath = path.join(FILES_DIR, file.storedFileName);
+        if (!fs.existsSync(filePath)) {
+            await sock.sendMessage(sender, { text: `❌ ${moduleCode} සඳහා File එක Server එකේ නෑ. Admin ට කියන්න.` }, { quoted: msg });
+            return;
+        }
 
-            const moduleKeywords = MODULE_FILE_MAP[moduleCode] || [moduleCode.toLowerCase()];
-            const file = fileRegistry.find(f => {
-                const keyword = f.keyword.toLowerCase();
-                return moduleKeywords.some(kw => keyword.includes(kw)) || 
-                       moduleKeywords.some(kw => (f.fileName || '').toLowerCase().includes(kw));
-            });
+        try {
+            await sock.sendMessage(sender, { text: `📝 *${moduleCode}* සඳහා Quiz එක හදමින්...` }, { quoted: msg });
 
-            if (!file) {
-                let message;
-                if (isSenderAdmin(sender)) {
-                    message = `📭 ${moduleCode} සඳහා PDF File එකක් හම්බුනේ නැහැ.\n\n💡 *උපදෙස්:* අදාළ PDF එක \`add file: ${moduleCode} notes\` ලෙස Save කරන්න.`;
-                } else {
-                    message = `📭 ${moduleCode} සඳහා PDF File එකක් තාම Add කරලා නැහැ. Batch Rep ට දැනුම් දෙන්න.`;
-                }
-                await sock.sendMessage(sender, { text: message }, { quoted: msg });
-                continue; 
-            }
+            const pdfBuffer = fs.readFileSync(filePath);
+            const base64Pdf = pdfBuffer.toString('base64');
+            const pdfPart = { inlineData: { data: base64Pdf, mimeType: 'application/pdf' } };
 
-            const filePath = path.join(FILES_DIR, file.storedFileName);
-            if (!fs.existsSync(filePath)) {
-                await sock.sendMessage(sender, { text: `❌ ${moduleCode} සඳහා File එක Server එකේ නෑ. Admin ට කියන්න.` }, { quoted: msg });
-                continue;
-            }
-
-            try {
-                await sock.sendMessage(sender, { text: `📝 *${moduleCode}* සඳහා Quiz එක හදමින්...` }, { quoted: msg });
-
-                const pdfBuffer = fs.readFileSync(filePath);
-                const base64Pdf = pdfBuffer.toString('base64');
-                const pdfPart = { inlineData: { data: base64Pdf, mimeType: 'application/pdf' } };
-
-                const quizPrompt = `You are a university lecturer. Based on the following lecture content for the module "${moduleName}", create a quiz with 10 questions.
+            const quizPrompt = `You are a university lecturer. Based on the following lecture content for the module "${moduleName}", create a quiz with 10 questions.
 
 RULES:
 - Questions should test understanding, not just memorization.
@@ -746,21 +782,42 @@ RULES:
   3. Use simple Sinhala words (Singlish / Sinhala script is fine) to explain concepts that might be difficult.
 
 LECTURE CONTENT:
-${/* PDF content will be sent as a part */ ''}
+${/* PDF will be sent as a part */ ''}
 
 Generate the quiz now.`;
 
-                geminiRequestsToday++;
-                const result = await generateContentWithRetry(model, [quizPrompt, pdfPart]);
-                const quizReply = formatMathForWhatsApp(result.response.text());
+            geminiRequestsToday++;
+            const result = await generateContentWithRetry(model, [quizPrompt, pdfPart]);
+            const quizReply = formatMathForWhatsApp(result.response.text());
 
-                const header = `📝 *${moduleCode} - Quiz* (${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })})\n───────────────────\n\n`;
-                await sock.sendMessage(sender, { text: header + quizReply }, { quoted: msg });
+            const header = `📝 *${moduleCode} - Quiz* (${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })})\n───────────────────\n\n`;
+            await sock.sendMessage(sender, { text: header + quizReply }, { quoted: msg });
 
-            } catch (error) {
-                console.error(`Error generating quiz for ${moduleCode}:`, error);
-                await sock.sendMessage(sender, { text: `❌ ${moduleCode} Quiz එක හදන්න බැරි වුණා. නැවත try කරන්න.` }, { quoted: msg });
+            const todayModuleCodes = todayModules.map(m => m.code);
+            const currentIndex = selectedIndex;
+            const hasNextModule = currentIndex < todayModules.length - 1;
+            const hasMoreQuestions = true;
+
+            let followUpMsg = `\n✅ *ප්‍රශ්න 10 ඉවරයි!*\n\n`;
+            if (hasMoreQuestions) {
+                followUpMsg += `👉 *"more"* - ${moduleCode} එකෙන් තවත් ප්‍රශ්න 10ක් බලන්න. 📚\n`;
             }
+            if (hasNextModule) {
+                const nextModule = todayModules[currentIndex + 1];
+                followUpMsg += `👉 *"next module"* - ${nextModule.code} එකෙන් Quiz එකක් බලන්න. 🔄\n`;
+            }
+            if (!hasMoreQuestions && !hasNextModule) {
+                followUpMsg += `🎉 අද තියෙන හැම Module එකෙන්ම Quiz බැලුවා! ආයෙත් අදාළ Module එකක් Type කරන්න.`;
+            } else {
+                followUpMsg += `\n💡 *උදා:* "more" හෝ "next module" කියලා Type කරන්න.`;
+            }
+
+            userMemory[sender].quizState.waitingForResponse = true;
+            await sock.sendMessage(sender, { text: followUpMsg }, { quoted: msg });
+
+        } catch (error) {
+            console.error(`Error generating quiz for ${moduleCode}:`, error);
+            await sock.sendMessage(sender, { text: `❌ ${moduleCode} Quiz එක හදන්න බැරි වුණා. නැවත try කරන්න.` }, { quoted: msg });
         }
 
     } catch (error) {
@@ -852,14 +909,14 @@ async function connectToWhatsApp() {
             }
         });
 
-        // ⏰ CRON JOB (✅ හැමදාම රෑ 9:30 ට)
-        cron.schedule('30 21 * * *', async () => {
-            console.log('⏰ Running Tomorrow Timetable Push at 9:30 PM SL Time...');
+        // ⏰ CRON JOB (9:00 PM)
+        cron.schedule('0 21 * * *', async () => {
+            console.log('⏰ Running Tomorrow Timetable Push at 9:00 PM SL Time...');
             await sendDailyTimetable(sock);
         }, { timezone: 'Asia/Colombo' });
 
         // ----------------------------------------------------------------
-        //  processMessage (with Weekly Calendar Feature Added!)
+        //  processMessage (with Voice Command, Smart PDF, etc.)
         // ----------------------------------------------------------------
         async function processMessage(sock, msg) {
             const sender = msg.key.remoteJid;
@@ -887,7 +944,6 @@ async function connectToWhatsApp() {
                     await sock.sendMessage(sender, { text: `🆔 *Group ID:* \`${sender}\`` }, { quoted: msg });
                     return;
                 }
-
                 if (!GROUP_JID) {
                     console.log(`📢 Group ID Found (Silent Log): ${sender}`);
                 }
@@ -908,7 +964,9 @@ async function connectToWhatsApp() {
             await sock.readMessages([msg.key]);
             await sock.sendPresenceUpdate('composing', sender);
 
-            // ---------- AUDIO ----------
+            // ================================================================
+            //  🎤 VOICE COMMAND HANDLER (NEW FEATURE)
+            // ================================================================
             if (audioMsg) {
                 try {
                     await sock.sendMessage(sender, { text: "🎙️ **Voice Note Process වෙමින්...**" }, { quoted: msg });
@@ -916,10 +974,40 @@ async function connectToWhatsApp() {
                     const mp3Buffer = await convertAudioToMp3(oggBuffer);
                     const base64Audio = mp3Buffer.toString('base64');
                     const audioPart = { inlineData: { data: base64Audio, mimeType: 'audio/mp3' } };
-                    const prompt = buildPromptWithKnowledge("Listen to this audio and reply.");
-                    const result = await generateContentWithRetry(model, [prompt, audioPart]);
-                    const reply = formatMathForWhatsApp(result.response.text());
-                    await sock.sendMessage(sender, { text: reply }, { quoted: msg });
+
+                    // Step 1: Transcribe with Gemini
+                    const transcribePrompt = "Transcribe the following audio message accurately. Output only the transcribed text, nothing else.";
+                    const transcribeResult = await generateContentWithRetry(model, [transcribePrompt, audioPart]);
+                    const transcribedText = transcribeResult.response.text().trim();
+                    console.log('🎤 Transcribed:', transcribedText);
+
+                    // Step 2: Detect intent
+                    const intent = await getCalendarIntentFromAI(transcribedText);
+                    if (intent.intent === 'calendar') {
+                        // Handle timetable request
+                        const { start, end, targetDate } = getTargetDateRange(intent.date_keyword || transcribedText);
+                        const events = await getCalendarEvents(start, end);
+                        if (events && events.length > 0) {
+                            let msgText = `📅 *${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })} දින Classes:*\n\n`;
+                            events.forEach((ev, idx) => {
+                                const startTime = new Date(ev.start?.dateTime || ev.start?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit' });
+                                const endTime = new Date(ev.end?.dateTime || ev.end?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit' });
+                                const location = ev.location || '';
+                                msgText += `${idx+1}. *${ev.summary || 'Untitled'}*\n   🕒 ${startTime} – ${endTime}\n`;
+                                if (location) msgText += `   📍 ${location}\n\n`;
+                            });
+                            msgText += `\n🔗 *Full Calendar:* https://calendar.google.com/calendar/u/0?cid=${encodeURIComponent(CALENDAR_ID)}`;
+                            await sock.sendMessage(sender, { text: msgText }, { quoted: msg });
+                        } else {
+                            await sock.sendMessage(sender, { text: `🎉 *${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })}* දිනට Classes නෑ!` }, { quoted: msg });
+                        }
+                    } else {
+                        // Fallback: Answer normally using transcribed text
+                        const prompt = buildPromptWithKnowledge(`User said (voice note): "${transcribedText}"\nReply accordingly.`);
+                        const result = await generateContentWithRetry(model, prompt);
+                        const reply = formatMathForWhatsApp(result.response.text());
+                        await sock.sendMessage(sender, { text: reply }, { quoted: msg });
+                    }
                 } catch (err) {
                     console.error('Audio error:', err);
                     await sock.sendMessage(sender, { text: "❌ Voice message එක process කරන්න බැරි වුණා." }, { quoted: msg });
@@ -927,21 +1015,37 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // ---------- ADD FILE (Admin) ----------
+            // ---------- ADD FILE (Auto-keyword if missing) ----------
             if ((docMsg || imgMsg) && /^add file\b/i.test(rawMessageText.toLowerCase().trim())) {
                 if (!isSenderAdmin(sender)) {
                     await sock.sendMessage(sender, { text: "❌ මේක කරන්න පුළුවන් Batch Rep ට විතරයි!" }, { quoted: msg });
                     return;
                 }
-                const keyword = rawMessageText.replace(/^add file\s*:?\s*/i, '').trim().toLowerCase();
-                if (!keyword) {
-                    await sock.sendMessage(sender, { text: "⚠️ Keyword එකත් caption එකේ දෙන්න: add file: course outline" }, { quoted: msg });
-                    return;
+                let keyword = rawMessageText.replace(/^add file\s*:?\s*/i, '').trim().toLowerCase();
+                const media = docMsg || imgMsg;
+                const ext = path.extname(media.fileName || '') || (docMsg ? '.pdf' : '.jpg');
+
+                if (!keyword && docMsg && docMsg.mimetype === 'application/pdf') {
+                    try {
+                        const buffer = await downloadMediaMessage(msg, 'buffer', {});
+                        const base64Pdf = buffer.toString('base64');
+                        const pdfPart = { inlineData: { data: base64Pdf, mimeType: 'application/pdf' } };
+                        const detectPrompt = "Extract the module code (like SE1020, IT1170, etc.) from this PDF. If multiple, return the first one. Output only the code, nothing else.";
+                        const result = await generateContentWithRetry(model, [detectPrompt, pdfPart]);
+                        keyword = result.response.text().trim().toUpperCase();
+                        if (!keyword || keyword.length < 4) {
+                            keyword = media.fileName ? media.fileName.replace(/\.[^.]+$/, '').toLowerCase() : 'file';
+                        }
+                        console.log(`🤖 Auto-detected keyword: ${keyword}`);
+                    } catch (e) {
+                        keyword = media.fileName ? media.fileName.replace(/\.[^.]+$/, '').toLowerCase() : 'file';
+                    }
+                } else if (!keyword) {
+                    keyword = media.fileName ? media.fileName.replace(/\.[^.]+$/, '').toLowerCase() : 'file';
                 }
+
                 try {
                     const buffer = await downloadMediaMessage(msg, 'buffer', {});
-                    const media = docMsg || imgMsg;
-                    const ext = path.extname(media.fileName || '') || (docMsg ? '.pdf' : '.jpg');
                     const storedFileName = `${crypto.randomUUID()}${ext}`;
                     fs.writeFileSync(path.join(FILES_DIR, storedFileName), buffer);
                     fileRegistry.push({
@@ -1011,7 +1115,141 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // 🛠️ ADMIN MENU
+            // ---------- QUIZ FOLLOW-UP COMMANDS ----------
+            const isQuizFollowUp = textLower === 'more' || textLower === 'ඉවරයි' || textLower === 'තවත්' || 
+                                   textLower === 'next' || textLower === 'next module' || textLower === 'වෙනත්' || 
+                                   textLower === 'switch' || textLower === 'මීළඟ';
+
+            if (isQuizFollowUp) {
+                initQuizState(sender);
+                const state = userMemory[sender].quizState;
+                if (!state.moduleCode || !state.waitingForResponse) {
+                    await sock.sendMessage(sender, { text: "⚠️ ඔබ දැනට quiz session එකක් පටන් ගෙන නැහැ. `quiz` කියලා type කරන්න." }, { quoted: msg });
+                    return;
+                }
+
+                if (textLower === 'more' || textLower === 'තවත්' || textLower === 'ඉවරයි') {
+                    await handleQuizCommand(sock, sender, msg, state.moduleCode);
+                    return;
+                }
+
+                if (textLower === 'next module' || textLower === 'වෙනත්' || textLower === 'switch' || textLower === 'next' || textLower === 'මීළඟ') {
+                    const { start, end } = getTargetDateRange('today');
+                    const events = await getCalendarEvents(start, end);
+                    if (events && events.length > 0) {
+                        const todayModules = [];
+                        events.forEach(ev => {
+                            const summary = ev.summary || '';
+                            const moduleCodeMatch = summary.match(/(SE|IT|IE)\d{4}/i);
+                            if (moduleCodeMatch) {
+                                todayModules.push({
+                                    code: moduleCodeMatch[0].toUpperCase(),
+                                    fullName: summary,
+                                    event: ev
+                                });
+                            }
+                        });
+                        const currentIndex = state.moduleIndex;
+                        const nextIndex = currentIndex + 1;
+                        if (nextIndex < todayModules.length) {
+                            const nextModule = todayModules[nextIndex];
+                            await handleQuizCommand(sock, sender, msg, nextModule.code);
+                        } else {
+                            await sock.sendMessage(sender, { text: "🎉 අද තියෙන හැම Module එකෙන්ම Quiz බැලුවා! ආයෙත් `quiz` කියලා type කරන්න." }, { quoted: msg });
+                        }
+                    } else {
+                        await sock.sendMessage(sender, { text: "📭 අද Classes නෑ, ඒ නිසා වෙනත් Module එකක් නැහැ." }, { quoted: msg });
+                    }
+                    return;
+                }
+            }
+
+            // 🧠 SMART PDF COMMAND
+            if (textLower === 'pdf' || textLower === 'file' || textLower === 'danna' || textLower === 'ewanna' || textLower === 'give file' || textLower === 'send file') {
+                let matchedFile = null;
+                let detectedModule = null;
+
+                // 1. Recent conversation
+                const history = userMemory[sender] || [];
+                const moduleCodes = ['SE1020', 'IT1170', 'IT1160', 'IT1150', 'IE1011'];
+                let lastModule = null;
+                for (let i = history.length - 1; i >= 0; i--) {
+                    const msgText = history[i].text || '';
+                    for (const code of moduleCodes) {
+                        if (msgText.toUpperCase().includes(code)) {
+                            lastModule = code;
+                            break;
+                        }
+                    }
+                    if (lastModule) break;
+                }
+
+                if (lastModule) {
+                    detectedModule = lastModule;
+                    matchedFile = fileRegistry.find(f => 
+                        f.keyword.toLowerCase().includes(lastModule.toLowerCase()) ||
+                        (f.fileName || '').toLowerCase().includes(lastModule.toLowerCase())
+                    );
+                }
+
+                // 2. Today's timetable
+                if (!matchedFile) {
+                    const { start, end } = getTargetDateRange('today');
+                    const events = await getCalendarEvents(start, end);
+                    if (events && events.length > 0) {
+                        for (const ev of events) {
+                            const summary = ev.summary || '';
+                            const codeMatch = summary.match(/(SE|IT|IE)\d{4}/i);
+                            if (codeMatch) {
+                                const code = codeMatch[0].toUpperCase();
+                                detectedModule = code;
+                                const f = fileRegistry.find(f => 
+                                    f.keyword.toLowerCase().includes(code.toLowerCase()) ||
+                                    (f.fileName || '').toLowerCase().includes(code.toLowerCase())
+                                );
+                                if (f) { matchedFile = f; break; }
+                            }
+                        }
+                    }
+                }
+
+                if (!matchedFile) {
+                    if (fileRegistry.length === 0) {
+                        await sock.sendMessage(sender, { text: "📭 කිසිම file එකක් save කරලා නැහැ. Batch Rep ට කියලා Add කරගන්න." }, { quoted: msg });
+                        return;
+                    }
+                    if (detectedModule) {
+                        await sock.sendMessage(sender, { text: `📭 *${detectedModule}* සඳහා File එකක් හම්බුනේ නැහැ.\n\nමෙන්න තියෙන Files:\n${fileRegistry.map((f, i) => `${i+1}. ${f.keyword}`).join('\n')}\n\n👉 Type කරන්න: \`${fileRegistry[0].keyword}\`` }, { quoted: msg });
+                    } else {
+                        const fileList = fileRegistry.map((f, i) => `${i+1}. *${f.keyword}*`).join('\n');
+                        await sock.sendMessage(sender, { 
+                            text: `📂 *Available Files:*\n\n${fileList}\n\n💡 ඔබට ඕන file එකේ keyword එක type කරන්න (e.g., *${fileRegistry[0].keyword}*)` 
+                        }, { quoted: msg });
+                    }
+                    return;
+                }
+
+                try {
+                    const filePath = path.join(FILES_DIR, matchedFile.storedFileName);
+                    if (fs.existsSync(filePath)) {
+                        const buffer = fs.readFileSync(filePath);
+                        await sock.sendMessage(sender, {
+                            document: buffer,
+                            mimetype: matchedFile.mimetype || 'application/pdf',
+                            fileName: matchedFile.fileName || 'document.pdf'
+                        }, { quoted: msg });
+                        lastFileContext[sender] = matchedFile;
+                    } else {
+                        await sock.sendMessage(sender, { text: "❌ File එක Server එකේ නෑ. Admin ට කියලා ආයේ Add කරන්න." }, { quoted: msg });
+                    }
+                } catch (err) {
+                    console.error('❌ Error sending file:', err);
+                    await sock.sendMessage(sender, { text: "❌ File එක යවන්න අවුලක් වුණා. නැවත try කරන්න." }, { quoted: msg });
+                }
+                return;
+            }
+
+            // ---------- ADMIN MENU ----------
             if (textLower === 'admin' || textLower === 'admin menu' || textLower === 'menu admin' || textLower === 'adminhelp' || textLower === '/admin') {
                 if (!isSenderAdmin(sender)) {
                     await sock.sendMessage(sender, { text: "❌ මේක බලන්න පුළුවන් Batch Rep ට විතරයි! 🚫" }, { quoted: msg });
@@ -1025,6 +1263,7 @@ async function connectToWhatsApp() {
 🗑️ *remove info [number]* - Info එකක් අයින් කරන්න
 
 📤 *add file: [keyword]* - PDF/Image එකක් save කරන්න
+   (Keyword නැතුව upload කළොත් AI එකෙන් auto detect වෙයි!)
 📋 *list files* - Save කරලා තියෙන Files ටික බලන්න (Files ටිකත් එනවා!)
 🗑️ *remove file [number]* - File එකක් අයින් කරන්න
 
@@ -1091,133 +1330,6 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // ✅ pdf / file / danna / ewanna (Last File Context)
-            if ((textLower === 'pdf' || textLower === 'file' || textLower === 'danna' || textLower === 'ewanna') && lastFileContext[sender]) {
-                const lastFile = lastFileContext[sender];
-                const lastFilePath = path.join(FILES_DIR, lastFile.storedFileName);
-                if (fs.existsSync(lastFilePath)) {
-                    const buffer = fs.readFileSync(lastFilePath);
-                    await sock.sendMessage(sender, {
-                        document: buffer,
-                        mimetype: lastFile.mimetype || 'application/pdf',
-                        fileName: lastFile.fileName || 'document.pdf'
-                    }, { quoted: msg });
-                } else {
-                    await sock.sendMessage(sender, { text: "❌ File එක නෑ. Admin ට කියලා ආයේ Add කරන්න." }, { quoted: msg });
-                }
-                return;
-            }
-
-            // 🚨 SMART FILE HANDLING
-            const explicitFileWords = /\b(pdf|file|send|download|document|danna|ewanna|yawanna|evidence|source|uththara|sadaha|reference|prove|copy)\b/i;
-            const isExplicitFileRequest = explicitFileWords.test(textLower);
-
-            const generalChatRegex = /adaraya|adara|kohomada|kohomda|what is love|meka mokadda|mokadda|mokakda|ayubowan|suba|thanks|stuti|mata|mage|kelle|kella|set|kohome|wage|kenek|kohomada|mokakda|meka|kohomada|kohomda|ආදරය|කෙල්ල|කොහොමද|මොකක්ද/i;
-            const isGeneralChat = generalChatRegex.test(textLower);
-
-            if (!isGeneralChat && isExplicitFileRequest) {
-                let matchedFile = fileRegistry.find(f => {
-                    const kw = f.keyword.toLowerCase();
-                    const kwWords = kw.split(/[\s,:.!?()]+/).filter(w => w.length >= 2);
-                    return textLower.includes(kw) || kwWords.some(word => textLower.includes(word));
-                });
-
-                if (matchedFile) {
-                    const filePath = path.join(FILES_DIR, matchedFile.storedFileName);
-
-                    if (isExplicitFileRequest) {
-                        try {
-                            if (fs.existsSync(filePath)) {
-                                const buffer = fs.readFileSync(filePath);
-                                await sock.sendMessage(sender, {
-                                    document: buffer,
-                                    mimetype: matchedFile.mimetype || 'application/pdf',
-                                    fileName: matchedFile.fileName || 'document.pdf'
-                                }, { quoted: msg });
-                            } else {
-                                await sock.sendMessage(sender, { text: "❌ File එක නෑ. Admin ට කියලා ආයේ Add කරන්න." }, { quoted: msg });
-                            }
-                        } catch (err) {
-                            console.error('❌ Error sending file:', err);
-                            await sock.sendMessage(sender, { text: "❌ File එක යවන්න අවුලක් වුණා. නැවත try කරන්න." }, { quoted: msg });
-                        }
-                        return;
-                    }
-
-                    if (matchedFile.mimetype === 'application/pdf') {
-                        try {
-                            if (fs.existsSync(filePath)) {
-                                const pdfBuffer = fs.readFileSync(filePath);
-                                const base64Pdf = pdfBuffer.toString('base64');
-                                const pdfPart = { inlineData: { data: base64Pdf, mimeType: 'application/pdf' } };
-
-                                const queryPrompt = `Read the attached PDF file. The user has asked: "${rawMessageText}".\n\nAnswer the user's question directly, briefly, and clearly based *ONLY* on the information in the PDF file. If the answer is not in the PDF, say "Sorry, this information is not in the file." Do not mention the file name unless necessary.`;
-
-                                geminiRequestsToday++;
-                                const result = await generateContentWithRetry(model, [queryPrompt, pdfPart]);
-                                const reply = formatMathForWhatsApp(result.response.text());
-
-                                lastFileContext[sender] = matchedFile;
-
-                                const userGuide = `\n\n📄 *ඔයාට මේ තොරතුරු වල සාක්ෂි (Evidence) බලන්න ඕනද?*\n👉 එතකොට *"pdf"* කියලා type කරන්න.`;
-
-                                await sock.sendMessage(sender, { text: reply + userGuide }, { quoted: msg });
-                            } else {
-                                await sock.sendMessage(sender, { text: "❌ File එක නෑ. Admin ට කියලා ආයේ Add කරන්න." }, { quoted: msg });
-                            }
-                        } catch (error) {
-                            console.error('AI File Query Error:', error);
-                            await sock.sendMessage(sender, { text: "❌ File එක විවෘත කරන්න බැරි වුණා. ආයේ උත්සාහ කරන්න." }, { quoted: msg });
-                        }
-                        return;
-                    }
-
-                    if (matchedFile.mimetype && matchedFile.mimetype.startsWith('image/')) {
-                        try {
-                            await sock.sendMessage(sender, { text: "🖼️ **Image එක විශ්ලේෂණය කරමින්...**" }, { quoted: msg });
-                            if (fs.existsSync(filePath)) {
-                                const imageBuffer = fs.readFileSync(filePath);
-                                const base64Image = imageBuffer.toString('base64');
-                                const imagePart = { inlineData: { data: base64Image, mimeType: matchedFile.mimetype } };
-
-                                const queryPrompt = `Please analyze the attached image. The user has asked: "${rawMessageText}".\n\nAnswer the user's question directly, briefly, and clearly based *ONLY* on the information in the image. If the answer is not in the image, say "Sorry, this information is not in the image."`;
-
-                                geminiRequestsToday++;
-                                const result = await generateContentWithRetry(model, [queryPrompt, imagePart]);
-                                const reply = formatMathForWhatsApp(result.response.text());
-
-                                lastFileContext[sender] = matchedFile;
-
-                                await sock.sendMessage(sender, { text: reply }, { quoted: msg });
-                            } else {
-                                await sock.sendMessage(sender, { text: "❌ File එක නෑ. Admin ට කියලා ආයේ Add කරන්න." }, { quoted: msg });
-                            }
-                        } catch (error) {
-                            console.error('AI Image Query Error:', error);
-                            await sock.sendMessage(sender, { text: "❌ Image එක කියවන්න බැරි වුණා. ආයේ උත්සාහ කරන්න." }, { quoted: msg });
-                        }
-                        return;
-                    }
-
-                    try {
-                        if (fs.existsSync(filePath)) {
-                            const buffer = fs.readFileSync(filePath);
-                            await sock.sendMessage(sender, {
-                                document: buffer,
-                                mimetype: matchedFile.mimetype || 'application/pdf',
-                                fileName: matchedFile.fileName || 'document.pdf'
-                            }, { quoted: msg });
-                        } else {
-                            await sock.sendMessage(sender, { text: "❌ File එක නෑ. Admin ට කියලා ආයේ Add කරන්න." }, { quoted: msg });
-                        }
-                    } catch (err) {
-                        console.error('❌ Error sending file:', err);
-                        await sock.sendMessage(sender, { text: "❌ File එක යවන්න අවුලක් වුණා. නැවත try කරන්න." }, { quoted: msg });
-                    }
-                    return;
-                }
-            }
-
             // 🚨 REMOVE INFO (Admin)
             if (/^remove info\s+\d+/i.test(textLower)) {
                 if (!isSenderAdmin(sender)) {
@@ -1232,207 +1344,6 @@ async function connectToWhatsApp() {
                 const removed = knowledgeBase.splice(idx, 1);
                 saveKnowledgeBase();
                 await sock.sendMessage(sender, { text: `🗑️ Removed: "${removed[0]}"` }, { quoted: msg });
-                return;
-            }
-
-            // ---------- AI INTENT ----------
-            const aiIntent = await getCalendarIntentFromAI(rawMessageText);
-
-            const chatWords = /adaraya|adara|kohomada|kohomda|what is love|meka mokadda|mokadda|mokakda|ayubowan|suba|thanks|stuti/i;
-            if (chatWords.test(textLower)) {
-                aiIntent.intent = 'chat';
-                aiIntent.date_keyword = null;
-            } else {
-                if (/exam|quiz|mid|test|assessment|date|kawadda|set wenne|විභාග|ප්‍රශ්න|කුසීස්|මචි/i.test(textLower)) {
-                    aiIntent.intent = 'chat';
-                    aiIntent.date_keyword = null;
-                }
-                const isDayMonthQuery = /\b(sanduda|saduda|sikurda|sikurada|eelaga|laban|balanna|ada|heta|anidda|monday|tuesday|wednesday|thursday|friday|saturday|sunday|janawari|february|march|april|may|june|july|august|september|october|november|december)\b/i.test(textLower);
-                if (isDayMonthQuery) {
-                   aiIntent.intent = 'calendar';
-                   if (!aiIntent.date_keyword) {
-                       aiIntent.date_keyword = textLower;
-                    }
-                } 
-            }
-
-            // ================================================================
-            //  📅 CALENDAR COMMAND HANDLER (With Weekly Feature!)
-            // ================================================================
-            if (aiIntent.intent === 'calendar') {
-                const lowerText = rawMessageText.toLowerCase().trim();
-
-                // 🟢 CHECK: "calendar", "week", "weekly", "timetable", "මේ සතිය" -> Full Week
-                if (lowerText === 'calendar' || 
-                    lowerText === 'week' || 
-                    lowerText === 'weekly' || 
-                    lowerText === 'timetable' ||
-                    lowerText.includes('me sathiya') || 
-                    lowerText.includes('තිම් ටේබල්') || 
-                    lowerText.includes('මේ සතිය')) {
-                    
-                    const { start, end, weekStart } = getCurrentWeekRange();
-                    const events = await getCalendarEvents(start, end);
-                    
-                    const startDateStr = weekStart.toLocaleDateString('en-LK', { day: 'numeric', month: 'short' });
-                    const endDateStr = new Date(end).toLocaleDateString('en-LK', { day: 'numeric', month: 'short', year: 'numeric' });
-                    let msgText = `📅 *මේ සතියේ Classes (${startDateStr} - ${endDateStr})*\n\n`;
-                    
-                    if (events && events.length > 0) {
-                        const days = {};
-                        events.forEach(ev => {
-                            const evDate = new Date(ev.start?.dateTime || ev.start?.date);
-                            const dateKey = evDate.toLocaleDateString('en-LK', { weekday: 'long', day: 'numeric', month: 'short' });
-                            if (!days[dateKey]) days[dateKey] = [];
-                            days[dateKey].push(ev);
-                        });
-
-                        const sortedDays = Object.keys(days).sort((a, b) => {
-                            const dateA = new Date(a);
-                            const dateB = new Date(b);
-                            return dateA - dateB;
-                        });
-
-                        sortedDays.forEach((day) => {
-                            msgText += `*${day}*\n`;
-                            days[day].forEach((ev) => {
-                                const startTime = new Date(ev.start?.dateTime || ev.start?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit' });
-                                const endTime = new Date(ev.end?.dateTime || ev.end?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit' });
-                                const location = ev.location || '';
-                                msgText += `   🕒 ${startTime} - ${endTime}  *${ev.summary || 'Untitled'}*`;
-                                if (location) msgText += ` (${location})`;
-                                msgText += `\n`;
-                            });
-                            msgText += `\n`;
-                        });
-                    } else {
-                        msgText += "🎉 මේ සතියේ Classes නෑ! Free Week! 💯";
-                    }
-                    
-                    await sock.sendMessage(sender, { text: msgText }, { quoted: msg });
-                    return;
-                }
-
-                // 🟡 ELSE: Specific day query (Today, Tomorrow, Monday, etc.)
-                const { start, end, targetDate } = getTargetDateRange(aiIntent.date_keyword || textLower);
-                const events = await getCalendarEvents(start, end);
-
-                if (events && events.length > 0) {
-                    let msgTextDay = `📅 *${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })} දින Classes:*\n\n`;
-                    events.forEach((ev, idx) => {
-                        const startTime = new Date(ev.start?.dateTime || ev.start?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute:'2-digit' });
-                        const endTime = new Date(ev.end?.dateTime || ev.end?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute:'2-digit' });
-                        const location = ev.location || '';
-                        const description = ev.description || '';
-                        
-                        msgTextDay += `${idx+1}. *${ev.summary || 'Untitled'}*\n`;
-                        msgTextDay += `   🕒 ${startTime} – ${endTime}\n`;
-                        if (location) msgTextDay += `   📍 *ස්ථානය (Location):* ${location}\n`;
-                        if (description) msgTextDay += `   📝 *විස්තරය (Details):* ${cleanHTML(description)}\n`;
-                        msgTextDay += `\n`;
-                    });
-                    msgTextDay += `\n🔗 *Full Calendar:* https://calendar.google.com/calendar/u/0?cid=${encodeURIComponent(CALENDAR_ID)}`;
-                    await sock.sendMessage(sender, { text: msgTextDay }, { quoted: msg });
-                } else {
-                    const today = new Date();
-                    today.setHours(0, 0, 0, 0);
-                    const futureDate = new Date(targetDate);
-                    futureDate.setHours(0, 0, 0, 0);
-                    const diffDays = Math.ceil((futureDate - today) / (1000 * 60 * 60 * 24));
-
-                    if (diffDays >= 3) {
-                        await sock.sendMessage(sender, { text: `⚠️ *${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })}* දිනට අදාළ Timetable එක තාම Google Calendar එකට එකතු කරලා නැහැ. ටික වේලාවකින් ආයේ අහන්න, නැත්නම් Batch Rep ට දැනුම් දෙන්න!` }, { quoted: msg });
-                    } else {
-                        await sock.sendMessage(sender, { text: `🎉 *${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })}* දිනට Classes නෑ!` }, { quoted: msg });
-                    }
-                }
-                return;
-            }
-            
-            if (aiIntent.intent === 'add_info' && isSenderAdmin(sender)) {
-                const infoText = rawMessageText.replace(/^(add info|info add|save info)\s*:?\s*/i, '').trim();
-                if (infoText) {
-                    knowledgeBase.push(infoText);
-                    saveKnowledgeBase();
-                    await sock.sendMessage(sender, { text: `✅ Info saved! (Total: ${knowledgeBase.length})` }, { quoted: msg });
-                    return;
-                }
-            }
-
-            // ---------- OTHER COMMANDS (unchanged) ----------
-            // WHO AM I
-            if (/\bwho\s*am\s*i\b/i.test(textLower) || textLower.includes('man kauda') || textLower.includes('mama kauda')) {
-                const isAdmin = isSenderAdmin(sender);
-                if (isAdmin) {
-                    await sock.sendMessage(sender, { text: `👋 ඔයා *Monal Hansana* — Batch Rep! ✅` }, { quoted: msg });
-                } else {
-                    await sock.sendMessage(sender, { text: `👤 ඔයා student කෙනෙක්.` }, { quoted: msg });
-                }
-                return;
-            }
-
-            // GEN Z GUIDE
-            if (textLower === 'guide' || textLower === 'genz' || textLower === 'how to use') {
-                const genZGuide = `Yo bestie! 👋🔥 I'm *HansanaBot*, your AI slay assistant! No cap, I got your back! 🫡✨
-
-🛠️ *How to use me (fr fr):*
-👉 Just type *"ada class"* or *"heta class"* to see what's poppin' today/tomorrow.
-👉 Need notes? Type *"pdf"* to get the actual file!
-👉 Type *"word"* to learn a new academic word daily! (Smart move, bestie! 🧠✨)
-👉 Got a random question? Just ask me in Sinhala or English.
-👉 *"status"* is only for the main character (Admin) 💅
-
-Catch my drift? Slide into my DMs and let's get that GPA up! 📈🚀`;
-                await sock.sendMessage(sender, { text: genZGuide }, { quoted: msg });
-                return;
-            }
-
-            // HELP MENU
-            if (textLower === 'help' || textLower === '/help' || textLower === 'menu' || textLower === '/menu' || textLower === 'start' || textLower === '/start' || textLower === 'commands' || textLower === 'hi' || textLower === 'hello' || textLower === 'hey' || textLower === 'hii' || textLower === 'hlo' || textLower === 'hi there' || textLower === 'good morning' || textLower === 'good night' || textLower === 'suba') {
-                const isAdmin = isSenderAdmin(sender);
-                let helpText = `👋 *HansanaBot Help Menu* 🤖
-
-*General Commands:*
-📌 *guide* - Gen Z Style Guide එක බලන්න
-🆔 *whoami* - ඔයාගේ ID එක බලන්න
-👤 *who am i* - Adminද Studentද කියලා බලන්න
-📖 *word* - Academic Word Practice (නව වචන ඉගෙන ගන්න)
-📅 *calendar* - අද / හෙට / ඉදිරි දවස් වල Classes බලන්න
-📂 *pdf* - Save කරලා තියෙන Files ලබා ගන්න
-📝 *quiz* - අද දවසේ Modules වලින් Quiz එකක්
-
-*📞 Support:*
-Contact Batch Rep: +94 76 251 3957`;
-
-                if (isAdmin) {
-                    helpText += `
-
-*🛠️ Admin Commands (Only for Batch Rep):*
-📝 *add info: [text]* - අලුත් තොරතුරු save කරන්න
-📚 *list info* - Save කරලා තියෙන Info ටික බලන්න
-🗑️ *remove info [number]* - Info එකක් අයින් කරන්න
-📤 *add file: [keyword]* - PDF/Image එකක් save කරන්න
-📋 *list files* - Save කරලා තියෙන Files ටික බලන්න (PDF එකත් එනවා!)
-🗑️ *remove file [number]* - File එකක් අයින් කරන්න
-📊 *status* - Bot එකේ තත්වය බලන්න`;
-                }
-                
-                await sock.sendMessage(sender, { text: helpText }, { quoted: msg });
-                return;
-            }
-
-            // WHOAMI
-            if (textLower === 'whoami' || textLower === 'myid') {
-                const normalized = jidNormalizedUser(sender) || sender;
-                await sock.sendMessage(sender, { text: `🆔 Your ID: \`${normalized}\`` }, { quoted: msg });
-                return;
-            }
-
-            // CALENDAR HELP
-            if (textLower === 'calendar help' || textLower === 'calendar not showing' || textLower === 'sync calendar') {
-                await sock.sendMessage(sender, {
-                    text: `📅 *Calendar Troubleshooting*\n\n🔗 Link: https://calendar.google.com/calendar/u/0?cid=${encodeURIComponent(CALENDAR_ID)}\n\n*Steps:*\n1. Google Calendar App → ☰ Menu → "Other calendars" → Check "SLIIT Timetable".\n2. Settings → Accounts → Google → SLIIT email → Calendars ON.\n3. Settings → Accounts → Sync Calendar ON.\n4. Unsubscribe and re-add.\n\n📱 Still not working? Contact Batch Rep: +94 76 251 3957`
-                }, { quoted: msg });
                 return;
             }
 
@@ -1498,6 +1409,200 @@ Contact Batch Rep: +94 76 251 3957`;
                     const list = knowledgeBase.map((k, i) => `${i+1}. ${k}`).join('\n\n');
                     await sock.sendMessage(sender, { text: `📚 *Saved Info (${knowledgeBase.length})*\n\n${list}` }, { quoted: msg });
                 }
+                return;
+            }
+
+            // ---------- AI INTENT ----------
+            const aiIntent = await getCalendarIntentFromAI(rawMessageText);
+
+            const chatWords = /adaraya|adara|kohomada|kohomda|what is love|meka mokadda|mokadda|mokakda|ayubowan|suba|thanks|stuti/i;
+            if (chatWords.test(textLower)) {
+                aiIntent.intent = 'chat';
+                aiIntent.date_keyword = null;
+            } else {
+                if (/exam|quiz|mid|test|assessment|date|kawadda|set wenne|විභාග|ප්‍රශ්න|කුසීස්|මචි/i.test(textLower)) {
+                    aiIntent.intent = 'chat';
+                    aiIntent.date_keyword = null;
+                }
+                const isDayMonthQuery = /\b(sanduda|saduda|sikurda|sikurada|eelaga|laban|balanna|ada|heta|anidda|monday|tuesday|wednesday|thursday|friday|saturday|sunday|janawari|february|march|april|may|june|july|august|september|october|november|december)\b/i.test(textLower);
+                if (isDayMonthQuery) {
+                   aiIntent.intent = 'calendar';
+                   if (!aiIntent.date_keyword) {
+                       aiIntent.date_keyword = textLower;
+                    }
+                } 
+            }
+
+            // 📅 CALENDAR COMMAND HANDLER
+            if (aiIntent.intent === 'calendar') {
+                const lowerText = rawMessageText.toLowerCase().trim();
+
+                if (lowerText === 'calendar' || lowerText === 'week' || lowerText === 'weekly' || 
+                    lowerText === 'timetable' || lowerText.includes('me sathiya') || lowerText.includes('තිම් ටේබල්') || lowerText.includes('මේ සතිය')) {
+                    
+                    const { start, end, weekStart } = getCurrentWeekRange();
+                    const events = await getCalendarEvents(start, end);
+                    
+                    const startDateStr = weekStart.toLocaleDateString('en-LK', { day: 'numeric', month: 'short' });
+                    const endDateStr = new Date(end).toLocaleDateString('en-LK', { day: 'numeric', month: 'short', year: 'numeric' });
+                    let msgText = `📅 *මේ සතියේ Classes (${startDateStr} - ${endDateStr})*\n\n`;
+                    
+                    if (events && events.length > 0) {
+                        const days = {};
+                        events.forEach(ev => {
+                            const evDate = new Date(ev.start?.dateTime || ev.start?.date);
+                            const dateKey = evDate.toLocaleDateString('en-LK', { weekday: 'long', day: 'numeric', month: 'short' });
+                            if (!days[dateKey]) days[dateKey] = [];
+                            days[dateKey].push(ev);
+                        });
+
+                        const sortedDays = Object.keys(days).sort((a, b) => {
+                            const dateA = new Date(a);
+                            const dateB = new Date(b);
+                            return dateA - dateB;
+                        });
+
+                        sortedDays.forEach((day) => {
+                            msgText += `*${day}*\n`;
+                            days[day].forEach((ev) => {
+                                const startTime = new Date(ev.start?.dateTime || ev.start?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit' });
+                                const endTime = new Date(ev.end?.dateTime || ev.end?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit' });
+                                const location = ev.location || '';
+                                msgText += `   🕒 ${startTime} - ${endTime}  *${ev.summary || 'Untitled'}*`;
+                                if (location) msgText += ` (${location})`;
+                                msgText += `\n`;
+                            });
+                            msgText += `\n`;
+                        });
+                    } else {
+                        msgText += "🎉 මේ සතියේ Classes නෑ! Free Week! 💯";
+                    }
+                    
+                    await sock.sendMessage(sender, { text: msgText }, { quoted: msg });
+                    return;
+                }
+
+                const { start, end, targetDate } = getTargetDateRange(aiIntent.date_keyword || textLower);
+                const events = await getCalendarEvents(start, end);
+
+                if (events && events.length > 0) {
+                    let msgTextDay = `📅 *${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })} දින Classes:*\n\n`;
+                    events.forEach((ev, idx) => {
+                        const startTime = new Date(ev.start?.dateTime || ev.start?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute:'2-digit' });
+                        const endTime = new Date(ev.end?.dateTime || ev.end?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute:'2-digit' });
+                        const location = ev.location || '';
+                        const description = ev.description || '';
+                        
+                        msgTextDay += `${idx+1}. *${ev.summary || 'Untitled'}*\n`;
+                        msgTextDay += `   🕒 ${startTime} – ${endTime}\n`;
+                        if (location) msgTextDay += `   📍 *ස්ථානය (Location):* ${location}\n`;
+                        if (description) msgTextDay += `   📝 *විස්තරය (Details):* ${cleanHTML(description)}\n`;
+                        msgTextDay += `\n`;
+                    });
+                    msgTextDay += `\n🔗 *Full Calendar:* https://calendar.google.com/calendar/u/0?cid=${encodeURIComponent(CALENDAR_ID)}`;
+                    await sock.sendMessage(sender, { text: msgTextDay }, { quoted: msg });
+                } else {
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    const futureDate = new Date(targetDate);
+                    futureDate.setHours(0, 0, 0, 0);
+                    const diffDays = Math.ceil((futureDate - today) / (1000 * 60 * 60 * 24));
+
+                    if (diffDays >= 3) {
+                        await sock.sendMessage(sender, { text: `⚠️ *${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })}* දිනට අදාළ Timetable එක තාම Google Calendar එකට එකතු කරලා නැහැ. ටික වේලාවකින් ආයේ අහන්න, නැත්නම් Batch Rep ට දැනුම් දෙන්න!` }, { quoted: msg });
+                    } else {
+                        await sock.sendMessage(sender, { text: `🎉 *${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })}* දිනට Classes නෑ!` }, { quoted: msg });
+                    }
+                }
+                return;
+            }
+            
+            if (aiIntent.intent === 'add_info' && isSenderAdmin(sender)) {
+                const infoText = rawMessageText.replace(/^(add info|info add|save info)\s*:?\s*/i, '').trim();
+                if (infoText) {
+                    knowledgeBase.push(infoText);
+                    saveKnowledgeBase();
+                    await sock.sendMessage(sender, { text: `✅ Info saved! (Total: ${knowledgeBase.length})` }, { quoted: msg });
+                    return;
+                }
+            }
+
+            // ---------- OTHER COMMANDS ----------
+            // WHO AM I
+            if (/\bwho\s*am\s*i\b/i.test(textLower) || textLower.includes('man kauda') || textLower.includes('mama kauda')) {
+                const isAdmin = isSenderAdmin(sender);
+                if (isAdmin) {
+                    await sock.sendMessage(sender, { text: `👋 ඔයා *Monal Hansana* — Batch Rep! ✅` }, { quoted: msg });
+                } else {
+                    await sock.sendMessage(sender, { text: `👤 ඔයා student කෙනෙක්.` }, { quoted: msg });
+                }
+                return;
+            }
+
+            // GEN Z GUIDE
+            if (textLower === 'guide' || textLower === 'genz' || textLower === 'how to use') {
+                const genZGuide = `Yo bestie! 👋🔥 I'm *HansanaBot*, your AI slay assistant! No cap, I got your back! 🫡✨
+
+🛠️ *How to use me (fr fr):*
+👉 Just type *"ada class"* or *"heta class"* to see what's poppin' today/tomorrow.
+👉 Need notes? Type *"pdf"* and I'll find the right file for you! 📂
+👉 Type *"word"* to learn a new academic word daily! (Smart move, bestie! 🧠✨)
+👉 Got a random question? Just ask me in Sinhala or English.
+👉 *"status"* is only for the main character (Admin) 💅
+
+Catch my drift? Slide into my DMs and let's get that GPA up! 📈🚀`;
+                await sock.sendMessage(sender, { text: genZGuide }, { quoted: msg });
+                return;
+            }
+
+            // HELP MENU
+            if (textLower === 'help' || textLower === '/help' || textLower === 'menu' || textLower === '/menu' || textLower === 'start' || textLower === '/start' || textLower === 'commands' || textLower === 'hi' || textLower === 'hello' || textLower === 'hey' || textLower === 'hii' || textLower === 'hlo' || textLower === 'hi there' || textLower === 'good morning' || textLower === 'good night' || textLower === 'suba') {
+                const isAdmin = isSenderAdmin(sender);
+                let helpText = `👋 *HansanaBot Help Menu* 🤖
+
+*General Commands:*
+📌 *guide* - Gen Z Style Guide එක බලන්න
+🆔 *whoami* - ඔයාගේ ID එක බලන්න
+👤 *who am i* - Adminද Studentද කියලා බලන්න
+📖 *word* - Academic Word Practice (නව වචන ඉගෙන ගන්න)
+📅 *calendar* - අද / හෙට / ඉදිරි දවස් වල Classes බලන්න
+📂 *pdf* - ඔබට අදාළ Module එකේ File එක Auto ලබා ගන්න
+📝 *quiz* - අද දවසේ Modules වලින් Quiz එකක්
+   (ඉවර වුනාම *more* හෝ *next module* කියලා type කරන්න)
+
+*📞 Support:*
+Contact Batch Rep: +94 76 251 3957`;
+
+                if (isAdmin) {
+                    helpText += `
+
+*🛠️ Admin Commands (Only for Batch Rep):*
+📝 *add info: [text]* - අලුත් තොරතුරු save කරන්න
+📚 *list info* - Save කරලා තියෙන Info ටික බලන්න
+🗑️ *remove info [number]* - Info එකක් අයින් කරන්න
+📤 *add file: [keyword]* - PDF/Image එකක් save කරන්න
+   (Keyword නැතුව upload කළොත් AI එකෙන් auto detect වෙයි!)
+📋 *list files* - Save කරලා තියෙන Files ටික බලන්න (PDF එකත් එනවා!)
+🗑️ *remove file [number]* - File එකක් අයින් කරන්න
+📊 *status* - Bot එකේ තත්වය බලන්න`;
+                }
+                
+                await sock.sendMessage(sender, { text: helpText }, { quoted: msg });
+                return;
+            }
+
+            // WHOAMI
+            if (textLower === 'whoami' || textLower === 'myid') {
+                const normalized = jidNormalizedUser(sender) || sender;
+                await sock.sendMessage(sender, { text: `🆔 Your ID: \`${normalized}\`` }, { quoted: msg });
+                return;
+            }
+
+            // CALENDAR HELP
+            if (textLower === 'calendar help' || textLower === 'calendar not showing' || textLower === 'sync calendar') {
+                await sock.sendMessage(sender, {
+                    text: `📅 *Calendar Troubleshooting*\n\n🔗 Link: https://calendar.google.com/calendar/u/0?cid=${encodeURIComponent(CALENDAR_ID)}\n\n*Steps:*\n1. Google Calendar App → ☰ Menu → "Other calendars" → Check "SLIIT Timetable".\n2. Settings → Accounts → Google → SLIIT email → Calendars ON.\n3. Settings → Accounts → Sync Calendar ON.\n4. Unsubscribe and re-add.\n\n📱 Still not working? Contact Batch Rep: +94 76 251 3957`
+                }, { quoted: msg });
                 return;
             }
 
