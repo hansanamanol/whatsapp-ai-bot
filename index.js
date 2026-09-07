@@ -1552,42 +1552,107 @@ Catch my drift? Slide into my DMs and let's get that GPA up! 📈🚀`;
                 return;
             }
 
-            // HELP MENU
-            if (textLower === 'help' || textLower === '/help' || textLower === 'menu' || textLower === '/menu' || textLower === 'start' || textLower === '/start' || textLower === 'commands' || textLower === 'hi' || textLower === 'hello' || textLower === 'hey' || textLower === 'hii' || textLower === 'hlo' || textLower === 'hi there' || textLower === 'good morning' || textLower === 'good night' || textLower === 'suba') {
-                const isAdmin = isSenderAdmin(sender);
-                let helpText = `👋 *HansanaBot Help Menu* 🤖
+        // ================================================================
+//  📋 HELP MENU (UPDATED - Latest Bot State)
+// ================================================================
+if (textLower === 'help' || textLower === '/help' || textLower === 'menu' || textLower === '/menu' || 
+    textLower === 'start' || textLower === '/start' || textLower === 'commands' || 
+    textLower === 'hi' || textLower === 'hello' || textLower === 'hey' || textLower === 'hii' || 
+    textLower === 'hlo' || textLower === 'hi there' || textLower === 'good morning' || 
+    textLower === 'good night' || textLower === 'suba' || textLower === 'ayubowan') {
+    
+    const isAdmin = isSenderAdmin(sender);
+    
+    let helpText = `👋 *HansanaBot Help Menu* 🤖
+    
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📌 *General Commands* (For Everyone)
 
-*General Commands:*
-📌 *guide* - Gen Z Style Guide එක බලන්න
-🆔 *whoami* - ඔයාගේ ID එක බලන්න
+📖 *guide* - Gen Z Style Guide එක බලන්න
+🆔 *whoami* - ඔයාගේ WhatsApp ID එක බලන්න
 👤 *who am i* - Adminද Studentද කියලා බලන්න
-📖 *word* - Academic Word Practice (නව වචන ඉගෙන ගන්න)
-📅 *calendar* - අද / හෙට / ඉදිරි දවස් වල Classes බලන්න
-📂 *pdf* - ඔබට අදාළ Module එකේ File එක Auto ලබා ගන්න
-📝 *quiz* - අද දවසේ Modules වලින් Quiz එකක්
-   (ඉවර වුනාම *more* හෝ *next module* කියලා type කරන්න)
 
-*📞 Support:*
-Contact Batch Rep: +94 76 251 3957`;
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📅 *Timetable & Calendar*
 
-                if (isAdmin) {
-                    helpText += `
+📅 *calendar / timetable* - මේ සතියේ Classes
+📅 *ada class* - අද Classes
+📅 *heta class* - හෙට Classes
+📅 *anidda class* - අනිද්දා Classes
+📅 *Monday / Tuesday ...* - ඕනෑම දිනයක Classes
+📅 *calendar help* - Calendar Troubleshooting Guide
 
-*🛠️ Admin Commands (Only for Batch Rep):*
+⏰ *Daily Auto Update:* සෑම රෑ 9 ට හෙට දවසේ *Timetable + Word of the Day* එක යවයි.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📂 *Smart PDF System*
+
+📂 *pdf / file / danna* - ඔබට අදාළ Module එකේ File එක Auto ලබා ගන්න
+   (Conversation එකේ Module එක / අද Timetable එක බලලා Auto Detect)
+📂 *[module code]* - e.g., *SE1020* type කරලා File එක Direct ලබා ගන්න
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📝 *Quiz System*
+
+📝 *quiz* - අද දවසේ පළමු Module එකෙන් ප්‍රශ්න 10ක්
+📝 *quiz SE1020* - Specific Module එකෙන් Quiz එකක්
+   (ඉවර වුනාම *more* හෝ *next module* කියලා Type කරන්න)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎤 *Voice Commands*
+
+🎙️ *Voice Note එකක් යවන්න* - "හෙට timetable එක දෙන්න" වගේ කියන්න
+   (Bot එක auto detect කරලා Timetable එක යවයි)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🧠 *Learning & Fun*
+
+📖 *word / vocabulary* - Academic Word Practice (නව වචන ඉගෙන ගන්න)
+✨ *motivate me* - Daily Motivation Quote එකක්
+🧩 *riddle* - Riddle එකක්
+💡 *answer* - Riddle එකේ Answer එක
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+❓ *Other*
+
+❓ *help / menu* - මෙම Help Menu එක
+🙏 *thanks / stuti* - Auto Thanks Reply
+💬 *ඕනෑම ප්‍රශ්නයක්* - Gemini AI මගින් උත්තර ලබා ගන්න
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📞 *Support*
+Contact Batch Rep: +94 76 251 3957
+Email: it26100930@my.sliit.lk`;
+
+    if (isAdmin) {
+        helpText += `
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🛠️ *Admin Commands* (Batch Rep Only) 🛡️
+
+📚 *Knowledge Base:*
 📝 *add info: [text]* - අලුත් තොරතුරු save කරන්න
 📚 *list info* - Save කරලා තියෙන Info ටික බලන්න
 🗑️ *remove info [number]* - Info එකක් අයින් කරන්න
+
+📁 *File Management:*
 📤 *add file: [keyword]* - PDF/Image එකක් save කරන්න
    (Keyword නැතුව upload කළොත් AI එකෙන් auto detect වෙයි!)
-📋 *list files* - Save කරලා තියෙන Files ටික බලන්න (PDF එකත් එනවා!)
+📋 *list files* - Save කරලා තියෙන Files ටික බලන්න (Files ටිකත් එනවා!)
 🗑️ *remove file [number]* - File එකක් අයින් කරන්න
-📊 *status* - Bot එකේ තත්වය බලන්න`;
-                }
-                
-                await sock.sendMessage(sender, { text: helpText }, { quoted: msg });
-                return;
-            }
 
+📊 *Bot Management:*
+📊 *status* - Bot එකේ තත්වය බලන්න
+📊 *poll Question? | Option 1 | Option 2* - WhatsApp Poll එකක් හදන්න
+🆔 *getid* - Group ID එක ගන්න (Group එක ඇතුලේ type කරන්න)
+
+💡 *Tip:* Student ලට බලන්න දෙන්නේ *help* command එක විතරයි. 
+Admin Menu එක බලන්න *admin* කියලා type කරන්න.`;
+    }
+
+    await sock.sendMessage(sender, { text: helpText }, { quoted: msg });
+    return;
+}
             // WHOAMI
             if (textLower === 'whoami' || textLower === 'myid') {
                 const normalized = jidNormalizedUser(sender) || sender;
