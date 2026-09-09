@@ -498,13 +498,6 @@ function detectIntentFromText(text) {
         return { intent: 'calendar', data: text };
     }
     
-    // 4️⃣ Check for Exam Query (NEW)
-    const examKeywords = /\b(exam|විභාග|mid|final|test|assessment|ප්‍රශ්න|ටෙස්ට්|ක්විස්|quiz)\s*(date|kawadda|kawadada|when|දිනය|කවදා|කවද්ද|කවදාද|කොහොමද|මොකද|ගැන)\b/i;
-    if (examKeywords.test(lowerText) || lowerText.includes('exam') || lowerText.includes('විභාග')) {
-        const moduleMatch = lowerText.match(/(SE|IT|IE)\d{4}/i);
-        return { intent: 'exam_query', data: moduleMatch ? moduleMatch[0].toUpperCase() : '' };
-    }
-    
     if (/^(add info|info add|save info)\b/.test(lowerText)) {
         return { intent: 'add_info', data: text };
     }
@@ -1252,49 +1245,6 @@ async function connectToWhatsApp() {
                         } else {
                             await sock.sendMessage(sender, { text: "📭 ඔබ ඇසූ Module එක සඳහා File එකක් හම්බුනේ නැහැ." }, { quoted: msg });
                         }
-                    } else if (intent.intent === 'exam_query') {
-                        // Handle exam query from voice
-                        const queryModule = intent.data;
-                        let matchedExams = [];
-                        if (queryModule) {
-                            matchedExams = exams.filter(e => 
-                                e.description.toUpperCase().includes(queryModule) ||
-                                (e.type && e.type.toUpperCase().includes(queryModule))
-                            );
-                        }
-                        if (matchedExams.length === 0) {
-                            const now = new Date();
-                            matchedExams = exams.filter(e => 
-                                e.centre.toLowerCase() === 'matara' &&
-                                new Date(`${e.date}T${e.time || '23:59'}`) >= now
-                            );
-                        }
-                        if (matchedExams.length === 0) {
-                            await sock.sendMessage(sender, { text: "📭 වත්මන් Matara Centre එකට අදාළ කිසිම විභාගයක් හම්බුනේ නැහැ. Admin ට දැනුම් දෙන්න." }, { quoted: msg });
-                        } else {
-                            matchedExams.sort((a, b) => {
-                                const dateA = new Date(`${a.date}T${a.time || '23:59'}`);
-                                const dateB = new Date(`${b.date}T${b.time || '23:59'}`);
-                                return dateA - dateB;
-                            });
-                            const typeEmoji = {
-                                'midterm': '📝',
-                                'final': '🏆',
-                                'quiz': '🧩',
-                                'practical': '🔬',
-                                'theory': '📖'
-                            };
-                            let msgText = `📅 *විභාග විස්තර* (Matara Centre)\n\n`;
-                            matchedExams.forEach((e, idx) => {
-                                const dt = new Date(`${e.date}T${e.time || '23:59'}`);
-                                const emoji = typeEmoji[e.type?.toLowerCase()] || '📚';
-                                msgText += `${idx+1}. ${emoji} *${e.description}*\n`;
-                                msgText += `   📅 ${dt.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })}\n`;
-                                msgText += `   🕐 ${dt.toLocaleTimeString('en-LK', { hour: '2-digit', minute: '2-digit' })}\n`;
-                                msgText += `   📋 ${e.type || 'Exam'}\n\n`;
-                            });
-                            await sock.sendMessage(sender, { text: msgText }, { quoted: msg });
-                        }
                     } else {
                         const prompt = buildPromptWithKnowledge(`User said (voice note): "${transcribedText}"\nReply accordingly.`);
                         const result = await generateContentWithRetry(model, prompt);
@@ -1859,7 +1809,7 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // List exams (Admin only or open to all?)
+            // List exams (Admin only)
             if (textLower === 'list exams' || textLower === 'show exams') {
                 if (!isSenderAdmin(sender)) {
                     await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
@@ -1900,70 +1850,10 @@ async function connectToWhatsApp() {
             }
 
             // ================================================================
-            //  📅 EXAM QUERY HANDLER (Student can ask) - NEW
-            // ================================================================
-            const aiIntent = detectIntentFromText(rawMessageText);
-            
-            if (aiIntent.intent === 'exam_query') {
-                const queryModule = aiIntent.data;
-                let matchedExams = [];
-                
-                // Try to find exams matching the module code (if any)
-                if (queryModule) {
-                    matchedExams = exams.filter(e => 
-                        e.description.toUpperCase().includes(queryModule) ||
-                        (e.type && e.type.toUpperCase().includes(queryModule))
-                    );
-                }
-                
-                // If no specific module matched, show all upcoming Matara exams
-                if (matchedExams.length === 0) {
-                    const now = new Date();
-                    matchedExams = exams.filter(e => 
-                        e.centre.toLowerCase() === 'matara' &&
-                        new Date(`${e.date}T${e.time || '23:59'}`) >= now
-                    );
-                }
-                
-                if (matchedExams.length === 0) {
-                    await sock.sendMessage(sender, { 
-                        text: "📭 වත්මන් Matara Centre එකට අදාළ කිසිම විභාගයක් හම්බුනේ නැහැ. Admin ට දැනුම් දෙන්න." 
-                    }, { quoted: msg });
-                    return;
-                }
-                
-                // Sort by date
-                matchedExams.sort((a, b) => {
-                    const dateA = new Date(`${a.date}T${a.time || '23:59'}`);
-                    const dateB = new Date(`${b.date}T${b.time || '23:59'}`);
-                    return dateA - dateB;
-                });
-                
-                const typeEmoji = {
-                    'midterm': '📝',
-                    'final': '🏆',
-                    'quiz': '🧩',
-                    'practical': '🔬',
-                    'theory': '📖'
-                };
-                
-                let msgText = `📅 *විභාග විස්තර* (Matara Centre)\n\n`;
-                matchedExams.forEach((e, idx) => {
-                    const dt = new Date(`${e.date}T${e.time || '23:59'}`);
-                    const emoji = typeEmoji[e.type?.toLowerCase()] || '📚';
-                    msgText += `${idx+1}. ${emoji} *${e.description}*\n`;
-                    msgText += `   📅 ${dt.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })}\n`;
-                    msgText += `   🕐 ${dt.toLocaleTimeString('en-LK', { hour: '2-digit', minute: '2-digit' })}\n`;
-                    msgText += `   📋 ${e.type || 'Exam'}\n\n`;
-                });
-                
-                await sock.sendMessage(sender, { text: msgText }, { quoted: msg });
-                return;
-            }
-
-            // ================================================================
             //  📅 CALENDAR COMMAND
             // ================================================================
+            const aiIntent = detectIntentFromText(rawMessageText);
+
             if (aiIntent.intent === 'calendar') {
                 const lowerText = rawMessageText.toLowerCase().trim();
 
@@ -2069,7 +1959,6 @@ async function connectToWhatsApp() {
 👉 Just ask me anything! I understand *"ada timetable"*, *"heta class"*, *"SE1020 notes"*, *"quiz"*, etc.
 👉 Need notes? Just say *"pdf"* or *"SE1020 notes"*!
 👉 Want a quiz? Just say *"quiz"* or *"quiz SE1020"*!
-👉 Want to know about exams? Ask *"mid exam kawadda"*, *"final exam date"*, or *"විභාගය කවදාද"*!
 👉 Got a random question? Just ask me in Sinhala or English!
 👉 *"status"* is only for the main character (Admin) 💅
 
@@ -2121,12 +2010,6 @@ Catch my drift? Slide into my DMs and let's get that GPA up! 📈🚀`;
 📝 *quiz* - අද දවසේ පළමු Module එකෙන් ප්‍රශ්න 10ක්
 📝 *quiz SE1020* - Specific Module එකෙන් Quiz එකක්
    (ඉවර වුනාම *more* හෝ *next module* කියලා Type කරන්න)
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📅 *Exam Query* (NEW - Student can ask!)
-
-📅 *"mid exam kawadda"* / *"final exam date"* / *"විභාගය කවදාද"* - ඉදිරි විභාග දින බලන්න
-📅 *"SE1020 exam"* - Specific module එකක විභාග දිනය බලන්න
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🎤 *Voice Commands*
