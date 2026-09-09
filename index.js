@@ -62,7 +62,7 @@ function buildPromptWithKnowledge(basePrompt) {
 }
 
 // ================================================================
-//  📚 ACADEMIC WORD LIST (sample – ඔබට ඔබගේ complete list එක paste කරන්න)
+//  📚 ACADEMIC WORD LIST
 // ================================================================
 const academicWords = {
     "estimate": "To guess the amount or value of something.",
@@ -113,7 +113,7 @@ function saveFileRegistry() {
 }
 
 // ================================================================
-//  📚 MODULE TO FILE KEYWORD MAPPING (for quiz)
+//  📚 MODULE TO FILE KEYWORD MAPPING
 // ================================================================
 const MODULE_FILE_MAP = {
     'SE1020': ['oop', 'se1020', 'object oriented'],
@@ -122,6 +122,40 @@ const MODULE_FILE_MAP = {
     'IT1150': ['technical writing', 'it1150', 'writing'],
     'IE1011': ['information systems', 'ie1011', 'is']
 };
+
+// ================================================================
+//  📅 DEADLINES SYSTEM (Matara Centre with Time)
+// ================================================================
+const DEADLINES_FILE = path.join(DATA_DIR, 'deadlines.json');
+let deadlines = [];
+try {
+    if (fs.existsSync(DEADLINES_FILE)) deadlines = JSON.parse(fs.readFileSync(DEADLINES_FILE, 'utf8'));
+} catch (e) { console.error('Error loading deadlines.json:', e); }
+
+function saveDeadlines() {
+    try { fs.writeFileSync(DEADLINES_FILE, JSON.stringify(deadlines, null, 2)); } catch (e) { console.error(e); }
+}
+
+// Matara students registry
+const MATARA_STUDENTS_FILE = path.join(DATA_DIR, 'matara_students.json');
+let mataraStudents = [];
+try {
+    if (fs.existsSync(MATARA_STUDENTS_FILE)) mataraStudents = JSON.parse(fs.readFileSync(MATARA_STUDENTS_FILE, 'utf8'));
+} catch (e) { console.error('Error loading matara_students.json:', e); }
+
+function saveMataraStudents() {
+    try { fs.writeFileSync(MATARA_STUDENTS_FILE, JSON.stringify(mataraStudents, null, 2)); } catch (e) { console.error(e); }
+}
+
+function addMataraStudent(jid) {
+    if (!mataraStudents.includes(jid)) {
+        mataraStudents.push(jid);
+        saveMataraStudents();
+        console.log('📇 New Matara student registered:', jid);
+        return true;
+    }
+    return false;
+}
 
 // ================================================================
 //  🧵 CONCURRENCY QUEUE
@@ -159,7 +193,6 @@ const messageQueue = new ConcurrencyQueue(MAX_CONCURRENT);
 const userMemory = {};
 const lastFileContext = {};
 
-// Quiz state initialization
 function initQuizState(sender) {
     if (!userMemory[sender]) userMemory[sender] = {};
     if (!userMemory[sender].quizState) {
@@ -208,9 +241,6 @@ const PORT = process.env.PORT || 3000;
 let latestQR = "";
 let isConnected = false;
 
-// ================================================================
-//  🛡️ RATE LIMIT & ANTI-SPAM
-// ================================================================
 const rateLimitMap = {}; 
 
 setInterval(() => {
@@ -352,15 +382,14 @@ CRITICAL CODE & TUTORIAL ANALYSIS RULES:
   3. Keep track of accurate question labeling (a, b, c, d, e) without swapping their code contents.
 `;
 
-// Model
 let model = getNextGenAI().getGenerativeModel({
-    model: "gemini-3.5-flash-lite", 
+    model: "gemini-1.5-flash", 
     systemInstruction: systemInstruction
 });
 
 function createModelWithCurrentKey() {
     return getNextGenAI().getGenerativeModel({
-        model: "gemini-3.5-flash-lite", 
+        model: "gemini-1.5-flash", 
         systemInstruction: systemInstruction
     });
 }
@@ -409,36 +438,58 @@ function formatMathForWhatsApp(text) {
     return result;
 }
 
-// AI Intent
-async function getCalendarIntentFromAI(text) {
-    const prompt = `
-    You are a highly accurate intent classifier for a University WhatsApp Bot.
-    Analyze the user's message below. The user is asking about their SLIIT timetable.
-    Identify if they are asking for a schedule for a specific day ("ada", "heta", "anidda", "pereda", "monday", "september 3" etc.), or if they are just chatting.
-    Rules:
-    - ONLY classify as 'calendar' if they are asking for a class schedule.
-    - If they are just chatting (e.g., "adaraya", "kohomada", "hello"), classify as 'chat'.
-    - If they are saving info (starts with "Add info"), classify as 'add_info'.
-    - Respond with ONLY a JSON object in this exact format:
-    { "intent": "calendar", "date_keyword": "anidda" }
-    { "intent": "chat", "date_keyword": null }
-    { "intent": "add_info", "date_keyword": null }
+// ================================================================
+//  🧠 LOCAL INTENT DETECTION (No Gemini call)
+// ================================================================
+function detectIntentFromText(text) {
+    const lowerText = text.toLowerCase().trim();
     
-    User text: "${text}"
-    `;
-
-    try {
-        geminiRequestsToday++;
-        const result = await generateContentWithRetry(model, prompt);
-        const rawText = result.response.text().trim();
-        const jsonMatch = rawText.match(/\{.*\}/s);
-        if (jsonMatch) {
-            return JSON.parse(jsonMatch[0]);
-        }
-    } catch (e) {
-        console.error('Intent parsing error:', e);
+    // 1️⃣ Check for Quiz
+    if (/^quiz\b/.test(lowerText) || /quiz (ekk|ek|eak|එකක්|එක)/.test(lowerText) || 
+        lowerText.includes('quiz') || lowerText.includes('ක්විස්') || lowerText.includes('ප්‍රශ්න')) {
+        const moduleMatch = lowerText.match(/(SE|IT|IE)\d{4}/i);
+        return { intent: 'quiz', data: moduleMatch ? moduleMatch[0].toUpperCase() : '' };
     }
-    return { intent: "chat", date_keyword: null };
+    
+    // 2️⃣ Check for PDF / File
+    if (/^(pdf|file|danna|ewanna|notes|note|සටහන්|file eka|pdf eka)\b/.test(lowerText) || 
+        lowerText.includes('notes') || lowerText.includes('සටහන්') || 
+        lowerText.includes('file') || lowerText.includes('pdf')) {
+        const moduleMatch = lowerText.match(/(SE|IT|IE)\d{4}/i);
+        return { intent: 'pdf', data: moduleMatch ? moduleMatch[0].toUpperCase() : lowerText };
+    }
+    
+    // 3️⃣ Check for Timetable / Calendar
+    const timetableKeywords = [
+        'timetable', 'calendar', 'schedule', 'class', 'classes', 'time table', 'time-table',
+        'ada class', 'heta class', 'anidda class', 'pereda class', 'iyye class',
+        'ada timetable', 'heta timetable', 'anidda timetable',
+        'me sathiya', 'me sathiye', 'me satiya', 'me satiye',
+        'next week', 'eelaga', 'laban', 'balanna',
+        'අද', 'හෙට', 'අනිද්දා', 'පෙරේදා', 'ඊයේ',
+        'class', 'classes', 'ක්ලාස්', 'ක්ලාසස්',
+        'තිම් ටේබල්', 'කැලැන්ඩරය', 'කාලසටහන',
+        'මේ සතිය', 'ලබන සතිය', 'ඊළඟ සතිය'
+    ];
+    
+    const isTimetable = timetableKeywords.some(kw => lowerText.includes(kw));
+    
+    const dayMonthRegex = /\b(sunday|monday|tuesday|wednesday|thursday|friday|saturday|ira|sanduda|saduda|angaharuwada|badhada|sikurda|sena|සඳුදා|අඟහරුවාදා|බදාදා|බ්‍රහස්පතින්දා|සිකුරාදා|සෙනසුරාදා|ඉරිදා|janawari|february|march|april|may|june|july|august|september|october|november|december|ජනවාරි|පෙබරවාරි|මාර්තු|අප්‍රේල්|මැයි|ජූනි|ජූලි|අගෝස්තු|සැප්තැම්බර්|ඔක්තෝබර්|නොවැම්බර්|දෙසැම්බර්)\b/i;
+    const hasDayMonth = dayMonthRegex.test(lowerText);
+    
+    const datePattern = /\b(\d{1,2})(?:st|nd|rd|th)?\s+(january|february|march|april|may|june|july|august|september|october|november|december|janawari|february|march|april|may|june|july|august|september|october|november|december)\b/i;
+    const hasDate = datePattern.test(lowerText);
+    
+    if (isTimetable || hasDayMonth || hasDate || lowerText === 'calendar' || lowerText === 'timetable' || 
+        lowerText === 'time' || lowerText === 'class' || lowerText === 'classes') {
+        return { intent: 'calendar', data: text };
+    }
+    
+    if (/^(add info|info add|save info)\b/.test(lowerText)) {
+        return { intent: 'add_info', data: text };
+    }
+    
+    return { intent: 'chat', data: text };
 }
 
 // HTML Cleaner
@@ -457,7 +508,7 @@ function cleanHTML(text) {
 }
 
 // ================================================================
-//  📅 CALENDAR READER (Timezone + Singlish/Sinhala)
+//  📅 CALENDAR READER
 // ================================================================
 const CALENDAR_API_KEY = process.env.CALENDAR_API_KEY;
 const CALENDAR_ID = process.env.CALENDAR_ID || 'ca0b38d172729231657abfc34f1c7fdb8ea33050fe6f4623f5fab88cd0d4633@group.calendar.google.com';
@@ -574,7 +625,7 @@ async function getCalendarEvents(start, end) {
 }
 
 // ================================================================
-//  📅 WEEK HELPER (Sunday to Saturday - Sri Lankan Calendar Week)
+//  📅 WEEK HELPER
 // ================================================================
 function getCurrentWeekRange() {
     const utcNow = new Date();
@@ -594,8 +645,7 @@ function getCurrentWeekRange() {
 }
 
 // ================================================================
-// ================================================================
-//  ⏰ DAILY TIMETABLE AUTO-PUSH (9:00 PM - No Tip, No Quiz)
+//  ⏰ DAILY TIMETABLE AUTO-PUSH (9:00 PM)
 // ================================================================
 async function sendDailyTimetable(sock) {
     if (studentRegistry.length === 0 && !GROUP_JID) {
@@ -630,14 +680,10 @@ async function sendDailyTimetable(sock) {
         if (location) msgText += `   📍 ${location}\n\n`;
     });
 
-    // 📚 Word of the Day (පමණයි - Tip එකක් නැහැ!)
     const wordKeys = Object.keys(academicWords);
     const randomWord = wordKeys[Math.floor(Math.random() * wordKeys.length)];
     msgText += `\n📚 *Word of the Day:* *${randomWord}* - ${academicWords[randomWord]}\n`;
 
-    // ✅ Tip / Quiz එකක් නැහැ, ඉවත් කරලා!
-
-    // Send to students
     for (const jid of studentRegistry) {
         try {
             await sock.sendMessage(jid, { text: msgText });
@@ -647,7 +693,6 @@ async function sendDailyTimetable(sock) {
         }
     }
 
-    // Send to group
     if (GROUP_JID) {
         try {
             await sock.sendMessage(GROUP_JID, { text: msgText });
@@ -657,8 +702,72 @@ async function sendDailyTimetable(sock) {
         }
     }
 }
+
 // ================================================================
-//  📝 QUIZ GENERATOR (today's PDFs - auto first module, with more/next)
+//  🔔 CHECK DEADLINES & SEND REMINDERS (Matara Centre - with Time)
+// ================================================================
+async function checkDeadlines(sock) {
+    if (mataraStudents.length === 0) {
+        console.log('No Matara students registered, skipping deadline check.');
+        return;
+    }
+
+    const now = new Date();
+    const threeDaysLater = new Date(now);
+    threeDaysLater.setDate(now.getDate() + 3);
+
+    const upcomingDeadlines = deadlines.filter(d => {
+        const deadlineDateTime = new Date(`${d.date}T${d.time || '23:59'}`);
+        return deadlineDateTime >= now && deadlineDateTime <= threeDaysLater && d.centre.toLowerCase() === 'matara';
+    });
+
+    if (upcomingDeadlines.length === 0) {
+        console.log('No upcoming Matara deadlines in next 3 days.');
+        return;
+    }
+
+    upcomingDeadlines.sort((a, b) => {
+        const dateA = new Date(`${a.date}T${a.time || '23:59'}`);
+        const dateB = new Date(`${b.date}T${b.time || '23:59'}`);
+        return dateA - dateB;
+    });
+
+    let msgText = `📢 *Matara Centre - Upcoming Deadlines* ⚠️\n\n`;
+    upcomingDeadlines.forEach((d, idx) => {
+        const deadlineDateTime = new Date(`${d.date}T${d.time || '23:59'}`);
+        const formattedDate = deadlineDateTime.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' });
+        const formattedTime = deadlineDateTime.toLocaleTimeString('en-LK', { hour: '2-digit', minute: '2-digit' });
+        const diffMs = deadlineDateTime - now;
+        const diffHours = Math.ceil(diffMs / (1000 * 60 * 60));
+        const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+        
+        let timeRemaining = '';
+        if (diffMs <= 0) timeRemaining = 'අදම අවසන් වේ! 🚨';
+        else if (diffHours < 24) timeRemaining = `ඉතිරිව ඇත්තේ පැය ${diffHours}ක්! ⏰`;
+        else if (diffDays === 1) timeRemaining = 'හෙට අවසන් වේ! ⚠️';
+        else timeRemaining = `දින ${diffDays}කින් අවසන් වේ`;
+        
+        msgText += `${idx+1}. *${d.description}*\n`;
+        msgText += `   📅 ${formattedDate}\n`;
+        msgText += `   🕐 ${formattedTime}\n`;
+        msgText += `   ⏳ ${timeRemaining}\n\n`;
+    });
+
+    msgText += `💡 *Tip:* ඉක්මනින් Submit කරන්න! 🚀`;
+
+    for (const jid of mataraStudents) {
+        try {
+            await sock.sendMessage(jid, { text: msgText });
+            await new Promise(r => setTimeout(r, 1500));
+        } catch (e) {
+            console.error(`Failed to send deadline reminder to ${jid}:`, e.message);
+        }
+    }
+    console.log(`✅ Matara deadline reminders sent to ${mataraStudents.length} students.`);
+}
+
+// ================================================================
+//  📝 QUIZ GENERATOR
 // ================================================================
 async function handleQuizCommand(sock, sender, msg, specificModule = '') {
     try {
@@ -688,7 +797,6 @@ async function handleQuizCommand(sock, sender, msg, specificModule = '') {
             return;
         }
 
-        // Determine which module to use
         let selectedModule = null;
         let selectedIndex = 0;
 
@@ -903,18 +1011,30 @@ async function connectToWhatsApp() {
                 latestQR = "";
                 isConnected = true;
                 console.log('✅ WhatsApp AI Bot is Ready and Online!');
+                
+                // ✅ NEW: Register all existing students as Matara students
+                for (const jid of studentRegistry) {
+                    if (!mataraStudents.includes(jid)) {
+                        mataraStudents.push(jid);
+                    }
+                }
+                saveMataraStudents();
+                console.log(`📇 Registered ${mataraStudents.length} existing students as Matara students.`);
             }
         });
 
-        // ⏰ CRON JOB (9:00 PM)
+        // ⏰ CRON JOB (9:00 PM - Timetable)
         cron.schedule('0 21 * * *', async () => {
             console.log('⏰ Running Tomorrow Timetable Push at 9:00 PM SL Time...');
             await sendDailyTimetable(sock);
         }, { timezone: 'Asia/Colombo' });
 
-        // ----------------------------------------------------------------
-        //  processMessage (with Voice Command, Smart PDF, etc.)
-        // ----------------------------------------------------------------
+        // 🔔 CRON JOB (8:00 AM - Deadline Reminders)
+        cron.schedule('0 8 * * *', async () => {
+            console.log('⏰ Running Deadline Check at 8:00 AM SL Time...');
+            await checkDeadlines(sock);
+        }, { timezone: 'Asia/Colombo' });
+
         async function processMessage(sock, msg) {
             const sender = msg.key.remoteJid;
 
@@ -947,9 +1067,18 @@ async function connectToWhatsApp() {
                 return; 
             }
 
+            // Register student
             const isNewUser = addStudent(sender);
             if (isNewUser) {
                 await sock.sendMessage(sender, { text: "Hello! I am *HansanaBot*, your AI assistant! 👋\n\nType *help* to see what I can do for you. 🚀" }, { quoted: msg });
+            }
+
+            // ✅ NEW: AUTO-REGISTER ALL STUDENTS AS MATARA STUDENTS
+            const isMataraAdded = addMataraStudent(sender);
+            if (isMataraAdded) {
+                await sock.sendMessage(sender, { 
+                    text: "📍 ඔබ Matara Centre Student කෙනෙක් ලෙස හඳුනාගෙන තියෙනවා! ඉදිරි Lab Submission Deadlines ගැන Reminders එවන්නම්! 📅" 
+                }, { quoted: msg });
             }
 
             const rateCheck = checkRateLimit(sender);
@@ -962,7 +1091,7 @@ async function connectToWhatsApp() {
             await sock.sendPresenceUpdate('composing', sender);
 
             // ================================================================
-            //  🎤 VOICE COMMAND HANDLER (NEW FEATURE)
+            //  🎤 VOICE COMMAND HANDLER
             // ================================================================
             if (audioMsg) {
                 try {
@@ -972,17 +1101,14 @@ async function connectToWhatsApp() {
                     const base64Audio = mp3Buffer.toString('base64');
                     const audioPart = { inlineData: { data: base64Audio, mimeType: 'audio/mp3' } };
 
-                    // Step 1: Transcribe with Gemini
                     const transcribePrompt = "Transcribe the following audio message accurately. Output only the transcribed text, nothing else.";
                     const transcribeResult = await generateContentWithRetry(model, [transcribePrompt, audioPart]);
                     const transcribedText = transcribeResult.response.text().trim();
                     console.log('🎤 Transcribed:', transcribedText);
 
-                    // Step 2: Detect intent
-                    const intent = await getCalendarIntentFromAI(transcribedText);
+                    const intent = detectIntentFromText(transcribedText);
                     if (intent.intent === 'calendar') {
-                        // Handle timetable request
-                        const { start, end, targetDate } = getTargetDateRange(intent.date_keyword || transcribedText);
+                        const { start, end, targetDate } = getTargetDateRange(intent.data || transcribedText);
                         const events = await getCalendarEvents(start, end);
                         if (events && events.length > 0) {
                             let msgText = `📅 *${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })} දින Classes:*\n\n`;
@@ -998,8 +1124,36 @@ async function connectToWhatsApp() {
                         } else {
                             await sock.sendMessage(sender, { text: `🎉 *${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })}* දිනට Classes නෑ!` }, { quoted: msg });
                         }
+                    } else if (intent.intent === 'quiz') {
+                        await handleQuizCommand(sock, sender, msg, intent.data);
+                    } else if (intent.intent === 'pdf') {
+                        const moduleCodes = ['SE1020', 'IT1170', 'IT1160', 'IT1150', 'IE1011'];
+                        let matchedFile = null;
+                        for (const code of moduleCodes) {
+                            if (transcribedText.toUpperCase().includes(code)) {
+                                matchedFile = fileRegistry.find(f => 
+                                    f.keyword.toLowerCase().includes(code.toLowerCase()) ||
+                                    (f.fileName || '').toLowerCase().includes(code.toLowerCase())
+                                );
+                                break;
+                            }
+                        }
+                        if (matchedFile) {
+                            const filePath = path.join(FILES_DIR, matchedFile.storedFileName);
+                            if (fs.existsSync(filePath)) {
+                                const buffer = fs.readFileSync(filePath);
+                                await sock.sendMessage(sender, {
+                                    document: buffer,
+                                    mimetype: matchedFile.mimetype || 'application/pdf',
+                                    fileName: matchedFile.fileName || 'document.pdf'
+                                }, { quoted: msg });
+                            } else {
+                                await sock.sendMessage(sender, { text: "❌ File එක Server එකේ නෑ." }, { quoted: msg });
+                            }
+                        } else {
+                            await sock.sendMessage(sender, { text: "📭 ඔබ ඇසූ Module එක සඳහා File එකක් හම්බුනේ නැහැ." }, { quoted: msg });
+                        }
                     } else {
-                        // Fallback: Answer normally using transcribed text
                         const prompt = buildPromptWithKnowledge(`User said (voice note): "${transcribedText}"\nReply accordingly.`);
                         const result = await generateContentWithRetry(model, prompt);
                         const reply = formatMathForWhatsApp(result.response.text());
@@ -1012,7 +1166,7 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // ---------- ADD FILE (Auto-keyword if missing) ----------
+            // ---------- ADD FILE ----------
             if ((docMsg || imgMsg) && /^add file\b/i.test(rawMessageText.toLowerCase().trim())) {
                 if (!isSenderAdmin(sender)) {
                     await sock.sendMessage(sender, { text: "❌ මේක කරන්න පුළුවන් Batch Rep ට විතරයි!" }, { quoted: msg });
@@ -1055,7 +1209,7 @@ async function connectToWhatsApp() {
                     await sock.sendMessage(sender, { text: `✅ File save කළා! Keyword: "${keyword}"` }, { quoted: msg });
                 } catch (err) {
                     console.error('Save file error:', err);
-                    await sock.sendMessage(sender, { text: "❌ File save කිරීම අසාර්ථකයි. Railway Logs එකේ `Save file error` කියලා බලන්න." }, { quoted: msg });
+                    await sock.sendMessage(sender, { text: "❌ File save කිරීම අසාර්ථකයි." }, { quoted: msg });
                 }
                 return;
             }
@@ -1075,7 +1229,7 @@ async function connectToWhatsApp() {
                     }
                 } catch (err) {
                     console.error('PDF error:', err);
-                    await sock.sendMessage(sender, { text: "❌ File එක විවෘත කරන්න බැරි වුණා. ආයේ උත්සාහ කරන්න." }, { quoted: msg });
+                    await sock.sendMessage(sender, { text: "❌ File එක විවෘත කරන්න බැරි වුණා." }, { quoted: msg });
                 }
                 return;
             }
@@ -1096,23 +1250,26 @@ async function connectToWhatsApp() {
                     await sock.sendMessage(sender, { text: reply }, { quoted: msg });
                 } catch (err) {
                     console.error('Image error:', err);
-                    await sock.sendMessage(sender, { text: "❌ Image එක process කරන්න බැරි වුණා. ආයේ උත්සාහ කරන්න." }, { quoted: msg });
+                    await sock.sendMessage(sender, { text: "❌ Image එක process කරන්න බැරි වුණා." }, { quoted: msg });
                 }
                 return;
             }
 
-            // ---------- TEXT COMMANDS ----------
+            // ================================================================
+            //  📝 TEXT COMMANDS
+            // ================================================================
             const textLower = rawMessageText.toLowerCase().trim();
 
             // ---------- QUIZ COMMAND ----------
-            const quizMatch = textLower.match(/^quiz\s+(.+)$/);
-            if (textLower === 'quiz' || textLower === 'quiz එකක්' || textLower === 'quiz ekk' || quizMatch) {
-                const moduleQuery = quizMatch ? quizMatch[1].trim() : '';
+            if (textLower === 'quiz' || textLower === 'quiz එකක්' || textLower === 'quiz ekk' || 
+                textLower.startsWith('quiz ') || textLower.includes('ක්විස්') || textLower.includes('ප්‍රශ්න')) {
+                const moduleMatch = textLower.match(/(SE|IT|IE)\d{4}/i);
+                const moduleQuery = moduleMatch ? moduleMatch[0].toUpperCase() : '';
                 await handleQuizCommand(sock, sender, msg, moduleQuery);
                 return;
             }
 
-            // ---------- QUIZ FOLLOW-UP COMMANDS ----------
+            // ---------- QUIZ FOLLOW-UP ----------
             const isQuizFollowUp = textLower === 'more' || textLower === 'ඉවරයි' || textLower === 'තවත්' || 
                                    textLower === 'next' || textLower === 'next module' || textLower === 'වෙනත්' || 
                                    textLower === 'switch' || textLower === 'මීළඟ';
@@ -1161,35 +1318,46 @@ async function connectToWhatsApp() {
                 }
             }
 
-            // 🧠 SMART PDF COMMAND
-            if (textLower === 'pdf' || textLower === 'file' || textLower === 'danna' || textLower === 'ewanna' || textLower === 'give file' || textLower === 'send file') {
+            // ---------- SMART PDF COMMAND ----------
+            const pdfKeywords = /\b(pdf|file|danna|ewanna|notes|note|file eka|pdf eka|සටහන්|notes)\b/i;
+            if (pdfKeywords.test(textLower) || textLower === 'pdf' || textLower === 'file') {
                 let matchedFile = null;
                 let detectedModule = null;
 
-                // 1. Recent conversation
-                const history = userMemory[sender] || [];
                 const moduleCodes = ['SE1020', 'IT1170', 'IT1160', 'IT1150', 'IE1011'];
-                let lastModule = null;
-                for (let i = history.length - 1; i >= 0; i--) {
-                    const msgText = history[i].text || '';
-                    for (const code of moduleCodes) {
-                        if (msgText.toUpperCase().includes(code)) {
-                            lastModule = code;
-                            break;
-                        }
+                for (const code of moduleCodes) {
+                    if (textLower.toUpperCase().includes(code)) {
+                        detectedModule = code;
+                        matchedFile = fileRegistry.find(f => 
+                            f.keyword.toLowerCase().includes(code.toLowerCase()) ||
+                            (f.fileName || '').toLowerCase().includes(code.toLowerCase())
+                        );
+                        break;
                     }
-                    if (lastModule) break;
                 }
 
-                if (lastModule) {
-                    detectedModule = lastModule;
-                    matchedFile = fileRegistry.find(f => 
-                        f.keyword.toLowerCase().includes(lastModule.toLowerCase()) ||
-                        (f.fileName || '').toLowerCase().includes(lastModule.toLowerCase())
-                    );
+                if (!matchedFile) {
+                    const history = userMemory[sender] || [];
+                    let lastModule = null;
+                    for (let i = history.length - 1; i >= 0; i--) {
+                        const msgText = history[i].text || '';
+                        for (const code of moduleCodes) {
+                            if (msgText.toUpperCase().includes(code)) {
+                                lastModule = code;
+                                break;
+                            }
+                        }
+                        if (lastModule) break;
+                    }
+                    if (lastModule) {
+                        detectedModule = lastModule;
+                        matchedFile = fileRegistry.find(f => 
+                            f.keyword.toLowerCase().includes(lastModule.toLowerCase()) ||
+                            (f.fileName || '').toLowerCase().includes(lastModule.toLowerCase())
+                        );
+                    }
                 }
 
-                // 2. Today's timetable
                 if (!matchedFile) {
                     const { start, end } = getTargetDateRange('today');
                     const events = await getCalendarEvents(start, end);
@@ -1273,7 +1441,7 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // 📊 POLL COMMAND (Admin)
+            // ---------- POLL ----------
             if (textLower.startsWith('poll ') && isSenderAdmin(sender)) {
                 const pollArgs = rawMessageText.slice(5).split('|').map(s => s.trim());
                 
@@ -1299,18 +1467,18 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // STATUS (Admin)
+            // ---------- STATUS ----------
             if (textLower === 'status') {
                 if (!isSenderAdmin(sender)) {
                     await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
                     return;
                 }
-                const statusMsg = `✅ *HansanaBot Status*\n\n👥 *Used Requests:* ${geminiRequestsToday}/500\n📁 *Total Files:* ${fileRegistry.length}\n📚 *Saved Info:* ${knowledgeBase.length}\n👥 *Registered Students:* ${studentRegistry.length}`;
+                const statusMsg = `✅ *HansanaBot Status*\n\n👥 *Used Requests:* ${geminiRequestsToday}/500\n📁 *Total Files:* ${fileRegistry.length}\n📚 *Saved Info:* ${knowledgeBase.length}\n👥 *Registered Students:* ${studentRegistry.length}\n📍 *Matara Students:* ${mataraStudents.length}`;
                 await sock.sendMessage(sender, { text: statusMsg }, { quoted: msg });
                 return;
             }
 
-            // ADD INFO (Admin)
+            // ---------- ADD INFO ----------
             if (/^(add info|info add|save info)\b/i.test(textLower)) {
                 if (!isSenderAdmin(sender)) {
                     await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
@@ -1327,7 +1495,7 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // 🚨 REMOVE INFO (Admin)
+            // ---------- REMOVE INFO ----------
             if (/^remove info\s+\d+/i.test(textLower)) {
                 if (!isSenderAdmin(sender)) {
                     await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
@@ -1344,7 +1512,7 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // LIST FILES (Admin)
+            // ---------- LIST FILES ----------
             if (textLower === 'list files' || textLower === 'show files') {
                 if (!isSenderAdmin(sender)) {
                     await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
@@ -1374,7 +1542,7 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // REMOVE FILE (Admin)
+            // ---------- REMOVE FILE ----------
             if (/^remove file\s+\d+/i.test(textLower)) {
                 if (!isSenderAdmin(sender)) {
                     await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
@@ -1395,7 +1563,7 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // LIST INFO (Admin)
+            // ---------- LIST INFO ----------
             if (textLower === 'list info' || textLower === 'show info') {
                 if (!isSenderAdmin(sender)) {
                     await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
@@ -1409,33 +1577,126 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // ---------- AI INTENT ----------
-            const aiIntent = await getCalendarIntentFromAI(rawMessageText);
-
-            const chatWords = /adaraya|adara|kohomada|kohomda|what is love|meka mokadda|mokadda|mokakda|ayubowan|suba|thanks|stuti/i;
-            if (chatWords.test(textLower)) {
-                aiIntent.intent = 'chat';
-                aiIntent.date_keyword = null;
-            } else {
-                if (/exam|quiz|mid|test|assessment|date|kawadda|set wenne|විභාග|ප්‍රශ්න|කුසීස්|මචි/i.test(textLower)) {
-                    aiIntent.intent = 'chat';
-                    aiIntent.date_keyword = null;
+            // ---------- DEADLINE COMMANDS (Admin) ----------
+            const deadlineMatch = rawMessageText.match(/^add deadline\s*:?\s*(.+?)\s*\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*(\d{2}:\d{2})\s*\|\s*(.+)$/i);
+            if (deadlineMatch && isSenderAdmin(sender)) {
+                const description = deadlineMatch[1].trim();
+                const dateStr = deadlineMatch[2].trim();
+                const timeStr = deadlineMatch[3].trim();
+                const centre = deadlineMatch[4].trim();
+                
+                const dateObj = new Date(`${dateStr}T${timeStr}`);
+                if (isNaN(dateObj.getTime())) {
+                    await sock.sendMessage(sender, { text: "⚠️ වැරදි date හෝ time format. හරි format: YYYY-MM-DD | HH:MM | Centre" }, { quoted: msg });
+                    return;
                 }
-                const isDayMonthQuery = /\b(sanduda|saduda|sikurda|sikurada|eelaga|laban|balanna|ada|heta|anidda|monday|tuesday|wednesday|thursday|friday|saturday|sunday|janawari|february|march|april|may|june|july|august|september|october|november|december)\b/i.test(textLower);
-                if (isDayMonthQuery) {
-                   aiIntent.intent = 'calendar';
-                   if (!aiIntent.date_keyword) {
-                       aiIntent.date_keyword = textLower;
-                    }
-                } 
+                
+                deadlines.push({
+                    id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+                    description,
+                    date: dateStr,
+                    time: timeStr,
+                    centre: centre.toLowerCase(),
+                    createdAt: new Date().toISOString()
+                });
+                saveDeadlines();
+                await sock.sendMessage(sender, { 
+                    text: `✅ Deadline added!\n📝 ${description}\n📅 ${dateStr}\n🕐 ${timeStr}\n📍 ${centre}` 
+                }, { quoted: msg });
+                return;
             }
 
-            // 📅 CALENDAR COMMAND HANDLER
+            // Bulk add deadlines
+            if (textLower.startsWith('add deadlines:') && isSenderAdmin(sender)) {
+                const lines = rawMessageText.replace(/^add deadlines\s*:?\s*/i, '').split('\n').filter(line => line.trim());
+                let addedCount = 0;
+                let errorCount = 0;
+                
+                for (const line of lines) {
+                    const match = line.match(/^(.+?)\s*\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*(\d{2}:\d{2})\s*\|\s*(.+)$/);
+                    if (match) {
+                        const description = match[1].trim();
+                        const dateStr = match[2].trim();
+                        const timeStr = match[3].trim();
+                        const centre = match[4].trim();
+                        const dateObj = new Date(`${dateStr}T${timeStr}`);
+                        if (!isNaN(dateObj.getTime())) {
+                            deadlines.push({
+                                id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+                                description,
+                                date: dateStr,
+                                time: timeStr,
+                                centre: centre.toLowerCase(),
+                                createdAt: new Date().toISOString()
+                            });
+                            addedCount++;
+                        } else {
+                            errorCount++;
+                        }
+                    } else {
+                        errorCount++;
+                    }
+                }
+                
+                saveDeadlines();
+                await sock.sendMessage(sender, { 
+                    text: `✅ Deadlines added!\n📝 Added: ${addedCount}\n❌ Failed: ${errorCount}` 
+                }, { quoted: msg });
+                return;
+            }
+
+            // List deadlines
+            if (textLower === 'list deadlines' || textLower === 'show deadlines') {
+                if (!isSenderAdmin(sender)) {
+                    await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
+                    return;
+                }
+                if (deadlines.length === 0) {
+                    await sock.sendMessage(sender, { text: "📭 No deadlines saved." }, { quoted: msg });
+                } else {
+                    const sorted = [...deadlines].sort((a, b) => {
+                        const dateA = new Date(`${a.date}T${a.time || '23:59'}`);
+                        const dateB = new Date(`${b.date}T${b.time || '23:59'}`);
+                        return dateA - dateB;
+                    });
+                    const list = sorted.map((d, i) => {
+                        const dt = new Date(`${d.date}T${d.time || '23:59'}`);
+                        return `${i+1}. *${d.description}*\n   📅 ${dt.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })}\n   🕐 ${dt.toLocaleTimeString('en-LK', { hour: '2-digit', minute: '2-digit' })}\n   📍 ${d.centre}\n`;
+                    }).join('\n');
+                    await sock.sendMessage(sender, { text: `📅 *All Deadlines (${sorted.length})*\n\n${list}` }, { quoted: msg });
+                }
+                return;
+            }
+
+            // Remove deadline
+            if (/^remove deadline\s+\d+/i.test(textLower)) {
+                if (!isSenderAdmin(sender)) {
+                    await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
+                    return;
+                }
+                const idx = parseInt(textLower.replace(/^remove deadline\s+/i, ''), 10) - 1;
+                if (isNaN(idx) || idx < 0 || idx >= deadlines.length) {
+                    await sock.sendMessage(sender, { text: "⚠️ Invalid number. Use 'list deadlines' to see." }, { quoted: msg });
+                    return;
+                }
+                const [removed] = deadlines.splice(idx, 1);
+                saveDeadlines();
+                await sock.sendMessage(sender, { text: `🗑️ Removed: "${removed.description}"` }, { quoted: msg });
+                return;
+            }
+
+            // ================================================================
+            //  📅 CALENDAR COMMAND
+            // ================================================================
+            const aiIntent = detectIntentFromText(rawMessageText);
+
             if (aiIntent.intent === 'calendar') {
                 const lowerText = rawMessageText.toLowerCase().trim();
 
-                if (lowerText === 'calendar' || lowerText === 'week' || lowerText === 'weekly' || 
-                    lowerText === 'timetable' || lowerText.includes('me sathiya') || lowerText.includes('තිම් ටේබල්') || lowerText.includes('මේ සතිය')) {
+                if (lowerText === 'calendar' || lowerText === 'timetable' || 
+                    lowerText === 'week' || lowerText === 'weekly' || 
+                    lowerText.includes('me sathiya') || lowerText.includes('මේ සතිය') ||
+                    lowerText.includes('me satiya') || lowerText.includes('තිම් ටේබල්')) {
                     
                     const { start, end, weekStart } = getCurrentWeekRange();
                     const events = await getCalendarEvents(start, end);
@@ -1479,7 +1740,7 @@ async function connectToWhatsApp() {
                     return;
                 }
 
-                const { start, end, targetDate } = getTargetDateRange(aiIntent.date_keyword || textLower);
+                const { start, end, targetDate } = getTargetDateRange(aiIntent.data || lowerText);
                 const events = await getCalendarEvents(start, end);
 
                 if (events && events.length > 0) {
@@ -1513,16 +1774,6 @@ async function connectToWhatsApp() {
                 }
                 return;
             }
-            
-            if (aiIntent.intent === 'add_info' && isSenderAdmin(sender)) {
-                const infoText = rawMessageText.replace(/^(add info|info add|save info)\s*:?\s*/i, '').trim();
-                if (infoText) {
-                    knowledgeBase.push(infoText);
-                    saveKnowledgeBase();
-                    await sock.sendMessage(sender, { text: `✅ Info saved! (Total: ${knowledgeBase.length})` }, { quoted: msg });
-                    return;
-                }
-            }
 
             // ---------- OTHER COMMANDS ----------
             // WHO AM I
@@ -1541,10 +1792,10 @@ async function connectToWhatsApp() {
                 const genZGuide = `Yo bestie! 👋🔥 I'm *HansanaBot*, your AI slay assistant! No cap, I got your back! 🫡✨
 
 🛠️ *How to use me (fr fr):*
-👉 Just type *"ada class"* or *"heta class"* to see what's poppin' today/tomorrow.
-👉 Need notes? Type *"pdf"* and I'll find the right file for you! 📂
-👉 Type *"word"* to learn a new academic word daily! (Smart move, bestie! 🧠✨)
-👉 Got a random question? Just ask me in Sinhala or English.
+👉 Just ask me anything! I understand *"ada timetable"*, *"heta class"*, *"SE1020 notes"*, *"quiz"*, etc.
+👉 Need notes? Just say *"pdf"* or *"SE1020 notes"*!
+👉 Want a quiz? Just say *"quiz"* or *"quiz SE1020"*!
+👉 Got a random question? Just ask me in Sinhala or English!
 👉 *"status"* is only for the main character (Admin) 💅
 
 Catch my drift? Slide into my DMs and let's get that GPA up! 📈🚀`;
@@ -1552,25 +1803,24 @@ Catch my drift? Slide into my DMs and let's get that GPA up! 📈🚀`;
                 return;
             }
 
-        // ================================================================
-//  📋 HELP MENU (UPDATED - Latest Bot State)
-// ================================================================
-if (textLower === 'help' || textLower === '/help' || textLower === 'menu' || textLower === '/menu' || 
-    textLower === 'start' || textLower === '/start' || textLower === 'commands' || 
-    textLower === 'hi' || textLower === 'hello' || textLower === 'hey' || textLower === 'hii' || 
-    textLower === 'hlo' || textLower === 'hi there' || textLower === 'good morning' || 
-    textLower === 'good night' || textLower === 'suba' || textLower === 'ayubowan') {
-    
-    const isAdmin = isSenderAdmin(sender);
-    
-    let helpText = `👋 *HansanaBot Help Menu* 🤖
-    
+            // HELP MENU
+            if (textLower === 'help' || textLower === '/help' || textLower === 'menu' || textLower === '/menu' || 
+                textLower === 'start' || textLower === '/start' || textLower === 'commands' || 
+                textLower === 'hi' || textLower === 'hello' || textLower === 'hey' || textLower === 'hii' || 
+                textLower === 'hlo' || textLower === 'hi there' || textLower === 'good morning' || 
+                textLower === 'good night' || textLower === 'suba' || textLower === 'ayubowan') {
+                
+                const isAdmin = isSenderAdmin(sender);
+                
+                let helpText = `👋 *HansanaBot Help Menu* 🤖
+                
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📌 *General Commands* (For Everyone)
 
 📖 *guide* - Gen Z Style Guide එක බලන්න
 🆔 *whoami* - ඔයාගේ WhatsApp ID එක බලන්න
 👤 *who am i* - Adminද Studentද කියලා බලන්න
+💬 *ඕනෑම ප්‍රශ්නයක්* - මම AI Assistant කෙනෙක්, ඉතින් කතා කරන්න!
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📅 *Timetable & Calendar*
@@ -1588,7 +1838,6 @@ if (textLower === 'help' || textLower === '/help' || textLower === 'menu' || tex
 📂 *Smart PDF System*
 
 📂 *pdf / file / danna* - ඔබට අදාළ Module එකේ File එක Auto ලබා ගන්න
-   (Conversation එකේ Module එක / අද Timetable එක බලලා Auto Detect)
 📂 *[module code]* - e.g., *SE1020* type කරලා File එක Direct ලබා ගන්න
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1617,15 +1866,14 @@ if (textLower === 'help' || textLower === '/help' || textLower === 'menu' || tex
 
 ❓ *help / menu* - මෙම Help Menu එක
 🙏 *thanks / stuti* - Auto Thanks Reply
-💬 *ඕනෑම ප්‍රශ්නයක්* - Gemini AI මගින් උත්තර ලබා ගන්න
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📞 *Support*
 Contact Batch Rep: +94 76 251 3957
 Email: it26100930@my.sliit.lk`;
 
-    if (isAdmin) {
-        helpText += `
+                if (isAdmin) {
+                    helpText += `
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🛠️ *Admin Commands* (Batch Rep Only) 🛡️
@@ -1646,13 +1894,19 @@ Email: it26100930@my.sliit.lk`;
 📊 *poll Question? | Option 1 | Option 2* - WhatsApp Poll එකක් හදන්න
 🆔 *getid* - Group ID එක ගන්න (Group එක ඇතුලේ type කරන්න)
 
+📅 *Deadline Management (Matara Centre):*
+📝 *add deadline: Description | YYYY-MM-DD | HH:MM | Matara* - Add deadline
+📚 *list deadlines* - View all deadlines
+🗑️ *remove deadline [number]* - Remove deadline
+
 💡 *Tip:* Student ලට බලන්න දෙන්නේ *help* command එක විතරයි. 
 Admin Menu එක බලන්න *admin* කියලා type කරන්න.`;
-    }
+                }
 
-    await sock.sendMessage(sender, { text: helpText }, { quoted: msg });
-    return;
-}
+                await sock.sendMessage(sender, { text: helpText }, { quoted: msg });
+                return;
+            }
+
             // WHOAMI
             if (textLower === 'whoami' || textLower === 'myid') {
                 const normalized = jidNormalizedUser(sender) || sender;
@@ -1668,7 +1922,7 @@ Admin Menu එක බලන්න *admin* කියලා type කරන්න.`
                 return;
             }
 
-            // 🎉 FUN & MOTIVATION
+            // FUN & MOTIVATION
             if (textLower === 'motivate me' || textLower === 'daily quote' || textLower === 'inspire me') {
                 const quotes = [
                     "Success is not final, failure is not fatal: it is the courage to continue that counts. - Winston Churchill",
@@ -1681,6 +1935,8 @@ Admin Menu එක බලන්න *admin* කියලා type කරන්න.`
                 await sock.sendMessage(sender, { text: `✨ *Motivation:*\n\n"${randomQuote}"` }, { quoted: msg });
                 return;
             }
+            
+            // RIDDLE
             if (textLower === 'riddle') {
                 global.currentRiddle = "I speak without a mouth and hear without ears. I have no body, but I come alive with wind. What am I?";
                 await sock.sendMessage(sender, { text: `🧩 *Riddle:*\n\n${global.currentRiddle}` }, { quoted: msg });
@@ -1692,7 +1948,7 @@ Admin Menu එක බලන්න *admin* කියලා type කරන්න.`
                 return;
             }
 
-            // 📖 ACADEMIC WORD PRACTICE
+            // ACADEMIC WORD PRACTICE
             if (textLower === 'word' || textLower === 'aw word' || textLower === 'practice word' || textLower === 'vocabulary') {
                 const wordKeys = Object.keys(academicWords);
                 const randomWord = wordKeys[Math.floor(Math.random() * wordKeys.length)];
@@ -1701,13 +1957,13 @@ Admin Menu එක බලන්න *admin* කියලා type කරන්න.`
                 return;
             }
 
-            // 🙏 THANKS AUTO-REPLY
+            // THANKS AUTO-REPLY
             if (textLower.includes('thanks') || textLower.includes('thank you') || textLower.includes('sthuthi') || textLower.includes('stuti') || textLower.includes('bohoma sthuthi')) {
                 await sock.sendMessage(sender, { text: "ඔයාව සාදරයෙන් පිළිගන්නවා! 🥰❤️ තව මොනවා හරි ඕන නම් අහන්න!" }, { quoted: msg });
                 return;
             }
 
-            // ---------- GENERAL AI RESPONSE (with memory) ----------
+            // GENERAL AI RESPONSE
             if (rawMessageText) {
                 try {
                     const history = getRecentContext(sender);
