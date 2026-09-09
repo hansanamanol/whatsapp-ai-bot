@@ -383,13 +383,13 @@ CRITICAL CODE & TUTORIAL ANALYSIS RULES:
 `;
 
 let model = getNextGenAI().getGenerativeModel({
-    model: "gemini-1.5-flash", 
+    model: "gemini-3.5-flash-lite", 
     systemInstruction: systemInstruction
 });
 
 function createModelWithCurrentKey() {
     return getNextGenAI().getGenerativeModel({
-        model: "gemini-1.5-flash", 
+        model: "gemini-3.5-flash-lite", 
         systemInstruction: systemInstruction
     });
 }
@@ -1979,9 +1979,23 @@ Admin Menu එක බලන්න *admin* කියලා type කරන්න.`
                     addToMemory(sender, 'Bot', reply);
                     await sock.sendMessage(sender, { text: reply }, { quoted: msg });
                 } catch (error) {
-                    console.error('Gemini error:', error);
-                    await sock.sendMessage(sender, { text: "❌ සමාවෙන්න, මට දැන් උත්තර දෙන්න බැරි වුණා. නැවත try කරන්න." }, { quoted: msg });
-                }
+    console.error('Gemini error:', error);
+    
+    let errorMessage = "❌ සමාවෙන්න, මට දැන් උත්තර දෙන්න බැරි වුණා. ";
+    
+    // Specific error messages
+    if (error.message.includes('503') || error.message.includes('429')) {
+        errorMessage += "API එක busy. ටික වේලාවකින් නැවත try කරන්න. ⏳";
+    } else if (error.message.includes('content') || error.message.includes('filter')) {
+        errorMessage += "ඔබගේ ප්‍රශ්නයට උත්තර දෙන්න මට ඉඩ නැහැ. වෙනත් ප්‍රශ්නයක් අහන්න. 🙏";
+    } else if (error.message.includes('API key')) {
+        errorMessage += "API Key එක invalid. Admin ට දැනුම් දෙන්න. 🛠️";
+    } else {
+        errorMessage += "නැවත try කරන්න. 🔄";
+    }
+    
+    await sock.sendMessage(sender, { text: errorMessage }, { quoted: msg });
+}
             }
         }
 
