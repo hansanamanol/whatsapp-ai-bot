@@ -136,6 +136,19 @@ function saveDeadlines() {
     try { fs.writeFileSync(DEADLINES_FILE, JSON.stringify(deadlines, null, 2)); } catch (e) { console.error(e); }
 }
 
+// ================================================================
+//  📝 EXAMS SYSTEM (Matara Centre with Time & Exam Type)
+// ================================================================
+const EXAMS_FILE = path.join(DATA_DIR, 'exams.json');
+let exams = [];
+try {
+    if (fs.existsSync(EXAMS_FILE)) exams = JSON.parse(fs.readFileSync(EXAMS_FILE, 'utf8'));
+} catch (e) { console.error('Error loading exams.json:', e); }
+
+function saveExams() {
+    try { fs.writeFileSync(EXAMS_FILE, JSON.stringify(exams, null, 2)); } catch (e) { console.error(e); }
+}
+
 // Matara students registry
 const MATARA_STUDENTS_FILE = path.join(DATA_DIR, 'matara_students.json');
 let mataraStudents = [];
@@ -485,6 +498,13 @@ function detectIntentFromText(text) {
         return { intent: 'calendar', data: text };
     }
     
+    // 4️⃣ Check for Exam Query (NEW)
+    const examKeywords = /\b(exam|විභාග|mid|final|test|assessment|ප්‍රශ්න|ටෙස්ට්|ක්විස්|quiz)\s*(date|kawadda|kawadada|when|දිනය|කවදා|කවද්ද|කවදාද|කොහොමද|මොකද|ගැන)\b/i;
+    if (examKeywords.test(lowerText) || lowerText.includes('exam') || lowerText.includes('විභාග')) {
+        const moduleMatch = lowerText.match(/(SE|IT|IE)\d{4}/i);
+        return { intent: 'exam_query', data: moduleMatch ? moduleMatch[0].toUpperCase() : '' };
+    }
+    
     if (/^(add info|info add|save info)\b/.test(lowerText)) {
         return { intent: 'add_info', data: text };
     }
@@ -767,6 +787,79 @@ async function checkDeadlines(sock) {
 }
 
 // ================================================================
+//  📝 CHECK EXAMS & SEND REMINDERS (Matara Centre - 7 Days)
+// ================================================================
+async function checkExams(sock) {
+    if (mataraStudents.length === 0) {
+        console.log('No Matara students registered, skipping exam check.');
+        return;
+    }
+
+    const now = new Date();
+    const sevenDaysLater = new Date(now);
+    sevenDaysLater.setDate(now.getDate() + 7);
+
+    const upcomingExams = exams.filter(e => {
+        const examDateTime = new Date(`${e.date}T${e.time || '23:59'}`);
+        return examDateTime >= now && examDateTime <= sevenDaysLater && e.centre.toLowerCase() === 'matara';
+    });
+
+    if (upcomingExams.length === 0) {
+        console.log('No upcoming Matara exams in next 7 days.');
+        return;
+    }
+
+    upcomingExams.sort((a, b) => {
+        const dateA = new Date(`${a.date}T${a.time || '23:59'}`);
+        const dateB = new Date(`${b.date}T${b.time || '23:59'}`);
+        return dateA - dateB;
+    });
+
+    let msgText = `📝 *Matara Centre - Upcoming Exams* 📚\n\n`;
+    upcomingExams.forEach((e, idx) => {
+        const examDateTime = new Date(`${e.date}T${e.time || '23:59'}`);
+        const formattedDate = examDateTime.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' });
+        const formattedTime = examDateTime.toLocaleTimeString('en-LK', { hour: '2-digit', minute: '2-digit' });
+        const diffMs = examDateTime - now;
+        const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+        const diffHours = Math.ceil(diffMs / (1000 * 60 * 60));
+        
+        let timeRemaining = '';
+        if (diffMs <= 0) timeRemaining = 'අදම විභාගය! 🚨';
+        else if (diffHours < 24) timeRemaining = `ඉතිරිව ඇත්තේ පැය ${diffHours}ක්! ⏰`;
+        else if (diffDays === 1) timeRemaining = 'හෙට විභාගය! ⚠️';
+        else timeRemaining = `දින ${diffDays}කින් විභාගය`;
+        
+        const typeEmoji = {
+            'midterm': '📝',
+            'final': '🏆',
+            'quiz': '🧩',
+            'practical': '🔬',
+            'theory': '📖'
+        }[e.type?.toLowerCase()] || '📚';
+        
+        msgText += `${idx+1}. ${typeEmoji} *${e.description}*\n`;
+        msgText += `   📅 ${formattedDate}\n`;
+        msgText += `   🕐 ${formattedTime}\n`;
+        msgText += `   📍 ${e.centre}\n`;
+        msgText += `   📋 ${e.type || 'Exam'}\n`;
+        msgText += `   ⏳ ${timeRemaining}\n\n`;
+    });
+
+    msgText += `💡 *Tip:* හොඳින් පාඩම් කරලා විභාගයට යන්න! 💪📚`;
+
+    for (const jid of mataraStudents) {
+        try {
+            await sock.sendMessage(jid, { text: msgText });
+            await new Promise(r => setTimeout(r, 1500));
+        } catch (e) {
+            console.error(`Failed to send exam reminder to ${jid}:`, e.message);
+        }
+    }
+    console.log(`✅ Matara exam reminders sent to ${mataraStudents.length} students.`);
+}
+
+// ================================================================
 //  📝 QUIZ GENERATOR
 // ================================================================
 async function handleQuizCommand(sock, sender, msg, specificModule = '') {
@@ -1012,7 +1105,7 @@ async function connectToWhatsApp() {
                 isConnected = true;
                 console.log('✅ WhatsApp AI Bot is Ready and Online!');
                 
-                // ✅ NEW: Register all existing students as Matara students
+                // ✅ Register all existing students as Matara students
                 for (const jid of studentRegistry) {
                     if (!mataraStudents.includes(jid)) {
                         mataraStudents.push(jid);
@@ -1033,6 +1126,12 @@ async function connectToWhatsApp() {
         cron.schedule('0 8 * * *', async () => {
             console.log('⏰ Running Deadline Check at 8:00 AM SL Time...');
             await checkDeadlines(sock);
+        }, { timezone: 'Asia/Colombo' });
+
+        // 📝 CRON JOB (8:00 AM - Exam Reminders)
+        cron.schedule('0 8 * * *', async () => {
+            console.log('⏰ Running Exam Check at 8:00 AM SL Time...');
+            await checkExams(sock);
         }, { timezone: 'Asia/Colombo' });
 
         async function processMessage(sock, msg) {
@@ -1073,7 +1172,7 @@ async function connectToWhatsApp() {
                 await sock.sendMessage(sender, { text: "Hello! I am *HansanaBot*, your AI assistant! 👋\n\nType *help* to see what I can do for you. 🚀" }, { quoted: msg });
             }
 
-            // ✅ NEW: AUTO-REGISTER ALL STUDENTS AS MATARA STUDENTS
+            // ✅ AUTO-REGISTER ALL STUDENTS AS MATARA STUDENTS
             const isMataraAdded = addMataraStudent(sender);
             if (isMataraAdded) {
                 await sock.sendMessage(sender, { 
@@ -1152,6 +1251,49 @@ async function connectToWhatsApp() {
                             }
                         } else {
                             await sock.sendMessage(sender, { text: "📭 ඔබ ඇසූ Module එක සඳහා File එකක් හම්බුනේ නැහැ." }, { quoted: msg });
+                        }
+                    } else if (intent.intent === 'exam_query') {
+                        // Handle exam query from voice
+                        const queryModule = intent.data;
+                        let matchedExams = [];
+                        if (queryModule) {
+                            matchedExams = exams.filter(e => 
+                                e.description.toUpperCase().includes(queryModule) ||
+                                (e.type && e.type.toUpperCase().includes(queryModule))
+                            );
+                        }
+                        if (matchedExams.length === 0) {
+                            const now = new Date();
+                            matchedExams = exams.filter(e => 
+                                e.centre.toLowerCase() === 'matara' &&
+                                new Date(`${e.date}T${e.time || '23:59'}`) >= now
+                            );
+                        }
+                        if (matchedExams.length === 0) {
+                            await sock.sendMessage(sender, { text: "📭 වත්මන් Matara Centre එකට අදාළ කිසිම විභාගයක් හම්බුනේ නැහැ. Admin ට දැනුම් දෙන්න." }, { quoted: msg });
+                        } else {
+                            matchedExams.sort((a, b) => {
+                                const dateA = new Date(`${a.date}T${a.time || '23:59'}`);
+                                const dateB = new Date(`${b.date}T${b.time || '23:59'}`);
+                                return dateA - dateB;
+                            });
+                            const typeEmoji = {
+                                'midterm': '📝',
+                                'final': '🏆',
+                                'quiz': '🧩',
+                                'practical': '🔬',
+                                'theory': '📖'
+                            };
+                            let msgText = `📅 *විභාග විස්තර* (Matara Centre)\n\n`;
+                            matchedExams.forEach((e, idx) => {
+                                const dt = new Date(`${e.date}T${e.time || '23:59'}`);
+                                const emoji = typeEmoji[e.type?.toLowerCase()] || '📚';
+                                msgText += `${idx+1}. ${emoji} *${e.description}*\n`;
+                                msgText += `   📅 ${dt.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })}\n`;
+                                msgText += `   🕐 ${dt.toLocaleTimeString('en-LK', { hour: '2-digit', minute: '2-digit' })}\n`;
+                                msgText += `   📋 ${e.type || 'Exam'}\n\n`;
+                            });
+                            await sock.sendMessage(sender, { text: msgText }, { quoted: msg });
                         }
                     } else {
                         const prompt = buildPromptWithKnowledge(`User said (voice note): "${transcribedText}"\nReply accordingly.`);
@@ -1473,7 +1615,7 @@ async function connectToWhatsApp() {
                     await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
                     return;
                 }
-                const statusMsg = `✅ *HansanaBot Status*\n\n👥 *Used Requests:* ${geminiRequestsToday}/500\n📁 *Total Files:* ${fileRegistry.length}\n📚 *Saved Info:* ${knowledgeBase.length}\n👥 *Registered Students:* ${studentRegistry.length}\n📍 *Matara Students:* ${mataraStudents.length}`;
+                const statusMsg = `✅ *HansanaBot Status*\n\n👥 *Used Requests:* ${geminiRequestsToday}/500\n📁 *Total Files:* ${fileRegistry.length}\n📚 *Saved Info:* ${knowledgeBase.length}\n👥 *Registered Students:* ${studentRegistry.length}\n📍 *Matara Students:* ${mataraStudents.length}\n📅 *Deadlines:* ${deadlines.length}\n📝 *Exams:* ${exams.length}`;
                 await sock.sendMessage(sender, { text: statusMsg }, { quoted: msg });
                 return;
             }
@@ -1685,11 +1827,143 @@ async function connectToWhatsApp() {
                 return;
             }
 
+            // ---------- EXAM COMMANDS (Admin) ----------
+            // Add single exam: add exam: Description | 2026-09-20 | 10:00 | Matara | Midterm
+            const examMatch = rawMessageText.match(/^add exam\s*:?\s*(.+?)\s*\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*(\d{2}:\d{2})\s*\|\s*(.+?)\s*\|\s*(.+)$/i);
+            if (examMatch && isSenderAdmin(sender)) {
+                const description = examMatch[1].trim();
+                const dateStr = examMatch[2].trim();
+                const timeStr = examMatch[3].trim();
+                const centre = examMatch[4].trim();
+                const type = examMatch[5].trim();
+                
+                const dateObj = new Date(`${dateStr}T${timeStr}`);
+                if (isNaN(dateObj.getTime())) {
+                    await sock.sendMessage(sender, { text: "⚠️ වැරදි date හෝ time format. හරි format: YYYY-MM-DD | HH:MM | Centre | ExamType" }, { quoted: msg });
+                    return;
+                }
+                
+                exams.push({
+                    id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
+                    description,
+                    date: dateStr,
+                    time: timeStr,
+                    centre: centre.toLowerCase(),
+                    type: type,
+                    createdAt: new Date().toISOString()
+                });
+                saveExams();
+                await sock.sendMessage(sender, { 
+                    text: `✅ Exam added!\n📝 ${description}\n📅 ${dateStr}\n🕐 ${timeStr}\n📍 ${centre}\n📋 ${type}` 
+                }, { quoted: msg });
+                return;
+            }
+
+            // List exams (Admin only or open to all?)
+            if (textLower === 'list exams' || textLower === 'show exams') {
+                if (!isSenderAdmin(sender)) {
+                    await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
+                    return;
+                }
+                if (exams.length === 0) {
+                    await sock.sendMessage(sender, { text: "📭 No exams saved." }, { quoted: msg });
+                } else {
+                    const sorted = [...exams].sort((a, b) => {
+                        const dateA = new Date(`${a.date}T${a.time || '23:59'}`);
+                        const dateB = new Date(`${b.date}T${b.time || '23:59'}`);
+                        return dateA - dateB;
+                    });
+                    const list = sorted.map((e, i) => {
+                        const dt = new Date(`${e.date}T${e.time || '23:59'}`);
+                        return `${i+1}. *${e.description}*\n   📅 ${dt.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })}\n   🕐 ${dt.toLocaleTimeString('en-LK', { hour: '2-digit', minute: '2-digit' })}\n   📍 ${e.centre}\n   📋 ${e.type || 'Exam'}\n`;
+                    }).join('\n');
+                    await sock.sendMessage(sender, { text: `📝 *All Exams (${sorted.length})*\n\n${list}` }, { quoted: msg });
+                }
+                return;
+            }
+
+            // Remove exam
+            if (/^remove exam\s+\d+/i.test(textLower)) {
+                if (!isSenderAdmin(sender)) {
+                    await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
+                    return;
+                }
+                const idx = parseInt(textLower.replace(/^remove exam\s+/i, ''), 10) - 1;
+                if (isNaN(idx) || idx < 0 || idx >= exams.length) {
+                    await sock.sendMessage(sender, { text: "⚠️ Invalid number. Use 'list exams' to see." }, { quoted: msg });
+                    return;
+                }
+                const [removed] = exams.splice(idx, 1);
+                saveExams();
+                await sock.sendMessage(sender, { text: `🗑️ Removed: "${removed.description}"` }, { quoted: msg });
+                return;
+            }
+
+            // ================================================================
+            //  📅 EXAM QUERY HANDLER (Student can ask) - NEW
+            // ================================================================
+            const aiIntent = detectIntentFromText(rawMessageText);
+            
+            if (aiIntent.intent === 'exam_query') {
+                const queryModule = aiIntent.data;
+                let matchedExams = [];
+                
+                // Try to find exams matching the module code (if any)
+                if (queryModule) {
+                    matchedExams = exams.filter(e => 
+                        e.description.toUpperCase().includes(queryModule) ||
+                        (e.type && e.type.toUpperCase().includes(queryModule))
+                    );
+                }
+                
+                // If no specific module matched, show all upcoming Matara exams
+                if (matchedExams.length === 0) {
+                    const now = new Date();
+                    matchedExams = exams.filter(e => 
+                        e.centre.toLowerCase() === 'matara' &&
+                        new Date(`${e.date}T${e.time || '23:59'}`) >= now
+                    );
+                }
+                
+                if (matchedExams.length === 0) {
+                    await sock.sendMessage(sender, { 
+                        text: "📭 වත්මන් Matara Centre එකට අදාළ කිසිම විභාගයක් හම්බුනේ නැහැ. Admin ට දැනුම් දෙන්න." 
+                    }, { quoted: msg });
+                    return;
+                }
+                
+                // Sort by date
+                matchedExams.sort((a, b) => {
+                    const dateA = new Date(`${a.date}T${a.time || '23:59'}`);
+                    const dateB = new Date(`${b.date}T${b.time || '23:59'}`);
+                    return dateA - dateB;
+                });
+                
+                const typeEmoji = {
+                    'midterm': '📝',
+                    'final': '🏆',
+                    'quiz': '🧩',
+                    'practical': '🔬',
+                    'theory': '📖'
+                };
+                
+                let msgText = `📅 *විභාග විස්තර* (Matara Centre)\n\n`;
+                matchedExams.forEach((e, idx) => {
+                    const dt = new Date(`${e.date}T${e.time || '23:59'}`);
+                    const emoji = typeEmoji[e.type?.toLowerCase()] || '📚';
+                    msgText += `${idx+1}. ${emoji} *${e.description}*\n`;
+                    msgText += `   📅 ${dt.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })}\n`;
+                    msgText += `   🕐 ${dt.toLocaleTimeString('en-LK', { hour: '2-digit', minute: '2-digit' })}\n`;
+                    msgText += `   📋 ${e.type || 'Exam'}\n\n`;
+                });
+                
+                await sock.sendMessage(sender, { text: msgText }, { quoted: msg });
+                return;
+            }
+
             // ================================================================
             //  📅 CALENDAR COMMAND
             // ================================================================
-            const aiIntent = detectIntentFromText(rawMessageText);
-
             if (aiIntent.intent === 'calendar') {
                 const lowerText = rawMessageText.toLowerCase().trim();
 
@@ -1795,6 +2069,7 @@ async function connectToWhatsApp() {
 👉 Just ask me anything! I understand *"ada timetable"*, *"heta class"*, *"SE1020 notes"*, *"quiz"*, etc.
 👉 Need notes? Just say *"pdf"* or *"SE1020 notes"*!
 👉 Want a quiz? Just say *"quiz"* or *"quiz SE1020"*!
+👉 Want to know about exams? Ask *"mid exam kawadda"*, *"final exam date"*, or *"විභාගය කවදාද"*!
 👉 Got a random question? Just ask me in Sinhala or English!
 👉 *"status"* is only for the main character (Admin) 💅
 
@@ -1848,6 +2123,12 @@ Catch my drift? Slide into my DMs and let's get that GPA up! 📈🚀`;
    (ඉවර වුනාම *more* හෝ *next module* කියලා Type කරන්න)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📅 *Exam Query* (NEW - Student can ask!)
+
+📅 *"mid exam kawadda"* / *"final exam date"* / *"විභාගය කවදාද"* - ඉදිරි විභාග දින බලන්න
+📅 *"SE1020 exam"* - Specific module එකක විභාග දිනය බලන්න
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🎤 *Voice Commands*
 
 🎙️ *Voice Note එකක් යවන්න* - "හෙට timetable එක දෙන්න" වගේ කියන්න
@@ -1898,6 +2179,12 @@ Email: it26100930@my.sliit.lk`;
 📝 *add deadline: Description | YYYY-MM-DD | HH:MM | Matara* - Add deadline
 📚 *list deadlines* - View all deadlines
 🗑️ *remove deadline [number]* - Remove deadline
+
+📝 *Exam Management (Matara Centre):*
+📝 *add exam: Description | YYYY-MM-DD | HH:MM | Matara | ExamType* - Add exam
+📚 *list exams* - View all exams
+🗑️ *remove exam [number]* - Remove exam
+   (ExamTypes: Midterm, Final, Quiz, Practical, Theory)
 
 💡 *Tip:* Student ලට බලන්න දෙන්නේ *help* command එක විතරයි. 
 Admin Menu එක බලන්න *admin* කියලා type කරන්න.`;
@@ -1979,23 +2266,22 @@ Admin Menu එක බලන්න *admin* කියලා type කරන්න.`
                     addToMemory(sender, 'Bot', reply);
                     await sock.sendMessage(sender, { text: reply }, { quoted: msg });
                 } catch (error) {
-    console.error('Gemini error:', error);
-    
-    let errorMessage = "❌ සමාවෙන්න, මට දැන් උත්තර දෙන්න බැරි වුණා. ";
-    
-    // Specific error messages
-    if (error.message.includes('503') || error.message.includes('429')) {
-        errorMessage += "API එක busy. ටික වේලාවකින් නැවත try කරන්න. ⏳";
-    } else if (error.message.includes('content') || error.message.includes('filter')) {
-        errorMessage += "ඔබගේ ප්‍රශ්නයට උත්තර දෙන්න මට ඉඩ නැහැ. වෙනත් ප්‍රශ්නයක් අහන්න. 🙏";
-    } else if (error.message.includes('API key')) {
-        errorMessage += "API Key එක invalid. Admin ට දැනුම් දෙන්න. 🛠️";
-    } else {
-        errorMessage += "නැවත try කරන්න. 🔄";
-    }
-    
-    await sock.sendMessage(sender, { text: errorMessage }, { quoted: msg });
-}
+                    console.error('Gemini error:', error);
+                    
+                    let errorMessage = "❌ සමාවෙන්න, මට දැන් උත්තර දෙන්න බැරි වුණා. ";
+                    
+                    if (error.message.includes('503') || error.message.includes('429')) {
+                        errorMessage += "API එක busy. ටික වේලාවකින් නැවත try කරන්න. ⏳";
+                    } else if (error.message.includes('content') || error.message.includes('filter')) {
+                        errorMessage += "ඔබගේ ප්‍රශ්නයට උත්තර දෙන්න මට ඉඩ නැහැ. වෙනත් ප්‍රශ්නයක් අහන්න. 🙏";
+                    } else if (error.message.includes('API key')) {
+                        errorMessage += "API Key එක invalid. Admin ට දැනුම් දෙන්න. 🛠️";
+                    } else {
+                        errorMessage += "නැවත try කරන්න. 🔄";
+                    }
+                    
+                    await sock.sendMessage(sender, { text: errorMessage }, { quoted: msg });
+                }
             }
         }
 
