@@ -670,8 +670,6 @@ function detectIntentFromText(text) {
     const lowerText = text.toLowerCase().trim();
     
     // 🎯 PRIORITY CHECK: Exam-related queries should go to AI (memory), not calendar
-    // If the message contains exam-related words AND question/date/relative time words,
-    // route to AI so that the memory-based JARVIS response can answer it.
     const examWords = /(exam|test|විභාග|පරීක්ෂණ|mid|final|assessment|paper|in.?class|in-class)/i;
     const dateQuestionWords = /(thiyeda|thiyenawada|thiyenawad|thiyenwada|kawadda|kawadada|when|තියෙනවද|කවදාද|තියෙද|kiyanna|kiyanawada|gana|ganna|මොකද|ගැන|කියන්න|denna|danna)/i;
     const relativeTimeWords = /(labana|eelaga|next|this|me|ඊළඟ|ලබන|මේ)/i;
@@ -704,10 +702,11 @@ function detectIntentFromText(text) {
         'ada timetable', 'heta timetable', 'anidda timetable',
         'me sathiya', 'me sathiye', 'me satiya', 'me satiye',
         'next week', 'eelaga', 'laban', 'balanna',
+        'giya sathiye', 'giya satiya', 'last week', 'pasanugiya',
         'අද', 'හෙට', 'අනිද්දා', 'පෙරේදා', 'ඊයේ',
         'class', 'classes', 'ක්ලාස්', 'ක්ලාසස්',
         'තිම් ටේබල්', 'කැලැන්ඩරය', 'කාලසටහන',
-        'මේ සතිය', 'ලබන සතිය', 'ඊළඟ සතිය'
+        'මේ සතිය', 'ලබන සතිය', 'ඊළඟ සතිය', 'පසුගිය සතිය'
     ];
     
     const isTimetable = timetableKeywords.some(kw => lowerText.includes(kw));
@@ -750,6 +749,136 @@ function cleanHTML(text) {
 // ================================================================
 const CALENDAR_API_KEY = process.env.CALENDAR_API_KEY;
 const CALENDAR_ID = process.env.CALENDAR_ID || 'ca0b38d172729231657abfc34f1c7fdb8ea33050fe6f4623f5fab88cd0d4633@group.calendar.google.com';
+
+// ================================================================
+//  🗓️ GET DATE RANGE FOR QUERY (Handles "last week", "from X", ranges)
+// ================================================================
+function getDateRangeForQuery(text) {
+    const utcNow = new Date();
+    const now = new Date(utcNow.toLocaleString('en-US', { timeZone: 'Asia/Colombo' }));
+    const lowerText = text.toLowerCase().trim();
+    
+    const currentYear = now.getFullYear();
+    
+    // ============ "LAST WEEK" / "Giya sathiye" ============
+    if (/giya\s*sathiye|giya\s*satiye|last\s*week|පසුගිය\s*සතිය|pasanugiya/i.test(lowerText)) {
+        const dayOfWeek = now.getDay();
+        const thisSunday = new Date(now);
+        thisSunday.setDate(now.getDate() - dayOfWeek);
+        thisSunday.setHours(0, 0, 0, 0);
+        
+        const lastSunday = new Date(thisSunday);
+        lastSunday.setDate(thisSunday.getDate() - 7);
+        
+        const lastSaturday = new Date(lastSunday);
+        lastSaturday.setDate(lastSunday.getDate() + 6);
+        lastSaturday.setHours(23, 59, 59, 999);
+        
+        return {
+            start: lastSunday,
+            end: lastSaturday,
+            label: 'පසුගිය සතිය (Last Week)',
+            isRange: true
+        };
+    }
+    
+    // ============ "NEXT WEEK" / "Laban sathiye" ============
+    if (/laban\s*sathiye|laban\s*satiye|next\s*week|ඊළඟ\s*සතිය|ලබන\s*සතිය|eelaga/i.test(lowerText)) {
+        const dayOfWeek = now.getDay();
+        const thisSunday = new Date(now);
+        thisSunday.setDate(now.getDate() - dayOfWeek);
+        thisSunday.setHours(0, 0, 0, 0);
+        
+        const nextSunday = new Date(thisSunday);
+        nextSunday.setDate(thisSunday.getDate() + 7);
+        
+        const nextSaturday = new Date(nextSunday);
+        nextSaturday.setDate(nextSunday.getDate() + 6);
+        nextSaturday.setHours(23, 59, 59, 999);
+        
+        return {
+            start: nextSunday,
+            end: nextSaturday,
+            label: 'ලබන සතිය (Next Week)',
+            isRange: true
+        };
+    }
+    
+    // ============ "THIS WEEK" / "Me sathiye" ============
+    if (/me\s*sathiye|me\s*satiye|this\s*week|මේ\s*සතිය/i.test(lowerText)) {
+        const dayOfWeek = now.getDay();
+        const thisSunday = new Date(now);
+        thisSunday.setDate(now.getDate() - dayOfWeek);
+        thisSunday.setHours(0, 0, 0, 0);
+        
+        const thisSaturday = new Date(thisSunday);
+        thisSaturday.setDate(thisSunday.getDate() + 6);
+        thisSaturday.setHours(23, 59, 59, 999);
+        
+        return {
+            start: thisSunday,
+            end: thisSaturday,
+            label: 'මේ සතිය (This Week)',
+            isRange: true
+        };
+    }
+    
+    // ============ "FROM X idan" (Range from date) ============
+    const monthNames = {
+        'january': 1, 'jan': 1, 'janawari': 1,
+        'february': 2, 'feb': 2, 'pebarwari': 2,
+        'march': 3, 'mar': 3, 'marthu': 3,
+        'april': 4, 'apr': 4, 'aprel': 4,
+        'may': 5, 'mayi': 5,
+        'june': 6, 'jun': 6, 'juni': 6,
+        'july': 7, 'jul': 7, 'juli': 7,
+        'august': 8, 'aug': 8, 'agosthu': 8,
+        'september': 9, 'sep': 9, 'sept': 9, 'septembar': 9,
+        'october': 10, 'oct': 10, 'oktobar': 10,
+        'november': 11, 'nov': 11, 'novembar': 11,
+        'december': 12, 'dec': 12, 'desembar': 12
+    };
+    
+    const monthPattern = Object.keys(monthNames).join('|');
+    
+    // Pattern: "september 1 idan" (from Sep 1) - range for 7 days
+    const fromPattern = new RegExp(`(${monthPattern})\\s+(\\d{1,2})\\s+(idan|sita|thiyena|from|to\\b)`, 'i');
+    const fromMatch = lowerText.match(fromPattern);
+    
+    if (fromMatch) {
+        const month = monthNames[fromMatch[1].toLowerCase()];
+        const day = parseInt(fromMatch[2]);
+        const year = currentYear;
+        
+        const rangeStart = new Date(year, month - 1, day);
+        rangeStart.setHours(0, 0, 0, 0);
+        
+        // Check for "to X" pattern
+        const toPattern = new RegExp(`(${monthPattern})\\s+(\\d{1,2})\\s+(dakwa|daka|until|to\\s|-|–)`, 'i');
+        const toMatch = lowerText.match(toPattern);
+        
+        let rangeEnd;
+        if (toMatch) {
+            const endMonth = monthNames[toMatch[1].toLowerCase()];
+            const endDay = parseInt(toMatch[2]);
+            rangeEnd = new Date(year, endMonth - 1, endDay);
+            rangeEnd.setHours(23, 59, 59, 999);
+        } else {
+            rangeEnd = new Date(rangeStart);
+            rangeEnd.setDate(rangeStart.getDate() + 6);
+            rangeEnd.setHours(23, 59, 59, 999);
+        }
+        
+        return {
+            start: rangeStart,
+            end: rangeEnd,
+            label: `${fromMatch[1]} ${day} සිට`,
+            isRange: true
+        };
+    }
+    
+    return null;
+}
 
 function getTargetDateRange(text) {
     const utcNow = new Date();
@@ -823,9 +952,8 @@ function getTargetDateRange(text) {
                         } else {
                             targetDate.setMonth(month.value);
                         }
-                        if (targetDate < now) {
-                            targetDate.setFullYear(now.getFullYear() + 1);
-                        }
+                        // ✅ FIXED: NO year auto-jump. Trust the user's year.
+                        // If date is in the past, keep it in the past.
                         break;
                     }
                 }
@@ -851,7 +979,7 @@ async function getCalendarEvents(start, end) {
             calendarId: CALENDAR_ID,
             timeMin: start.toISOString(),
             timeMax: end.toISOString(),
-            maxResults: 20,
+            maxResults: 50,
             singleEvents: true,
             orderBy: 'startTime',
         });
@@ -1419,21 +1547,42 @@ async function connectToWhatsApp() {
 
                     const intent = detectIntentFromText(transcribedText);
                     if (intent.intent === 'calendar') {
-                        const { start, end, targetDate } = getTargetDateRange(intent.data || transcribedText);
-                        const events = await getCalendarEvents(start, end);
-                        if (events && events.length > 0) {
-                            let msgText = `📅 *${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })} දින Classes:*\n\n`;
-                            events.forEach((ev, idx) => {
-                                const startTime = new Date(ev.start?.dateTime || ev.start?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit' });
-                                const endTime = new Date(ev.end?.dateTime || ev.end?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit' });
-                                const location = ev.location || '';
-                                msgText += `${idx+1}. *${ev.summary || 'Untitled'}*\n   🕒 ${startTime} – ${endTime}\n`;
-                                if (location) msgText += `   📍 ${location}\n\n`;
-                            });
-                            msgText += `\n🔗 *Full Calendar:* https://calendar.google.com/calendar/u/0?cid=${encodeURIComponent(CALENDAR_ID)}`;
-                            await sock.sendMessage(sender, { text: msgText }, { quoted: msg });
+                        // Check for range first
+                        const rangeQuery = getDateRangeForQuery(transcribedText);
+                        if (rangeQuery && rangeQuery.isRange) {
+                            const events = await getCalendarEvents(rangeQuery.start, rangeQuery.end);
+                            const startStr = rangeQuery.start.toLocaleDateString('en-LK', { day: 'numeric', month: 'long', year: 'numeric' });
+                            const endStr = rangeQuery.end.toLocaleDateString('en-LK', { day: 'numeric', month: 'long', year: 'numeric' });
+                            if (events && events.length > 0) {
+                                let msgText = `📅 *${rangeQuery.label}*\n${startStr} - ${endStr}\n\n`;
+                                events.forEach((ev, idx) => {
+                                    const startTime = new Date(ev.start?.dateTime || ev.start?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit' });
+                                    const endTime = new Date(ev.end?.dateTime || ev.end?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit' });
+                                    const location = ev.location || '';
+                                    msgText += `${idx+1}. *${ev.summary || 'Untitled'}*\n   🕒 ${startTime} – ${endTime}\n`;
+                                    if (location) msgText += `   📍 ${location}\n\n`;
+                                });
+                                await sock.sendMessage(sender, { text: msgText }, { quoted: msg });
+                            } else {
+                                await sock.sendMessage(sender, { text: `📅 *${rangeQuery.label}*\n${startStr} - ${endStr}\n\n🎉 මේ කාලය ඇතුළත Classes නෑ! 💯` }, { quoted: msg });
+                            }
                         } else {
-                            await sock.sendMessage(sender, { text: `🎉 *${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })}* දිනට Classes නෑ!` }, { quoted: msg });
+                            const { start, end, targetDate } = getTargetDateRange(intent.data || transcribedText);
+                            const events = await getCalendarEvents(start, end);
+                            if (events && events.length > 0) {
+                                let msgText = `📅 *${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })} දින Classes:*\n\n`;
+                                events.forEach((ev, idx) => {
+                                    const startTime = new Date(ev.start?.dateTime || ev.start?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit' });
+                                    const endTime = new Date(ev.end?.dateTime || ev.end?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit' });
+                                    const location = ev.location || '';
+                                    msgText += `${idx+1}. *${ev.summary || 'Untitled'}*\n   🕒 ${startTime} – ${endTime}\n`;
+                                    if (location) msgText += `   📍 ${location}\n\n`;
+                                });
+                                msgText += `\n🔗 *Full Calendar:* https://calendar.google.com/calendar/u/0?cid=${encodeURIComponent(CALENDAR_ID)}`;
+                                await sock.sendMessage(sender, { text: msgText }, { quoted: msg });
+                            } else {
+                                await sock.sendMessage(sender, { text: `🎉 *${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })}* දිනට Classes නෑ!` }, { quoted: msg });
+                            }
                         }
                     } else if (intent.intent === 'quiz') {
                         await handleQuizCommand(sock, sender, msg, intent.data);
@@ -2101,6 +2250,56 @@ async function connectToWhatsApp() {
 
             if (aiIntent.intent === 'calendar') {
                 const lowerText = rawMessageText.toLowerCase().trim();
+                
+                // 🆕 FIRST: Check for date RANGE queries (last week, from X, etc.)
+                const dateRange = getDateRangeForQuery(rawMessageText);
+                
+                if (dateRange && dateRange.isRange) {
+                    console.log('📅 Range query detected:', dateRange.label);
+                    
+                    const events = await getCalendarEvents(dateRange.start, dateRange.end);
+                    
+                    const startStr = dateRange.start.toLocaleDateString('en-LK', { day: 'numeric', month: 'long', year: 'numeric' });
+                    const endStr = dateRange.end.toLocaleDateString('en-LK', { day: 'numeric', month: 'long', year: 'numeric' });
+                    
+                    if (events && events.length > 0) {
+                        // Group by day
+                        const days = {};
+                        events.forEach(ev => {
+                            const evDate = new Date(ev.start?.dateTime || ev.start?.date);
+                            const dateKey = evDate.toLocaleDateString('en-LK', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' });
+                            if (!days[dateKey]) days[dateKey] = [];
+                            days[dateKey].push(ev);
+                        });
+                        
+                        const sortedDays = Object.keys(days).sort((a, b) => {
+                            return new Date(a) - new Date(b);
+                        });
+                        
+                        let msgText = `📅 *${dateRange.label}*\n${startStr} - ${endStr}\n\n`;
+                        msgText += `📊 *Total Classes: ${events.length}*\n\n`;
+                        
+                        sortedDays.forEach((day) => {
+                            msgText += `*${day}*\n`;
+                            days[day].forEach((ev) => {
+                                const startTime = new Date(ev.start?.dateTime || ev.start?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit' });
+                                const endTime = new Date(ev.end?.dateTime || ev.end?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute: '2-digit' });
+                                const location = ev.location || '';
+                                msgText += `   🕒 ${startTime} - ${endTime}  *${ev.summary || 'Untitled'}*`;
+                                if (location) msgText += ` (${location})`;
+                                msgText += `\n`;
+                            });
+                            msgText += `\n`;
+                        });
+                        
+                        await sock.sendMessage(sender, { text: msgText }, { quoted: msg });
+                    } else {
+                        await sock.sendMessage(sender, {
+                            text: `📅 *${dateRange.label}*\n${startStr} - ${endStr}\n\n🎉 මේ කාලය ඇතුළත Classes නෑ! 💯`
+                        }, { quoted: msg });
+                    }
+                    return;
+                }
 
                 if (lowerText === 'calendar' || lowerText === 'timetable' || 
                     lowerText === 'week' || lowerText === 'weekly' || 
@@ -2239,6 +2438,9 @@ Catch my drift? Slide into my DMs and let's get that GPA up! 📈🚀`;
 📅 *ada class* - අද Classes
 📅 *heta class* - හෙට Classes
 📅 *anidda class* - අනිද්දා Classes
+📅 *giya sathiye* - පසුගිය සතියේ Classes
+📅 *laban sathiye* - ලබන සතියේ Classes
+📅 *september 1 idan* - එදින සිට සතියේ Classes
 📅 *Monday / Tuesday ...* - ඕනෑම දිනයක Classes
 📅 *calendar help* - Calendar Troubleshooting Guide
 
@@ -2286,161 +2488,4 @@ Email: it26100930@my.sliit.lk`;
                     helpText += `
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🛠️ *Admin Commands* (Batch Rep Only) 🛡️
-
-🧠 *Memory (Bot ට මතක තබා ගන්න):*
-📝 *add info: [text]* - Bot ට අලුත් දෙයක් මතක තබා ගන්න
-   (උදා: "add info: ලබන සතියේ exam තියෙනවා")
-📚 *list info* / *list memory* - Bot ට මතක තියෙන දේවල් බලන්න
-🗑️ *remove info [number]* - එකක් අයින් කරන්න
-
-📁 *File Management:*
-📤 *add file: [keyword]* - PDF/Image එකක් save කරන්න
-   (Keyword නැතුව upload කළොත් AI එකෙන් auto detect වෙයි!)
-📋 *list files* - Save කරලා තියෙන Files ටික බලන්න
-🗑️ *remove file [number]* - File එකක් අයින් කරන්න
-
-📊 *Bot Management:*
-📊 *status* - Bot එකේ තත්වය බලන්න
-📊 *poll Question? | Option 1 | Option 2* - WhatsApp Poll එකක් හදන්න
-🆔 *getid* - Group ID එක ගන්න
-
-📅 *Deadline Management (Matara Centre):*
-📝 *add deadline: Description | YYYY-MM-DD | HH:MM | Matara* - Add deadline
-📚 *list deadlines* - View all deadlines
-🗑️ *remove deadline [number]* - Remove deadline
-
-📝 *Exam Management (Matara Centre):*
-📝 *add exam: Description | YYYY-MM-DD | HH:MM | Matara | ExamType* - Add exam
-📚 *list exams* - View all exams
-🗑️ *remove exam [number]* - Remove exam
-
-💡 *Tip:* "add info" කරන හැම දෙයක්ම Bot **JARVIS වගේ මතක තබාගෙන** ළමයෙක් ඇසුවොත් ස්වභාවිකව උත්තර දෙනවා. 🧠✨`;
-                }
-
-                await sock.sendMessage(sender, { text: helpText }, { quoted: msg });
-                return;
-            }
-
-            // WHOAMI
-            if (textLower === 'whoami' || textLower === 'myid') {
-                const normalized = jidNormalizedUser(sender) || sender;
-                await sock.sendMessage(sender, { text: `🆔 Your ID: \`${normalized}\`` }, { quoted: msg });
-                return;
-            }
-
-            // CALENDAR HELP
-            if (textLower === 'calendar help' || textLower === 'calendar not showing' || textLower === 'sync calendar') {
-                await sock.sendMessage(sender, {
-                    text: `📅 *Calendar Troubleshooting*\n\n🔗 Link: https://calendar.google.com/calendar/u/0?cid=${encodeURIComponent(CALENDAR_ID)}\n\n*Steps:*\n1. Google Calendar App → ☰ Menu → "Other calendars" → Check "SLIIT Timetable".\n2. Settings → Accounts → Google → SLIIT email → Calendars ON.\n3. Settings → Accounts → Sync Calendar ON.\n4. Unsubscribe and re-add.\n\n📱 Still not working? Contact Batch Rep: +94 76 251 3957`
-                }, { quoted: msg });
-                return;
-            }
-
-            // FUN & MOTIVATION
-            if (textLower === 'motivate me' || textLower === 'daily quote' || textLower === 'inspire me') {
-                const quotes = [
-                    "Success is not final, failure is not fatal: it is the courage to continue that counts. - Winston Churchill",
-                    "Don't watch the clock; do what it does. Keep going. - Sam Levenson",
-                    "The secret of getting ahead is getting started. - Mark Twain",
-                    "It always seems impossible until it's done. - Nelson Mandela",
-                    "Bestie, just focus on your goals. No cap, you got this! 🔥"
-                ];
-                const randomQuote = quotes[Math.floor(Math.random() * quotes.length)];
-                await sock.sendMessage(sender, { text: `✨ *Motivation:*\n\n"${randomQuote}"` }, { quoted: msg });
-                return;
-            }
-            
-            // RIDDLE
-            if (textLower === 'riddle') {
-                global.currentRiddle = "I speak without a mouth and hear without ears. I have no body, but I come alive with wind. What am I?";
-                await sock.sendMessage(sender, { text: `🧩 *Riddle:*\n\n${global.currentRiddle}` }, { quoted: msg });
-                return;
-            }
-            if (textLower === 'answer' && global.currentRiddle) {
-                await sock.sendMessage(sender, { text: "✅ The answer is: **An Echo**! 🎉" }, { quoted: msg });
-                global.currentRiddle = null;
-                return;
-            }
-
-            // ACADEMIC WORD PRACTICE
-            if (textLower === 'word' || textLower === 'aw word' || textLower === 'practice word' || textLower === 'vocabulary') {
-                const wordKeys = Object.keys(academicWords);
-                const randomWord = wordKeys[Math.floor(Math.random() * wordKeys.length)];
-                const wordMeaning = academicWords[randomWord];
-                await sock.sendMessage(sender, { text: `📚 *Academic Word Practice*\n\n*${randomWord}*\n📖 Meaning: ${wordMeaning}\n\nType *word* again to get another one! 🔄` }, { quoted: msg });
-                return;
-            }
-
-            // THANKS AUTO-REPLY
-            if (textLower.includes('thanks') || textLower.includes('thank you') || textLower.includes('sthuthi') || textLower.includes('stuti') || textLower.includes('bohoma sthuthi')) {
-                await sock.sendMessage(sender, { text: "ඔයාව සාදරයෙන් පිළිගන්නවා! 🥰❤️ තව මොනවා හරි ඕන නම් අහන්න!" }, { quoted: msg });
-                return;
-            }
-
-            // GENERAL AI RESPONSE (with memory + JARVIS-style)
-            if (rawMessageText) {
-                try {
-                    const history = getRecentContext(sender);
-                    let promptToSend = fullUserPrompt;
-                    
-                    if (history) {
-                        promptToSend = `Recent conversation with this student:\n${history}\n\nNew message from student: "${fullUserPrompt}"\n\nReply naturally and helpfully. If the batch rep's memory has relevant info, use it confidently as if you already know it.`;
-                    }
-                    
-                    geminiRequestsToday++;
-                    const result = await generateContentWithRetry(model, buildPromptWithKnowledge(promptToSend));
-                    const reply = formatMathForWhatsApp(result.response.text());
-                    addToMemory(sender, 'User', fullUserPrompt);
-                    addToMemory(sender, 'Bot', reply);
-                    await sock.sendMessage(sender, { text: reply }, { quoted: msg });
-                } catch (error) {
-                    console.error('Gemini error:', error);
-                    
-                    let errorMessage = "❌ සමාවෙන්න, මට දැන් උත්තර දෙන්න බැරි වුණා. ";
-                    
-                    if (error.message.includes('503') || error.message.includes('429')) {
-                        errorMessage += "API එක busy. ටික වේලාවකින් නැවත try කරන්න. ⏳";
-                    } else if (error.message.includes('content') || error.message.includes('filter')) {
-                        errorMessage += "ඔබගේ ප්‍රශ්නයට උත්තර දෙන්න මට ඉඩ නැහැ. වෙනත් ප්‍රශ්නයක් අහන්න. 🙏";
-                    } else if (error.message.includes('API key')) {
-                        errorMessage += "API Key එක invalid. Admin ට දැනුම් දෙන්න. 🛠️";
-                    } else {
-                        errorMessage += "නැවත try කරන්න. 🔄";
-                    }
-                    
-                    await sock.sendMessage(sender, { text: errorMessage }, { quoted: msg });
-                }
-            }
-        }
-
-        // ----------------------------------------------------------------
-        //  messages.upsert
-        // ----------------------------------------------------------------
-        sock.ev.on('messages.upsert', async ({ messages, type }) => {
-            if (type !== 'notify') return;
-            for (const msg of messages) {
-                if (!msg.message || msg.key.fromMe) continue;
-                if (processedMessages.has(msg.key.id)) continue;
-                markProcessed(msg.key.id);
-                messageQueue.add(
-                    () => processMessage(sock, msg),
-                    async (position) => {
-                        try {
-                            await sock.sendMessage(msg.key.remoteJid, { text: `⏳ ඉන්න! Queue: ${position}. ඉක්මනට reply කරන්නම්! 🙏` }, { quoted: msg });
-                        } catch (e) { /* ignore */ }
-                    }
-                ).catch(err => console.error('Queue error:', err));
-            }
-        });
-
-    } catch (error) {
-        console.error('Connection error:', error);
-        setTimeout(() => connectToWhatsApp(), 5000);
-    }
-}
-
-// ================================================================
-//  🚀 START
-// ================================================================
-connectToWhatsApp();
+🛠️ *Admin Comm
