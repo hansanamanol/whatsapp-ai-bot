@@ -43,7 +43,7 @@ const DATA_DIR = process.env.DATA_DIR || '/app/data';
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 // ================================================================
-//  🧠 KNOWLEDGE BASE / MEMORY SYSTEM (JARVIS-STYLE)
+//  🧠 KNOWLEDGE BASE / MEMORY SYSTEM
 // ================================================================
 const KNOWLEDGE_FILE = path.join(DATA_DIR, 'knowledge.json');
 let knowledgeBase = [];
@@ -113,22 +113,18 @@ ${knowledgeText}
 ║  🎯 CRITICAL RULES — MEMORY USAGE                             ║
 ╚══════════════════════════════════════════════════════════════╝
 
-1. **අද දිනය මතක තබාගන්න:** හැමවෙලාවෙම අද දිනය කියන්නේ මොකක්ද කියලා හිතන්න. "ලබන සතියේ" කිව්වම, අද දිනයට සාපේක්ෂව ගණනය කරන්න.
+1. **අද දිනය මතක තබාගන්න:** හැමවෙලාවෙම අද දිනය කියන්නේ මොකක්ද කියලා හිතන්න.
 
 2. **Memory එක බලන්න:** ළමයෙක් ප්‍රශ්නයක් ඇසුවොත්, උත්තර දෙන්න කලින් ඉහත Memory එකේ ඒ ගැන යමක් තියෙනවද කියලා හොඳට බලන්න.
 
-3. **Memory එකේ තියෙනවා නම්, ඒක PRIMARY SOURCE එක:** ඒ තොරතුරු මත පදනම්ව උත්තර දෙන්න.
+3. **Memory එකේ තියෙනවා නම්, ඒක PRIMARY SOURCE එක.**
 
-4. **Date සමඟ ප්‍රශ්න ඇසුවොත්:**
-   - ළමයෙක් "ලබන සතියේ exam තියෙනවද?" ඇසුවොත් - අද දිනයට ලබන සතිය කවදාද කියලා හිතන්න
-   - Memory එකේ "Actual Date" එකක් තියෙනවා නම්, ඒ date එක ලබන සතියට අදාළද කියලා බලන්න
-   - නැත්නම්, අද දිනයට සාපේක්ෂව "ලබන සතියේ" කියන්නේ කවදාද කියලා හිතලා උත්තර දෙන්න
+4. **Date සමඟ ප්‍රශ්න ඇසුවොත්:** අද දිනයට සාපේක්ෂව ගණනය කරන්න.
 
-5. **කල් ඉකුත් වුණු තොරතුරු ගැන:** Memory එකේ තියෙන date එකක් දැනටමත් ඉකුත් වෙලා නම් (අදට කලින්), ඒ ගැන ළමයෙක් ඇසුවොත් "ඒක ඉවරයි" කියන්න. හදන්න එපා.
+5. **කල් ඉකුත් වුණු තොරතුරු ගැන:** "ඒක ඉවරයි" කියන්න. හදන්න එපා.
 
 6. **Natural විදියට කියන්න (JARVIS style):**
-   - ✅ "ඔව්, ලබන සතියේ (Sep 15-21) අතරේ exam එක තියෙනවා කියලා Monal මට කිව්වා."
-   - ✅ "මට මතකයි — ඒ deadline එක ලබන සිකුරාදා (Sep 19)."
+   - ✅ "ඔව්, ලබන සතියේ exam එක තියෙනවා කියලා Monal මට කිව්වා."
    - ❌ NEVER mention "database" or "knowledge base" to students
 
 7. **හැමවෙලාවෙම "මට මතකයි" / "මම දන්නවා" වගේ කියන්න.**
@@ -374,7 +370,6 @@ app.get('/', async (req, res) => {
             <h2 style="color:#2ea043;">✅ Bot එක Connected & Running!</h2>
             <p style="color:#58a6ff;">WhatsApp Bot එක සාර්ථකව Connect වෙලා!</p>
             <p style="color:#8b949e;">ඔබට Bot එකට DM කරලා Test කරන්න පුළුවන්.</p>
-            <p style="color:#8b949e;font-size:12px;margin-top:30px;">Page එක තත්පර 30කට වතාවක් Auto Refresh වෙයි</p>
             </body></html>`);
     }
     if (!latestQR) {
@@ -391,7 +386,6 @@ app.get('/', async (req, res) => {
             <h2 style="color:#58a6ff;">📱 Scan this QR Code with WhatsApp</h2>
             <img src="${qrImage}" style="border:10px solid white;border-radius:10px;width:300px;height:300px;"/>
             <p style="color:#8b949e;margin-top:20px;">QR Code එක Scan කරලා Bot එක Connect කරන්න</p>
-            <p style="color:#8b949e;font-size:14px;">Page එක තත්පර 15කට වතාවක් Auto Refresh වෙයි</p>
             </body></html>`);
     } catch (err) {
         res.status(500).send('Error generating QR code');
@@ -425,78 +419,38 @@ function getNextGenAI() {
 const systemInstruction = `
 You are HansanaBot — the personal AI assistant to SLIIT IT Y1S2 Batch Representative, Monal Hansana. Think of yourself as JARVIS from Iron Man: intelligent, warm, proactive, professional, and personal.
 
-╔══════════════════════════════════════════════════════════════╗
-║  🎯 YOUR CORE IDENTITY                                        ║
-╚══════════════════════════════════════════════════════════════╝
-
-You are NOT a simple chatbot. You are a **personal memory-aware AI assistant** for SLIIT students in the Y1S2 batch (Matara Centre).
+YOUR CORE IDENTITY:
+You are NOT a simple chatbot. You are a personal memory-aware AI assistant for SLIIT students in the Y1S2 batch (Matara Centre).
 
 Your job:
 - Remember everything Monal (Batch Rep) tells you via "add info"
-- When students ask questions, respond like you already know the answer (because you do, from memory)
+- When students ask questions, respond like you already know the answer
 - Be warm, helpful, natural — like a human who actually cares
 
-╔══════════════════════════════════════════════════════════════╗
-║  🧠 KNOWLEDGE BASE / MEMORY                                   ║
-╚══════════════════════════════════════════════════════════════╝
-
-At the END of this prompt, you will find a section titled:
-"🧠 BATCH REP (MONAL HANSANA) විසින් ලබා දුන් MEMORY"
-
-This is YOUR memory. It contains information Monal has shared with you.
-- READ IT CAREFULLY before every response.
-- If a student asks about anything in that memory, USE IT as your primary source.
-- Speak as if you ALREADY KNOW this info — not like you're looking it up.
-
-Examples of how to speak:
-- ✅ "ඔව්, මට මතකයි — ලබන සතියේ exam තියෙනවා කියලා Monal මට කිව්වා."
-- ✅ "Monal මට දැනුම් දුන්නා විදියට, submission deadline එක ලබන සිකුරාදා."
-- ✅ "ඒ ගැන මම දන්නවා — [details]."
-- ❌ "According to my knowledge base..."
-- ❌ "I found the following in my database..."
-- ❌ NEVER mention "knowledge base" or "database" to students
-
-╔══════════════════════════════════════════════════════════════╗
-║  🗣️ LANGUAGE & TONE                                           ║
-╚══════════════════════════════════════════════════════════════╝
-
+LANGUAGE & TONE:
 - Reply in whatever language the student uses (Singlish, Sinhala, English, Tamil)
-- Use the same tone: casual with friends, respectful with unknowns
 - Be warm, encouraging, and helpful — like a senior student helping juniors
-- Use emojis naturally (📚 📅 ⚠️ ✅ 🎉) but don't overdo it
-- Keep answers concise — no excessive raw information
+- Use emojis naturally but don't overdo it
+- Keep answers concise
 
-╔══════════════════════════════════════════════════════════════╗
-║  👤 BATCH REP CONTACT                                         ║
-╚══════════════════════════════════════════════════════════════╝
-
-When students ask for the Batch Rep's contact:
+BATCH REP CONTACT:
 - Name: Monal Hansana (SLIIT IT Y1S2 Batch Representative)
 - Contact: +94 76 251 3957 (076 251 3957)
 - Email: it26100930@my.sliit.lk
 
-╔══════════════════════════════════════════════════════════════╗
-║  📚 Y1S2 MODULES & LICs                                       ║
-╚══════════════════════════════════════════════════════════════╝
-
+Y1S2 MODULES & LICs:
 1. IT1170 - DSA → Prof. Nathali Silva (nathali.s@sliit.lk)
 2. IT1160 - Discrete Math → Ms. Nipuni Maleesha (nipuni.m@sliit.lk)
 3. SE1020 - OOP → Ms. Thilini Jayalath (thilini.j@sliit.lk)
 4. IT1150 - Technical Writing → Ms. Dinushika Jayathissa (dinushika.j@sliit.lk)
 5. IE1011 - Information Systems → Ms. Chathurangika Kahandawarachchi (chathurangika.k@sliit.lk)
 
-╔══════════════════════════════════════════════════════════════╗
-║  🎓 ACADEMIC RULES                                            ║
-╚══════════════════════════════════════════════════════════════╝
-
+ACADEMIC RULES:
 - Minimum 80% attendance required for final exams
 - Grade = Continuous Assessments + Final Exam
 - Lab Group Switching needs prior LIC approval
 
-╔══════════════════════════════════════════════════════════════╗
-║  🔗 IMPORTANT LINKS                                           ║
-╚══════════════════════════════════════════════════════════════╝
-
+IMPORTANT LINKS:
 1. Timetable: https://calendar.google.com/calendar/u/0?cid=Y2EwYjM4ZDE3MjcyOTIzMTY1N2FiZmMzNGYxYzdmZGJmOGVhMzMwNTBmZTZmNDYyM2Y1ZmFiODhjMGQzNDYzM0Bncm91cC5jYWxlbmRhci5nb29nbGUuY29t
 2. Courseweb: https://courseweb.sliit.lk/
 3. Eduscope: https://eduscope.sliit.lk/
@@ -504,61 +458,24 @@ When students ask for the Batch Rep's contact:
 5. Ask SLIIT: https://ask.sliit.lk/
 6. Support: https://support.sliit.lk/
 
-╔══════════════════════════════════════════════════════════════╗
-║  ⚠️ CRITICAL RULES                                            ║
-╚══════════════════════════════════════════════════════════════╝
+CRITICAL RULES:
+1. NEVER claim to have sent messages, posted announcements, or performed any action outside this chat.
+2. NEVER say "I've sent this to the group" or "yawanawa" / "දැම්මා".
+3. NEVER make up information about exams, deadlines, or dates. If not in memory, say: "ඒ ගැන මට දැනුම් දීලා නෑ. Monal ගෙන් අහන්න."
+4. NO LaTeX. Use Unicode math symbols: ∪, ∩, ∈, ⊆, ∀, ∃, ≤, ≥, √, π, etc.
 
-1. NEVER claim to have sent messages, posted announcements, or performed any action. You only reply in this chat.
-
-2. NEVER say "I've sent this to the group" or "yawanawa" / "දැම්මා" — you can only reply, not act.
-
-3. NEVER make up information about exams, deadlines, or dates. If it's not in your memory, say: "ඒ ගැන මට දැනුම් දීලා නෑ. Monal ගෙන් අහන්න."
-
-4. NO LaTeX in responses. Use Unicode math symbols directly: ∪, ∩, ∈, ⊆, ∀, ∃, ≤, ≥, √, π, etc.
-
-5. When analyzing code or tutorials, pay EXTREME attention to:
-   - Variable scope (e.g., whether 'j = 1' is initialized OUTSIDE or INSIDE a loop)
-   - Sequential vs Nested loops
-   - Accurate question labeling (a, b, c, d, e)
-
-╔══════════════════════════════════════════════════════════════╗
-║  🚨 ABSOLUTE LANGUAGE RULES (HIGHEST PRIORITY)                ║
-╚══════════════════════════════════════════════════════════════╝
-
-YOU MUST FOLLOW THESE RULES STRICTLY. NO EXCEPTIONS.
-
-1. **NEVER use Hindi (Devanagari script - देवनागरी) in ANY response.** 
-   Hindi characters like: है, हैं, का, की, के, को, में, से, पर, नहीं, क्या, यह, वह, एक, और, भी, तो, हो, गया, कर, रहा, etc. — NEVER USE THEM.
-
-2. **Match the user's language EXACTLY:**
-   - User writes in Sinhala (සිංහල අකුරු) → Reply in Sinhala
-   - User writes in Singlish (Sinhala in English letters) → Reply in Singlish
-   - User writes in English → Reply in English
-   - User writes in Tamil (தமிழ்) → Reply in Tamil
-   - User mixes languages → Reply in the SAME mix (Sinhala + English OK)
-
-3. **If you accidentally write Hindi, STOP and rewrite in the correct language.**
-
-4. **Sinhala is NOT Hindi.** They are completely different languages:
-   - Sinhala: ශ්‍රී ලංකා, ආයුබෝවන්, කොහොමද, ඔයාට, මම, අද, හෙට
-   - Hindi: श्रीलंका, नमस्ते, कैसे, आपको, मैं, आज, कल
-   - These are DIFFERENT. Use Sinhala when the user writes Sinhala.
-
-5. **When in doubt, use Sinhala + English (Singlish) mix — NEVER Hindi.**
-
-Examples:
-- ✅ User: "ada class thiyenawada?" → Bot: "ඔව්, අද classes තියෙනවා..."
-- ✅ User: "මට exam එක ගැන කියන්න" → Bot: "හරි, මට මතකයි..."
-- ✅ User: "What's the timetable?" → Bot: "Here's today's timetable..."
-- ❌ User: "මට exam එක ගැන කියන්න" → Bot: "नमस्ते! आपका परीक्षा..." ← WRONG! Hindi!   
-
-╔══════════════════════════════════════════════════════════════╗
-║  💡 FINAL REMINDER                                            ║
-╚══════════════════════════════════════════════════════════════╝
+🚨 ABSOLUTE LANGUAGE RULES (HIGHEST PRIORITY):
+1. NEVER use Hindi (Devanagari script - देवनागरी) in ANY response. NEVER USE characters like: है, हैं, का, की, के, को, में, से, पर, नहीं, क्या, यह, वह, एक, और.
+2. Match the user's language EXACTLY:
+   - User writes Sinhala → Reply in Sinhala
+   - User writes Singlish → Reply in Singlish
+   - User writes English → Reply in English
+   - User writes Tamil → Reply in Tamil
+3. Sinhala is NOT Hindi. They are completely different languages.
+4. When in doubt, use Sinhala + English (Singlish) mix — NEVER Hindi.
 
 You are a PERSONAL ASSISTANT with a MEMORY. Act like it.
 When a student asks "exam thiyenawada?" — check your memory first.
-If Monal told you "next week has exams", then you KNOW that. Say it confidently.
 Be the assistant students trust. Be JARVIS.
 `;
 
@@ -632,19 +549,16 @@ async function calculateDateFromText(text) {
         
         const prompt = `You are a date calculation assistant. Today is ${todayStr} (${todayISO}).
 
-The user will provide text that may contain relative date references (like "අද", "හෙට", "ලබන සතියේ", "next Monday", "in 2 weeks", "September 20" etc.).
-
 Extract the ACTUAL DATE or DATE RANGE that the text refers to.
 
 RULES:
-- Output ONLY a short date string in this format: "YYYY-MM-DD" for single dates, or "YYYY-MM-DD to YYYY-MM-DD" for ranges
+- Output ONLY: "YYYY-MM-DD" for single dates, or "YYYY-MM-DD to YYYY-MM-DD" for ranges
 - For "ලබන සතියේ" / "next week" → range from next Monday to next Sunday
 - For "මේ සතියේ" / "this week" → range from today to this Sunday
 - For "අද" / "today" → just today
 - For "හෙට" / "tomorrow" → just tomorrow
-- For "ලබන සඳුදා" / "next Monday" → next Monday's date
 - If no date reference found, output "N/A"
-- Do NOT add any explanation or other text
+- Do NOT add any explanation
 
 User text: "${text}"
 
@@ -664,12 +578,12 @@ Output the date(s) only:`;
 }
 
 // ================================================================
-//  🧠 LOCAL INTENT DETECTION (No Gemini call)
+//  🧠 LOCAL INTENT DETECTION
 // ================================================================
 function detectIntentFromText(text) {
     const lowerText = text.toLowerCase().trim();
     
-    // 🎯 PRIORITY CHECK: Exam-related queries should go to AI (memory), not calendar
+    // Exam-related queries go to AI (memory), not calendar
     const examWords = /(exam|test|විභාග|පරීක්ෂණ|mid|final|assessment|paper|in.?class|in-class)/i;
     const dateQuestionWords = /(thiyeda|thiyenawada|thiyenawad|thiyenwada|kawadda|kawadada|when|තියෙනවද|කවදාද|තියෙද|kiyanna|kiyanawada|gana|ganna|මොකද|ගැන|කියන්න|denna|danna)/i;
     const relativeTimeWords = /(labana|eelaga|next|this|me|ඊළඟ|ලබන|මේ)/i;
@@ -680,14 +594,12 @@ function detectIntentFromText(text) {
         }
     }
     
-    // 1️⃣ Check for Quiz
     if (/^quiz\b/.test(lowerText) || /quiz (ekk|ek|eak|එකක්|එක)/.test(lowerText) || 
         lowerText.includes('quiz') || lowerText.includes('ක්විස්') || lowerText.includes('ප්‍රශ්න')) {
         const moduleMatch = lowerText.match(/(SE|IT|IE)\d{4}/i);
         return { intent: 'quiz', data: moduleMatch ? moduleMatch[0].toUpperCase() : '' };
     }
     
-    // 2️⃣ Check for PDF / File
     if (/^(pdf|file|danna|ewanna|notes|note|සටහන්|file eka|pdf eka)\b/.test(lowerText) || 
         lowerText.includes('notes') || lowerText.includes('සටහන්') || 
         lowerText.includes('file') || lowerText.includes('pdf')) {
@@ -695,7 +607,6 @@ function detectIntentFromText(text) {
         return { intent: 'pdf', data: moduleMatch ? moduleMatch[0].toUpperCase() : lowerText };
     }
     
-    // 3️⃣ Check for Timetable / Calendar
     const timetableKeywords = [
         'timetable', 'calendar', 'schedule', 'class', 'classes', 'time table', 'time-table',
         'ada class', 'heta class', 'anidda class', 'pereda class', 'iyye class',
@@ -729,7 +640,6 @@ function detectIntentFromText(text) {
     return { intent: 'chat', data: text };
 }
 
-// HTML Cleaner
 function cleanHTML(text) {
     if (!text) return '';
     let cleanText = text;
@@ -750,9 +660,7 @@ function cleanHTML(text) {
 const CALENDAR_API_KEY = process.env.CALENDAR_API_KEY;
 const CALENDAR_ID = process.env.CALENDAR_ID || 'ca0b38d172729231657abfc34f1c7fdb8ea33050fe6f4623f5fab88cd0d4633@group.calendar.google.com';
 
-// ================================================================
-//  🗓️ GET DATE RANGE FOR QUERY (Handles "last week", "from X", ranges)
-// ================================================================
+// 🗓️ GET DATE RANGE FOR QUERY (NEW - handles "last week", "from X", ranges)
 function getDateRangeForQuery(text) {
     const utcNow = new Date();
     const now = new Date(utcNow.toLocaleString('en-US', { timeZone: 'Asia/Colombo' }));
@@ -760,7 +668,7 @@ function getDateRangeForQuery(text) {
     
     const currentYear = now.getFullYear();
     
-    // ============ "LAST WEEK" / "Giya sathiye" ============
+    // "LAST WEEK" / "Giya sathiye"
     if (/giya\s*sathiye|giya\s*satiye|last\s*week|පසුගිය\s*සතිය|pasanugiya/i.test(lowerText)) {
         const dayOfWeek = now.getDay();
         const thisSunday = new Date(now);
@@ -774,15 +682,10 @@ function getDateRangeForQuery(text) {
         lastSaturday.setDate(lastSunday.getDate() + 6);
         lastSaturday.setHours(23, 59, 59, 999);
         
-        return {
-            start: lastSunday,
-            end: lastSaturday,
-            label: 'පසුගිය සතිය (Last Week)',
-            isRange: true
-        };
+        return { start: lastSunday, end: lastSaturday, label: 'පසුගිය සතිය (Last Week)', isRange: true };
     }
     
-    // ============ "NEXT WEEK" / "Laban sathiye" ============
+    // "NEXT WEEK" / "Laban sathiye"
     if (/laban\s*sathiye|laban\s*satiye|next\s*week|ඊළඟ\s*සතිය|ලබන\s*සතිය|eelaga/i.test(lowerText)) {
         const dayOfWeek = now.getDay();
         const thisSunday = new Date(now);
@@ -796,15 +699,10 @@ function getDateRangeForQuery(text) {
         nextSaturday.setDate(nextSunday.getDate() + 6);
         nextSaturday.setHours(23, 59, 59, 999);
         
-        return {
-            start: nextSunday,
-            end: nextSaturday,
-            label: 'ලබන සතිය (Next Week)',
-            isRange: true
-        };
+        return { start: nextSunday, end: nextSaturday, label: 'ලබන සතිය (Next Week)', isRange: true };
     }
     
-    // ============ "THIS WEEK" / "Me sathiye" ============
+    // "THIS WEEK" / "Me sathiye"
     if (/me\s*sathiye|me\s*satiye|this\s*week|මේ\s*සතිය/i.test(lowerText)) {
         const dayOfWeek = now.getDay();
         const thisSunday = new Date(now);
@@ -815,15 +713,10 @@ function getDateRangeForQuery(text) {
         thisSaturday.setDate(thisSunday.getDate() + 6);
         thisSaturday.setHours(23, 59, 59, 999);
         
-        return {
-            start: thisSunday,
-            end: thisSaturday,
-            label: 'මේ සතිය (This Week)',
-            isRange: true
-        };
+        return { start: thisSunday, end: thisSaturday, label: 'මේ සතිය (This Week)', isRange: true };
     }
     
-    // ============ "FROM X idan" (Range from date) ============
+    // "FROM X idan" (Range from date)
     const monthNames = {
         'january': 1, 'jan': 1, 'janawari': 1,
         'february': 2, 'feb': 2, 'pebarwari': 2,
@@ -841,7 +734,6 @@ function getDateRangeForQuery(text) {
     
     const monthPattern = Object.keys(monthNames).join('|');
     
-    // Pattern: "september 1 idan" (from Sep 1) - range for 7 days
     const fromPattern = new RegExp(`(${monthPattern})\\s+(\\d{1,2})\\s+(idan|sita|thiyena|from|to\\b)`, 'i');
     const fromMatch = lowerText.match(fromPattern);
     
@@ -853,7 +745,6 @@ function getDateRangeForQuery(text) {
         const rangeStart = new Date(year, month - 1, day);
         rangeStart.setHours(0, 0, 0, 0);
         
-        // Check for "to X" pattern
         const toPattern = new RegExp(`(${monthPattern})\\s+(\\d{1,2})\\s+(dakwa|daka|until|to\\s|-|–)`, 'i');
         const toMatch = lowerText.match(toPattern);
         
@@ -869,12 +760,7 @@ function getDateRangeForQuery(text) {
             rangeEnd.setHours(23, 59, 59, 999);
         }
         
-        return {
-            start: rangeStart,
-            end: rangeEnd,
-            label: `${fromMatch[1]} ${day} සිට`,
-            isRange: true
-        };
+        return { start: rangeStart, end: rangeEnd, label: `${fromMatch[1]} ${day} සිට`, isRange: true };
     }
     
     return null;
@@ -953,7 +839,6 @@ function getTargetDateRange(text) {
                             targetDate.setMonth(month.value);
                         }
                         // ✅ FIXED: NO year auto-jump. Trust the user's year.
-                        // If date is in the past, keep it in the past.
                         break;
                     }
                 }
@@ -990,9 +875,6 @@ async function getCalendarEvents(start, end) {
     }
 }
 
-// ================================================================
-//  📅 WEEK HELPER
-// ================================================================
 function getCurrentWeekRange() {
     const utcNow = new Date();
     let now = new Date(utcNow.toLocaleString('en-US', { timeZone: 'Asia/Colombo' }));
@@ -1070,7 +952,7 @@ async function sendDailyTimetable(sock) {
 }
 
 // ================================================================
-//  🔔 CHECK DEADLINES & SEND REMINDERS
+//  🔔 CHECK DEADLINES
 // ================================================================
 async function checkDeadlines(sock) {
     if (mataraStudents.length === 0) {
@@ -1092,11 +974,7 @@ async function checkDeadlines(sock) {
         return;
     }
 
-    upcomingDeadlines.sort((a, b) => {
-        const dateA = new Date(`${a.date}T${a.time || '23:59'}`);
-        const dateB = new Date(`${b.date}T${b.time || '23:59'}`);
-        return dateA - dateB;
-    });
+    upcomingDeadlines.sort((a, b) => new Date(`${a.date}T${a.time || '23:59'}`) - new Date(`${b.date}T${b.time || '23:59'}`));
 
     let msgText = `📢 *Matara Centre - Upcoming Deadlines* ⚠️\n\n`;
     upcomingDeadlines.forEach((d, idx) => {
@@ -1113,10 +991,7 @@ async function checkDeadlines(sock) {
         else if (diffDays === 1) timeRemaining = 'හෙට අවසන් වේ! ⚠️';
         else timeRemaining = `දින ${diffDays}කින් අවසන් වේ`;
         
-        msgText += `${idx+1}. *${d.description}*\n`;
-        msgText += `   📅 ${formattedDate}\n`;
-        msgText += `   🕐 ${formattedTime}\n`;
-        msgText += `   ⏳ ${timeRemaining}\n\n`;
+        msgText += `${idx+1}. *${d.description}*\n   📅 ${formattedDate}\n   🕐 ${formattedTime}\n   ⏳ ${timeRemaining}\n\n`;
     });
 
     msgText += `💡 *Tip:* ඉක්මනින් Submit කරන්න! 🚀`;
@@ -1133,7 +1008,7 @@ async function checkDeadlines(sock) {
 }
 
 // ================================================================
-//  📝 CHECK EXAMS & SEND REMINDERS
+//  📝 CHECK EXAMS
 // ================================================================
 async function checkExams(sock) {
     if (mataraStudents.length === 0) {
@@ -1155,11 +1030,7 @@ async function checkExams(sock) {
         return;
     }
 
-    upcomingExams.sort((a, b) => {
-        const dateA = new Date(`${a.date}T${a.time || '23:59'}`);
-        const dateB = new Date(`${b.date}T${b.time || '23:59'}`);
-        return dateA - dateB;
-    });
+    upcomingExams.sort((a, b) => new Date(`${a.date}T${a.time || '23:59'}`) - new Date(`${b.date}T${b.time || '23:59'}`));
 
     let msgText = `📝 *Matara Centre - Upcoming Exams* 📚\n\n`;
     upcomingExams.forEach((e, idx) => {
@@ -1177,19 +1048,10 @@ async function checkExams(sock) {
         else timeRemaining = `දින ${diffDays}කින් විභාගය`;
         
         const typeEmoji = {
-            'midterm': '📝',
-            'final': '🏆',
-            'quiz': '🧩',
-            'practical': '🔬',
-            'theory': '📖'
+            'midterm': '📝', 'final': '🏆', 'quiz': '🧩', 'practical': '🔬', 'theory': '📖'
         }[e.type?.toLowerCase()] || '📚';
         
-        msgText += `${idx+1}. ${typeEmoji} *${e.description}*\n`;
-        msgText += `   📅 ${formattedDate}\n`;
-        msgText += `   🕐 ${formattedTime}\n`;
-        msgText += `   📍 ${e.centre}\n`;
-        msgText += `   📋 ${e.type || 'Exam'}\n`;
-        msgText += `   ⏳ ${timeRemaining}\n\n`;
+        msgText += `${idx+1}. ${typeEmoji} *${e.description}*\n   📅 ${formattedDate}\n   🕐 ${formattedTime}\n   📍 ${e.centre}\n   📋 ${e.type || 'Exam'}\n   ⏳ ${timeRemaining}\n\n`;
     });
 
     msgText += `💡 *Tip:* හොඳින් පාඩම් කරලා විභාගයට යන්න! 💪📚`;
@@ -1223,11 +1085,7 @@ async function handleQuizCommand(sock, sender, msg, specificModule = '') {
             const summary = ev.summary || '';
             const moduleCodeMatch = summary.match(/(SE|IT|IE)\d{4}/i);
             if (moduleCodeMatch) {
-                todayModules.push({
-                    code: moduleCodeMatch[0].toUpperCase(),
-                    fullName: summary,
-                    event: ev
-                });
+                todayModules.push({ code: moduleCodeMatch[0].toUpperCase(), fullName: summary, event: ev });
             }
         });
 
@@ -1250,9 +1108,7 @@ async function handleQuizCommand(sock, sender, msg, specificModule = '') {
             } else {
                 selectedModule = todayModules[0];
                 selectedIndex = 0;
-                await sock.sendMessage(sender, { 
-                    text: `⚠️ ඔබ ඇසූ Module එක අද තියෙන්නේ නැහැ. පළමු Module එකෙන් Quiz එකක් හදන්නම්!` 
-                }, { quoted: msg });
+                await sock.sendMessage(sender, { text: `⚠️ ඔබ ඇසූ Module එක අද තියෙන්නේ නැහැ. පළමු Module එකෙන් Quiz එකක් හදන්නම්!` }, { quoted: msg });
             }
         } else {
             initQuizState(sender);
@@ -1319,14 +1175,14 @@ RULES:
 - Questions should test understanding, not just memorization.
 - Include a mix of: Multiple Choice, True/False, and Short Answer.
 - Provide clear correct answers.
-- Format the quiz neatly for WhatsApp (use bullet points, bold text, emojis).
-- **Language Rule (Important!):**
-  1. The quiz questions and the main correct answers MUST be in **English**.
-  2. After providing the correct answer in English, add a line starting with *"💡 Sinhala Explanation:"* and write a brief, clear explanation in **Sinhala** for that specific answer so the student can easily understand it.
-  3. Use simple Sinhala words (Singlish / Sinhala script is fine) to explain concepts that might be difficult.
+- Format neatly for WhatsApp (bullet points, bold text, emojis).
+- **Language Rule:**
+  1. Quiz questions and main correct answers MUST be in **English**.
+  2. After providing the correct answer in English, add a line starting with *"💡 Sinhala Explanation:"* and write a brief, clear explanation in **Sinhala**.
+  3. Use simple Sinhala words.
 
 LECTURE CONTENT:
-${/* PDF will be sent as a part */ ''}
+${''}
 
 Generate the quiz now.`;
 
@@ -1337,7 +1193,6 @@ Generate the quiz now.`;
             const header = `📝 *${moduleCode} - Quiz* (${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })})\n───────────────────\n\n`;
             await sock.sendMessage(sender, { text: header + quizReply }, { quoted: msg });
 
-            const todayModuleCodes = todayModules.map(m => m.code);
             const currentIndex = selectedIndex;
             const hasNextModule = currentIndex < todayModules.length - 1;
             const hasMoreQuestions = true;
@@ -1351,7 +1206,7 @@ Generate the quiz now.`;
                 followUpMsg += `👉 *"next module"* - ${nextModule.code} එකෙන් Quiz එකක් බලන්න. 🔄\n`;
             }
             if (!hasMoreQuestions && !hasNextModule) {
-                followUpMsg += `🎉 අද තියෙන හැම Module එකෙන්ම Quiz බැලුවා! ආයෙත් අදාළ Module එකක් Type කරන්න.`;
+                followUpMsg += `🎉 අද තියෙන හැම Module එකෙන්ම Quiz බැලුවා!`;
             } else {
                 followUpMsg += `\n💡 *උදා:* "more" හෝ "next module" කියලා Type කරන්න.`;
             }
@@ -1435,7 +1290,6 @@ async function connectToWhatsApp() {
                 isConnected = false;
                 const statusCode = (lastDisconnect?.error)?.output?.statusCode;
                 console.error("❌ WhatsApp Connection Closed! Status Code:", statusCode);
-                console.error("❌ Full Error:", lastDisconnect?.error);
 
                 const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
                 sock.ev.removeAllListeners();
@@ -1502,9 +1356,6 @@ async function connectToWhatsApp() {
                     await sock.sendMessage(sender, { text: `🆔 *Group ID:* \`${sender}\`` }, { quoted: msg });
                     return;
                 }
-                if (!GROUP_JID) {
-                    console.log(`📢 Group ID Found (Silent Log): ${sender}`);
-                }
                 return; 
             }
 
@@ -1515,9 +1366,7 @@ async function connectToWhatsApp() {
 
             const isMataraAdded = addMataraStudent(sender);
             if (isMataraAdded) {
-                await sock.sendMessage(sender, { 
-                    text: "📍 ඔබ Matara Centre Student කෙනෙක් ලෙස හඳුනාගෙන තියෙනවා! ඉදිරි Lab Submission Deadlines ගැන Reminders එවන්නම්! 📅" 
-                }, { quoted: msg });
+                await sock.sendMessage(sender, { text: "📍 ඔබ Matara Centre Student කෙනෙක් ලෙස හඳුනාගෙන තියෙනවා! ඉදිරි Lab Submission Deadlines ගැන Reminders එවන්නම්! 📅" }, { quoted: msg });
             }
 
             const rateCheck = checkRateLimit(sender);
@@ -1547,7 +1396,6 @@ async function connectToWhatsApp() {
 
                     const intent = detectIntentFromText(transcribedText);
                     if (intent.intent === 'calendar') {
-                        // Check for range first
                         const rangeQuery = getDateRangeForQuery(transcribedText);
                         if (rangeQuery && rangeQuery.isRange) {
                             const events = await getCalendarEvents(rangeQuery.start, rangeQuery.end);
@@ -1602,11 +1450,7 @@ async function connectToWhatsApp() {
                             const filePath = path.join(FILES_DIR, matchedFile.storedFileName);
                             if (fs.existsSync(filePath)) {
                                 const buffer = fs.readFileSync(filePath);
-                                await sock.sendMessage(sender, {
-                                    document: buffer,
-                                    mimetype: matchedFile.mimetype || 'application/pdf',
-                                    fileName: matchedFile.fileName || 'document.pdf'
-                                }, { quoted: msg });
+                                await sock.sendMessage(sender, { document: buffer, mimetype: matchedFile.mimetype || 'application/pdf', fileName: matchedFile.fileName || 'document.pdf' }, { quoted: msg });
                             } else {
                                 await sock.sendMessage(sender, { text: "❌ File එක Server එකේ නෑ." }, { quoted: msg });
                             }
@@ -1659,12 +1503,7 @@ async function connectToWhatsApp() {
                     const buffer = await downloadMediaMessage(msg, 'buffer', {});
                     const storedFileName = `${crypto.randomUUID()}${ext}`;
                     fs.writeFileSync(path.join(FILES_DIR, storedFileName), buffer);
-                    fileRegistry.push({
-                        keyword,
-                        fileName: media.fileName || `${keyword}${ext}`,
-                        mimetype: media.mimetype || (docMsg ? 'application/pdf' : 'image/jpeg'),
-                        storedFileName
-                    });
+                    fileRegistry.push({ keyword, fileName: media.fileName || `${keyword}${ext}`, mimetype: media.mimetype || (docMsg ? 'application/pdf' : 'image/jpeg'), storedFileName });
                     saveFileRegistry();
                     await sock.sendMessage(sender, { text: `✅ File save කළා! Keyword: "${keyword}"` }, { quoted: msg });
                 } catch (err) {
@@ -1702,9 +1541,7 @@ async function connectToWhatsApp() {
                     const base64Image = buffer.toString('base64');
                     const mimeType = imgMsg.mimetype || 'image/jpeg';
                     const imagePart = { inlineData: { data: base64Image, mimeType: mimeType } };
-                    
-                    const prompt = buildPromptWithKnowledge(`Please analyze the attached image carefully. If it contains a table, schedule, timetable, or any other information, extract all the text/data accurately. If the user has asked a question (e.g., "What is the schedule?", "When is the exam?"), answer based on the image provided. User's question: "${rawMessageText || 'Explain this image'}"`);
-                    
+                    const prompt = buildPromptWithKnowledge(`Please analyze the attached image carefully. User's question: "${rawMessageText || 'Explain this image'}"`);
                     const result = await generateContentWithRetry(model, [prompt, imagePart]);
                     const reply = formatMathForWhatsApp(result.response.text());
                     await sock.sendMessage(sender, { text: reply }, { quoted: msg });
@@ -1756,11 +1593,7 @@ async function connectToWhatsApp() {
                             const summary = ev.summary || '';
                             const moduleCodeMatch = summary.match(/(SE|IT|IE)\d{4}/i);
                             if (moduleCodeMatch) {
-                                todayModules.push({
-                                    code: moduleCodeMatch[0].toUpperCase(),
-                                    fullName: summary,
-                                    event: ev
-                                });
+                                todayModules.push({ code: moduleCodeMatch[0].toUpperCase(), fullName: summary, event: ev });
                             }
                         });
                         const currentIndex = state.moduleIndex;
@@ -1769,7 +1602,7 @@ async function connectToWhatsApp() {
                             const nextModule = todayModules[nextIndex];
                             await handleQuizCommand(sock, sender, msg, nextModule.code);
                         } else {
-                            await sock.sendMessage(sender, { text: "🎉 අද තියෙන හැම Module එකෙන්ම Quiz බැලුවා! ආයෙත් `quiz` කියලා type කරන්න." }, { quoted: msg });
+                            await sock.sendMessage(sender, { text: "🎉 අද තියෙන හැම Module එකෙන්ම Quiz බැලුවා!" }, { quoted: msg });
                         }
                     } else {
                         await sock.sendMessage(sender, { text: "📭 අද Classes නෑ, ඒ නිසා වෙනත් Module එකක් නැහැ." }, { quoted: msg });
@@ -1847,9 +1680,7 @@ async function connectToWhatsApp() {
                         await sock.sendMessage(sender, { text: `📭 *${detectedModule}* සඳහා File එකක් හම්බුනේ නැහැ.\n\nමෙන්න තියෙන Files:\n${fileRegistry.map((f, i) => `${i+1}. ${f.keyword}`).join('\n')}\n\n👉 Type කරන්න: \`${fileRegistry[0].keyword}\`` }, { quoted: msg });
                     } else {
                         const fileList = fileRegistry.map((f, i) => `${i+1}. *${f.keyword}*`).join('\n');
-                        await sock.sendMessage(sender, { 
-                            text: `📂 *Available Files:*\n\n${fileList}\n\n💡 ඔබට ඕන file එකේ keyword එක type කරන්න (e.g., *${fileRegistry[0].keyword}*)` 
-                        }, { quoted: msg });
+                        await sock.sendMessage(sender, { text: `📂 *Available Files:*\n\n${fileList}\n\n💡 ඔබට ඕන file එකේ keyword එක type කරන්න (e.g., *${fileRegistry[0].keyword}*)` }, { quoted: msg });
                     }
                     return;
                 }
@@ -1858,18 +1689,14 @@ async function connectToWhatsApp() {
                     const filePath = path.join(FILES_DIR, matchedFile.storedFileName);
                     if (fs.existsSync(filePath)) {
                         const buffer = fs.readFileSync(filePath);
-                        await sock.sendMessage(sender, {
-                            document: buffer,
-                            mimetype: matchedFile.mimetype || 'application/pdf',
-                            fileName: matchedFile.fileName || 'document.pdf'
-                        }, { quoted: msg });
+                        await sock.sendMessage(sender, { document: buffer, mimetype: matchedFile.mimetype || 'application/pdf', fileName: matchedFile.fileName || 'document.pdf' }, { quoted: msg });
                         lastFileContext[sender] = matchedFile;
                     } else {
-                        await sock.sendMessage(sender, { text: "❌ File එක Server එකේ නෑ. Admin ට කියලා ආයේ Add කරන්න." }, { quoted: msg });
+                        await sock.sendMessage(sender, { text: "❌ File එක Server එකේ නෑ." }, { quoted: msg });
                     }
                 } catch (err) {
                     console.error('❌ Error sending file:', err);
-                    await sock.sendMessage(sender, { text: "❌ File එක යවන්න අවුලක් වුණා. නැවත try කරන්න." }, { quoted: msg });
+                    await sock.sendMessage(sender, { text: "❌ File එක යවන්න අවුලක් වුණා." }, { quoted: msg });
                 }
                 return;
             }
@@ -1883,21 +1710,29 @@ async function connectToWhatsApp() {
                 
                 const adminHelpText = `🛠️ *Admin Control Panel* (Batch Rep Only) 🛡️
 
-🧠 *Memory (Bot ට මතක තබා ගන්න):*
-📝 *add info: [text]* - Bot ට අලුත් දෙයක් මතක තබා ගන්න
-📚 *list info* - Bot ට මතක තියෙන දේවල් බලන්න
-🗑️ *remove info [number]* - එකක් අයින් කරන්න
+🧠 *Memory:*
+📝 *add info: [text]*
+📚 *list info*
+🗑️ *remove info [number]*
 
-📁 *File Management:*
-📤 *add file: [keyword]* - PDF/Image එකක් save කරන්න
-📋 *list files* - Files බලන්න
-🗑️ *remove file [number]* - File එකක් අයින් කරන්න
+📁 *Files:*
+📤 *add file: [keyword]*
+📋 *list files*
+🗑️ *remove file [number]*
 
-📊 *Bot Management:*
-📊 *status* - Bot Status
-🆔 *getid* - Group ID
+📊 *Bot:*
+📊 *status*
+🆔 *getid*
 
-💡 *Tip:* "add info" කරන හැම දෙයක්ම Bot **JARVIS වගේ මතක තබාගෙන** ළමයෙක් ඇසුවොත් ස්වභාවිකව උත්තර දෙනවා.`;
+📅 *Deadlines:*
+📝 *add deadline: Description | YYYY-MM-DD | HH:MM | Matara*
+📚 *list deadlines*
+🗑️ *remove deadline [number]*
+
+📝 *Exams:*
+📝 *add exam: Description | YYYY-MM-DD | HH:MM | Matara | ExamType*
+📚 *list exams*
+🗑️ *remove exam [number]*`;
 
                 await sock.sendMessage(sender, { text: adminHelpText }, { quoted: msg });
                 return;
@@ -1906,22 +1741,14 @@ async function connectToWhatsApp() {
             // ---------- POLL ----------
             if (textLower.startsWith('poll ') && isSenderAdmin(sender)) {
                 const pollArgs = rawMessageText.slice(5).split('|').map(s => s.trim());
-                
                 if (pollArgs.length < 3) {
-                    await sock.sendMessage(sender, { text: "⚠️ හරි Format එක: `poll ප්‍රශ්නය? | විකල්පය 1 | විකල්පය 2`" }, { quoted: msg });
+                    await sock.sendMessage(sender, { text: "⚠️ හරි Format: `poll ප්‍රශ්නය? | විකල්පය 1 | විකල්පය 2`" }, { quoted: msg });
                     return;
                 }
-
                 const pollName = pollArgs[0];
                 const pollValues = pollArgs.slice(1, 13);
-
                 try {
-                    await sock.sendMessage(sender, {
-                        poll: {
-                            name: pollName,
-                            values: pollValues
-                        }
-                    }, { quoted: msg });
+                    await sock.sendMessage(sender, { poll: { name: pollName, values: pollValues } }, { quoted: msg });
                 } catch (e) {
                     console.error('Poll error:', e);
                     await sock.sendMessage(sender, { text: "❌ Poll එක හදන්න අවුලක් වුණා." }, { quoted: msg });
@@ -1940,7 +1767,7 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // ---------- ADD INFO (Memory - JARVIS Style) ----------
+            // ---------- ADD INFO ----------
             if (/^(add info|info add|save info|remember)\b/i.test(textLower)) {
                 if (!isSenderAdmin(sender)) {
                     await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
@@ -1955,12 +1782,7 @@ async function connectToWhatsApp() {
                 await sock.sendMessage(sender, { text: "🧠 මතක තබා ගනිමින්..." }, { quoted: msg });
                 const calculatedDate = await calculateDateFromText(infoText);
                 
-                knowledgeBase.push({
-                    text: infoText,
-                    addedAt: new Date().toISOString(),
-                    addedBy: 'Monal Hansana',
-                    calculatedDate: calculatedDate || null
-                });
+                knowledgeBase.push({ text: infoText, addedAt: new Date().toISOString(), addedBy: 'Monal Hansana', calculatedDate: calculatedDate || null });
                 saveKnowledgeBase();
                 
                 let confirmMsg = `🧠 *මතක තබා ගත්තා!*\n\n📝 "${infoText}"`;
@@ -1991,7 +1813,7 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // ---------- LIST INFO (Memory) ----------
+            // ---------- LIST INFO ----------
             if (textLower === 'list info' || textLower === 'show info' || textLower === 'list memory' || textLower === 'my memory') {
                 if (!isSenderAdmin(sender)) {
                     await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
@@ -2006,9 +1828,7 @@ async function connectToWhatsApp() {
                         const calcDate = k.calculatedDate ? `\n   🗓️ Actual Date: ${k.calculatedDate}` : '';
                         return `${i+1}. ${text}${addedAt ? `\n   _(Added: ${addedAt})_` : ''}${calcDate}`;
                     }).join('\n\n');
-                    await sock.sendMessage(sender, { 
-                        text: `🧠 *Bot Memory (${knowledgeBase.length})*\n\n${list}` 
-                    }, { quoted: msg });
+                    await sock.sendMessage(sender, { text: `🧠 *Bot Memory (${knowledgeBase.length})*\n\n${list}` }, { quoted: msg });
                 }
                 return;
             }
@@ -2024,19 +1844,12 @@ async function connectToWhatsApp() {
                 } else {
                     const list = fileRegistry.map((f, i) => `${i+1}. "${f.keyword}" → ${f.fileName}`).join('\n');
                     await sock.sendMessage(sender, { text: `📁 *Saved Files (${fileRegistry.length})*\n\n${list}` }, { quoted: msg });
-
                     for (const f of fileRegistry) {
                         const filePath = path.join(FILES_DIR, f.storedFileName);
                         if (fs.existsSync(filePath)) {
                             const buffer = fs.readFileSync(filePath);
-                            await sock.sendMessage(sender, {
-                                document: buffer,
-                                mimetype: f.mimetype || 'application/pdf',
-                                fileName: f.fileName || 'document.pdf'
-                            }, { quoted: msg });
+                            await sock.sendMessage(sender, { document: buffer, mimetype: f.mimetype || 'application/pdf', fileName: f.fileName || 'document.pdf' }, { quoted: msg });
                             await new Promise(r => setTimeout(r, 1500));
-                        } else {
-                            console.error(`File not found: ${filePath}`);
                         }
                     }
                 }
@@ -2051,7 +1864,7 @@ async function connectToWhatsApp() {
                 }
                 const idx = parseInt(textLower.replace(/^remove file\s+/i, ''), 10) - 1;
                 if (isNaN(idx) || idx < 0 || idx >= fileRegistry.length) {
-                    await sock.sendMessage(sender, { text: "⚠️ Invalid number. Use 'list files' to see." }, { quoted: msg });
+                    await sock.sendMessage(sender, { text: "⚠️ Invalid number." }, { quoted: msg });
                     return;
                 }
                 const [removed] = fileRegistry.splice(idx, 1);
@@ -2064,7 +1877,7 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // ---------- DEADLINE COMMANDS (Admin) ----------
+            // ---------- ADD DEADLINE ----------
             const deadlineMatch = rawMessageText.match(/^add deadline\s*:?\s*(.+?)\s*\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*(\d{2}:\d{2})\s*\|\s*(.+)$/i);
             if (deadlineMatch && isSenderAdmin(sender)) {
                 const description = deadlineMatch[1].trim();
@@ -2074,65 +1887,17 @@ async function connectToWhatsApp() {
                 
                 const dateObj = new Date(`${dateStr}T${timeStr}`);
                 if (isNaN(dateObj.getTime())) {
-                    await sock.sendMessage(sender, { text: "⚠️ වැරදි date හෝ time format. හරි format: YYYY-MM-DD | HH:MM | Centre" }, { quoted: msg });
+                    await sock.sendMessage(sender, { text: "⚠️ වැරදි date හෝ time format." }, { quoted: msg });
                     return;
                 }
                 
-                deadlines.push({
-                    id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
-                    description,
-                    date: dateStr,
-                    time: timeStr,
-                    centre: centre.toLowerCase(),
-                    createdAt: new Date().toISOString()
-                });
+                deadlines.push({ id: Date.now().toString() + Math.random().toString(36).substr(2, 5), description, date: dateStr, time: timeStr, centre: centre.toLowerCase(), createdAt: new Date().toISOString() });
                 saveDeadlines();
-                await sock.sendMessage(sender, { 
-                    text: `✅ Deadline added!\n📝 ${description}\n📅 ${dateStr}\n🕐 ${timeStr}\n📍 ${centre}` 
-                }, { quoted: msg });
+                await sock.sendMessage(sender, { text: `✅ Deadline added!\n📝 ${description}\n📅 ${dateStr}\n🕐 ${timeStr}\n📍 ${centre}` }, { quoted: msg });
                 return;
             }
 
-            // Bulk add deadlines
-            if (textLower.startsWith('add deadlines:') && isSenderAdmin(sender)) {
-                const lines = rawMessageText.replace(/^add deadlines\s*:?\s*/i, '').split('\n').filter(line => line.trim());
-                let addedCount = 0;
-                let errorCount = 0;
-                
-                for (const line of lines) {
-                    const match = line.match(/^(.+?)\s*\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*(\d{2}:\d{2})\s*\|\s*(.+)$/);
-                    if (match) {
-                        const description = match[1].trim();
-                        const dateStr = match[2].trim();
-                        const timeStr = match[3].trim();
-                        const centre = match[4].trim();
-                        const dateObj = new Date(`${dateStr}T${timeStr}`);
-                        if (!isNaN(dateObj.getTime())) {
-                            deadlines.push({
-                                id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
-                                description,
-                                date: dateStr,
-                                time: timeStr,
-                                centre: centre.toLowerCase(),
-                                createdAt: new Date().toISOString()
-                            });
-                            addedCount++;
-                        } else {
-                            errorCount++;
-                        }
-                    } else {
-                        errorCount++;
-                    }
-                }
-                
-                saveDeadlines();
-                await sock.sendMessage(sender, { 
-                    text: `✅ Deadlines added!\n📝 Added: ${addedCount}\n❌ Failed: ${errorCount}` 
-                }, { quoted: msg });
-                return;
-            }
-
-            // List deadlines
+            // ---------- LIST DEADLINES ----------
             if (textLower === 'list deadlines' || textLower === 'show deadlines') {
                 if (!isSenderAdmin(sender)) {
                     await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
@@ -2141,11 +1906,7 @@ async function connectToWhatsApp() {
                 if (deadlines.length === 0) {
                     await sock.sendMessage(sender, { text: "📭 No deadlines saved." }, { quoted: msg });
                 } else {
-                    const sorted = [...deadlines].sort((a, b) => {
-                        const dateA = new Date(`${a.date}T${a.time || '23:59'}`);
-                        const dateB = new Date(`${b.date}T${b.time || '23:59'}`);
-                        return dateA - dateB;
-                    });
+                    const sorted = [...deadlines].sort((a, b) => new Date(`${a.date}T${a.time || '23:59'}`) - new Date(`${b.date}T${b.time || '23:59'}`));
                     const list = sorted.map((d, i) => {
                         const dt = new Date(`${d.date}T${d.time || '23:59'}`);
                         return `${i+1}. *${d.description}*\n   📅 ${dt.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })}\n   🕐 ${dt.toLocaleTimeString('en-LK', { hour: '2-digit', minute: '2-digit' })}\n   📍 ${d.centre}\n`;
@@ -2155,7 +1916,7 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // Remove deadline
+            // ---------- REMOVE DEADLINE ----------
             if (/^remove deadline\s+\d+/i.test(textLower)) {
                 if (!isSenderAdmin(sender)) {
                     await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
@@ -2163,7 +1924,7 @@ async function connectToWhatsApp() {
                 }
                 const idx = parseInt(textLower.replace(/^remove deadline\s+/i, ''), 10) - 1;
                 if (isNaN(idx) || idx < 0 || idx >= deadlines.length) {
-                    await sock.sendMessage(sender, { text: "⚠️ Invalid number. Use 'list deadlines' to see." }, { quoted: msg });
+                    await sock.sendMessage(sender, { text: "⚠️ Invalid number." }, { quoted: msg });
                     return;
                 }
                 const [removed] = deadlines.splice(idx, 1);
@@ -2172,7 +1933,7 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // ---------- EXAM COMMANDS (Admin) ----------
+            // ---------- ADD EXAM ----------
             const examMatch = rawMessageText.match(/^add exam\s*:?\s*(.+?)\s*\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*(\d{2}:\d{2})\s*\|\s*(.+?)\s*\|\s*(.+)$/i);
             if (examMatch && isSenderAdmin(sender)) {
                 const description = examMatch[1].trim();
@@ -2183,27 +1944,17 @@ async function connectToWhatsApp() {
                 
                 const dateObj = new Date(`${dateStr}T${timeStr}`);
                 if (isNaN(dateObj.getTime())) {
-                    await sock.sendMessage(sender, { text: "⚠️ වැරදි date හෝ time format. හරි format: YYYY-MM-DD | HH:MM | Centre | ExamType" }, { quoted: msg });
+                    await sock.sendMessage(sender, { text: "⚠️ වැරදි date හෝ time format." }, { quoted: msg });
                     return;
                 }
                 
-                exams.push({
-                    id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
-                    description,
-                    date: dateStr,
-                    time: timeStr,
-                    centre: centre.toLowerCase(),
-                    type: type,
-                    createdAt: new Date().toISOString()
-                });
+                exams.push({ id: Date.now().toString() + Math.random().toString(36).substr(2, 5), description, date: dateStr, time: timeStr, centre: centre.toLowerCase(), type: type, createdAt: new Date().toISOString() });
                 saveExams();
-                await sock.sendMessage(sender, { 
-                    text: `✅ Exam added!\n📝 ${description}\n📅 ${dateStr}\n🕐 ${timeStr}\n📍 ${centre}\n📋 ${type}` 
-                }, { quoted: msg });
+                await sock.sendMessage(sender, { text: `✅ Exam added!\n📝 ${description}\n📅 ${dateStr}\n🕐 ${timeStr}\n📍 ${centre}\n📋 ${type}` }, { quoted: msg });
                 return;
             }
 
-            // List exams (Admin only)
+            // ---------- LIST EXAMS ----------
             if (textLower === 'list exams' || textLower === 'show exams') {
                 if (!isSenderAdmin(sender)) {
                     await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
@@ -2212,11 +1963,7 @@ async function connectToWhatsApp() {
                 if (exams.length === 0) {
                     await sock.sendMessage(sender, { text: "📭 No exams saved." }, { quoted: msg });
                 } else {
-                    const sorted = [...exams].sort((a, b) => {
-                        const dateA = new Date(`${a.date}T${a.time || '23:59'}`);
-                        const dateB = new Date(`${b.date}T${b.time || '23:59'}`);
-                        return dateA - dateB;
-                    });
+                    const sorted = [...exams].sort((a, b) => new Date(`${a.date}T${a.time || '23:59'}`) - new Date(`${b.date}T${b.time || '23:59'}`));
                     const list = sorted.map((e, i) => {
                         const dt = new Date(`${e.date}T${e.time || '23:59'}`);
                         return `${i+1}. *${e.description}*\n   📅 ${dt.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })}\n   🕐 ${dt.toLocaleTimeString('en-LK', { hour: '2-digit', minute: '2-digit' })}\n   📍 ${e.centre}\n   📋 ${e.type || 'Exam'}\n`;
@@ -2226,7 +1973,7 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // Remove exam
+            // ---------- REMOVE EXAM ----------
             if (/^remove exam\s+\d+/i.test(textLower)) {
                 if (!isSenderAdmin(sender)) {
                     await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
@@ -2234,7 +1981,7 @@ async function connectToWhatsApp() {
                 }
                 const idx = parseInt(textLower.replace(/^remove exam\s+/i, ''), 10) - 1;
                 if (isNaN(idx) || idx < 0 || idx >= exams.length) {
-                    await sock.sendMessage(sender, { text: "⚠️ Invalid number. Use 'list exams' to see." }, { quoted: msg });
+                    await sock.sendMessage(sender, { text: "⚠️ Invalid number." }, { quoted: msg });
                     return;
                 }
                 const [removed] = exams.splice(idx, 1);
@@ -2251,19 +1998,16 @@ async function connectToWhatsApp() {
             if (aiIntent.intent === 'calendar') {
                 const lowerText = rawMessageText.toLowerCase().trim();
                 
-                // 🆕 FIRST: Check for date RANGE queries (last week, from X, etc.)
+                // 🆕 FIRST: Check for date RANGE queries
                 const dateRange = getDateRangeForQuery(rawMessageText);
                 
                 if (dateRange && dateRange.isRange) {
                     console.log('📅 Range query detected:', dateRange.label);
-                    
                     const events = await getCalendarEvents(dateRange.start, dateRange.end);
-                    
                     const startStr = dateRange.start.toLocaleDateString('en-LK', { day: 'numeric', month: 'long', year: 'numeric' });
                     const endStr = dateRange.end.toLocaleDateString('en-LK', { day: 'numeric', month: 'long', year: 'numeric' });
                     
                     if (events && events.length > 0) {
-                        // Group by day
                         const days = {};
                         events.forEach(ev => {
                             const evDate = new Date(ev.start?.dateTime || ev.start?.date);
@@ -2272,10 +2016,7 @@ async function connectToWhatsApp() {
                             days[dateKey].push(ev);
                         });
                         
-                        const sortedDays = Object.keys(days).sort((a, b) => {
-                            return new Date(a) - new Date(b);
-                        });
-                        
+                        const sortedDays = Object.keys(days).sort((a, b) => new Date(a) - new Date(b));
                         let msgText = `📅 *${dateRange.label}*\n${startStr} - ${endStr}\n\n`;
                         msgText += `📊 *Total Classes: ${events.length}*\n\n`;
                         
@@ -2294,21 +2035,16 @@ async function connectToWhatsApp() {
                         
                         await sock.sendMessage(sender, { text: msgText }, { quoted: msg });
                     } else {
-                        await sock.sendMessage(sender, {
-                            text: `📅 *${dateRange.label}*\n${startStr} - ${endStr}\n\n🎉 මේ කාලය ඇතුළත Classes නෑ! 💯`
-                        }, { quoted: msg });
+                        await sock.sendMessage(sender, { text: `📅 *${dateRange.label}*\n${startStr} - ${endStr}\n\n🎉 මේ කාලය ඇතුළත Classes නෑ! 💯` }, { quoted: msg });
                     }
                     return;
                 }
 
-                if (lowerText === 'calendar' || lowerText === 'timetable' || 
-                    lowerText === 'week' || lowerText === 'weekly' || 
-                    lowerText.includes('me sathiya') || lowerText.includes('මේ සතිය') ||
-                    lowerText.includes('me satiya') || lowerText.includes('තිම් ටේබල්')) {
+                if (lowerText === 'calendar' || lowerText === 'timetable' || lowerText === 'week' || lowerText === 'weekly' || 
+                    lowerText.includes('me sathiya') || lowerText.includes('මේ සතිය') || lowerText.includes('me satiya') || lowerText.includes('තිම් ටේබල්')) {
                     
                     const { start, end, weekStart } = getCurrentWeekRange();
                     const events = await getCalendarEvents(start, end);
-                    
                     const startDateStr = weekStart.toLocaleDateString('en-LK', { day: 'numeric', month: 'short' });
                     const endDateStr = new Date(end).toLocaleDateString('en-LK', { day: 'numeric', month: 'short', year: 'numeric' });
                     let msgText = `📅 *මේ සතියේ Classes (${startDateStr} - ${endDateStr})*\n\n`;
@@ -2321,13 +2057,7 @@ async function connectToWhatsApp() {
                             if (!days[dateKey]) days[dateKey] = [];
                             days[dateKey].push(ev);
                         });
-
-                        const sortedDays = Object.keys(days).sort((a, b) => {
-                            const dateA = new Date(a);
-                            const dateB = new Date(b);
-                            return dateA - dateB;
-                        });
-
+                        const sortedDays = Object.keys(days).sort((a, b) => new Date(a) - new Date(b));
                         sortedDays.forEach((day) => {
                             msgText += `*${day}*\n`;
                             days[day].forEach((ev) => {
@@ -2343,7 +2073,6 @@ async function connectToWhatsApp() {
                     } else {
                         msgText += "🎉 මේ සතියේ Classes නෑ! Free Week! 💯";
                     }
-                    
                     await sock.sendMessage(sender, { text: msgText }, { quoted: msg });
                     return;
                 }
@@ -2358,11 +2087,10 @@ async function connectToWhatsApp() {
                         const endTime = new Date(ev.end?.dateTime || ev.end?.date).toLocaleString('en-LK', { timeZone: 'Asia/Colombo', hour: '2-digit', minute:'2-digit' });
                         const location = ev.location || '';
                         const description = ev.description || '';
-                        
                         msgTextDay += `${idx+1}. *${ev.summary || 'Untitled'}*\n`;
                         msgTextDay += `   🕒 ${startTime} – ${endTime}\n`;
-                        if (location) msgTextDay += `   📍 *ස්ථානය (Location):* ${location}\n`;
-                        if (description) msgTextDay += `   📝 *විස්තරය (Details):* ${cleanHTML(description)}\n`;
+                        if (location) msgTextDay += `   📍 *ස්ථානය:* ${location}\n`;
+                        if (description) msgTextDay += `   📝 *විස්තරය:* ${cleanHTML(description)}\n`;
                         msgTextDay += `\n`;
                     });
                     msgTextDay += `\n🔗 *Full Calendar:* https://calendar.google.com/calendar/u/0?cid=${encodeURIComponent(CALENDAR_ID)}`;
@@ -2373,9 +2101,8 @@ async function connectToWhatsApp() {
                     const futureDate = new Date(targetDate);
                     futureDate.setHours(0, 0, 0, 0);
                     const diffDays = Math.ceil((futureDate - today) / (1000 * 60 * 60 * 24));
-
                     if (diffDays >= 3) {
-                        await sock.sendMessage(sender, { text: `⚠️ *${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })}* දිනට අදාළ Timetable එක තාම Google Calendar එකට එකතු කරලා නැහැ. ටික වේලාවකින් ආයේ අහන්න, නැත්නම් Batch Rep ට දැනුම් දෙන්න!` }, { quoted: msg });
+                        await sock.sendMessage(sender, { text: `⚠️ *${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })}* දිනට අදාළ Timetable එක තාම Google Calendar එකට එකතු කරලා නැහැ.` }, { quoted: msg });
                     } else {
                         await sock.sendMessage(sender, { text: `🎉 *${targetDate.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' })}* දිනට Classes නෑ!` }, { quoted: msg });
                     }
@@ -2383,8 +2110,7 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // ---------- OTHER COMMANDS ----------
-            // WHO AM I
+            // ---------- WHO AM I ----------
             if (/\bwho\s*am\s*i\b/i.test(textLower) || textLower.includes('man kauda') || textLower.includes('mama kauda')) {
                 const isAdmin = isSenderAdmin(sender);
                 if (isAdmin) {
@@ -2395,24 +2121,21 @@ async function connectToWhatsApp() {
                 return;
             }
 
-            // GEN Z GUIDE
+            // ---------- GEN Z GUIDE ----------
             if (textLower === 'guide' || textLower === 'genz' || textLower === 'how to use') {
-                const genZGuide = `Yo bestie! 👋🔥 I'm *HansanaBot*, your AI slay assistant! No cap, I got your back! 🫡✨
+                await sock.sendMessage(sender, { text: `Yo bestie! 👋🔥 I'm *HansanaBot*, your AI slay assistant!
 
-🛠️ *How to use me (fr fr):*
-👉 Just ask me anything! I understand *"ada timetable"*, *"heta class"*, *"SE1020 notes"*, *"quiz"*, etc.
-👉 Need notes? Just say *"pdf"* or *"SE1020 notes"*!
-👉 Want a quiz? Just say *"quiz"* or *"quiz SE1020"*!
-👉 Got a random question? Just ask me in Sinhala or English!
-👉 And I remember what Monal tells me — like a personal assistant. 🧠
-👉 *"status"* is only for the main character (Admin) 💅
+🛠️ *How to use me:*
+👉 Just type *"ada class"* or *"heta class"*.
+👉 Need notes? Type *"pdf"* or *"SE1020 notes"*.
+👉 Want a quiz? Type *"quiz"* or *"quiz SE1020"*.
+👉 Ask me anything in Sinhala or English!
 
-Catch my drift? Slide into my DMs and let's get that GPA up! 📈🚀`;
-                await sock.sendMessage(sender, { text: genZGuide }, { quoted: msg });
+Catch my drift? Let's get that GPA up! 📈🚀` }, { quoted: msg });
                 return;
             }
 
-            // HELP MENU
+            // ---------- HELP MENU ----------
             if (textLower === 'help' || textLower === '/help' || textLower === 'menu' || textLower === '/menu' || 
                 textLower === 'start' || textLower === '/start' || textLower === 'commands' || 
                 textLower === 'hi' || textLower === 'hello' || textLower === 'hey' || textLower === 'hii' || 
@@ -2424,12 +2147,12 @@ Catch my drift? Slide into my DMs and let's get that GPA up! 📈🚀`;
                 let helpText = `👋 *HansanaBot Help Menu* 🤖
                 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-📌 *General Commands* (For Everyone)
+📌 *General Commands*
 
-📖 *guide* - Gen Z Style Guide එක බලන්න
-🆔 *whoami* - ඔයාගේ WhatsApp ID එක බලන්න
-👤 *who am i* - Adminද Studentද කියලා බලන්න
-💬 *ඕනෑම ප්‍රශ්නයක්* - මම AI Assistant කෙනෙක්, ඉතින් කතා කරන්න!
+📖 *guide* - Gen Z Style Guide
+🆔 *whoami* - ඔයාගේ WhatsApp ID
+👤 *who am i* - Adminද Studentද
+💬 *ඕනෑම ප්‍රශ්නයක්* - AI Assistant
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📅 *Timetable & Calendar*
@@ -2441,51 +2164,193 @@ Catch my drift? Slide into my DMs and let's get that GPA up! 📈🚀`;
 📅 *giya sathiye* - පසුගිය සතියේ Classes
 📅 *laban sathiye* - ලබන සතියේ Classes
 📅 *september 1 idan* - එදින සිට සතියේ Classes
-📅 *Monday / Tuesday ...* - ඕනෑම දිනයක Classes
-📅 *calendar help* - Calendar Troubleshooting Guide
+📅 *calendar help* - Troubleshooting Guide
 
-⏰ *Daily Auto Update:* සෑම රෑ 9 ට හෙට දවසේ *Timetable + Word of the Day* එක යවයි.
+⏰ *Daily Auto Update:* සෑම රෑ 9 ට හෙට දවසේ Timetable එක යවයි.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📂 *Smart PDF System*
 
-📂 *pdf / file / danna* - ඔබට අදාළ Module එකේ File එක Auto ලබා ගන්න
-📂 *[module code]* - e.g., *SE1020* type කරලා File එක Direct ලබා ගන්න
+📂 *pdf / file / danna* - අදාළ Module File
+📂 *[module code]* - e.g., *SE1020* type කරන්න
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📝 *Quiz System*
 
-📝 *quiz* - අද දවසේ පළමු Module එකෙන් ප්‍රශ්න 10ක්
-📝 *quiz SE1020* - Specific Module එකෙන් Quiz එකක්
-   (ඉවර වුනාම *more* හෝ *next module* කියලා Type කරන්න)
+📝 *quiz* - අද පළමු Module එකෙන් ප්‍රශ්න 10ක්
+📝 *quiz SE1020* - Specific Module එකකින්
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🎤 *Voice Commands*
 
-🎙️ *Voice Note එකක් යවන්න* - "හෙට timetable එක දෙන්න" වගේ කියන්න
-   (Bot එක auto detect කරලා Timetable එක යවයි)
+🎙️ Voice Note එකක් යවන්න - "හෙට timetable එක දෙන්න"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🧠 *Learning & Fun*
 
-📖 *word / vocabulary* - Academic Word Practice (නව වචන ඉගෙන ගන්න)
-✨ *motivate me* - Daily Motivation Quote එකක්
-🧩 *riddle* - Riddle එකක්
-💡 *answer* - Riddle එකේ Answer එක
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-❓ *Other*
-
-❓ *help / menu* - මෙම Help Menu එක
-🙏 *thanks / stuti* - Auto Thanks Reply
+📖 *word / vocabulary* - Academic Word Practice
+✨ *motivate me* - Motivation Quote
+🧩 *riddle* - Riddle
+💡 *answer* - Riddle Answer
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 📞 *Support*
-Contact Batch Rep: +94 76 251 3957
+Batch Rep: +94 76 251 3957
 Email: it26100930@my.sliit.lk`;
 
                 if (isAdmin) {
                     helpText += `
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-🛠️ *Admin Comm
+🛠️ *Admin Commands*
+
+🧠 *Memory:*
+📝 *add info: [text]*
+📚 *list info*
+🗑️ *remove info [number]*
+
+📁 *Files:*
+📤 *add file: [keyword]*
+📋 *list files*
+🗑️ *remove file [number]*
+
+📊 *Bot:*
+📊 *status*
+📊 *poll Question? | Option 1 | Option 2*
+🆔 *getid*
+
+📅 *Deadlines:*
+📝 *add deadline: Description | YYYY-MM-DD | HH:MM | Matara*
+📚 *list deadlines*
+🗑️ *remove deadline [number]*
+
+📝 *Exams:*
+📝 *add exam: Description | YYYY-MM-DD | HH:MM | Matara | ExamType*
+📚 *list exams*
+🗑️ *remove exam [number]*`;
+                }
+
+                await sock.sendMessage(sender, { text: helpText }, { quoted: msg });
+                return;
+            }
+
+            // ---------- WHOAMI ----------
+            if (textLower === 'whoami' || textLower === 'myid') {
+                const normalized = jidNormalizedUser(sender) || sender;
+                await sock.sendMessage(sender, { text: `🆔 Your ID: \`${normalized}\`` }, { quoted: msg });
+                return;
+            }
+
+            // ---------- CALENDAR HELP ----------
+            if (textLower === 'calendar help' || textLower === 'calendar not showing' || textLower === 'sync calendar') {
+                await sock.sendMessage(sender, { text: `📅 *Calendar Troubleshooting*\n\n🔗 Link: https://calendar.google.com/calendar/u/0?cid=${encodeURIComponent(CALENDAR_ID)}\n\n*Steps:*\n1. Google Calendar App → ☰ Menu → "Other calendars" → Check "SLIIT Timetable".\n2. Settings → Accounts → Google → SLIIT email → Calendars ON.\n3. Settings → Accounts → Sync Calendar ON.\n4. Unsubscribe and re-add.\n\n📱 Still not working? Contact Batch Rep: +94 76 251 3957` }, { quoted: msg });
+                return;
+            }
+
+            // ---------- FUN & MOTIVATION ----------
+            if (textLower === 'motivate me' || textLower === 'daily quote' || textLower === 'inspire me') {
+                const quotes = [
+                    "Success is not final, failure is not fatal: it is the courage to continue that counts. - Winston Churchill",
+                    "Don't watch the clock; do what it does. Keep going. - Sam Levenson",
+                    "The secret of getting ahead is getting started. - Mark Twain",
+                    "It always seems impossible until it's done. - Nelson Mandela",
+                    "Bestie, just focus on your goals. No cap, you got this! 🔥"
+                ];
+                const randomQuote = quotes[Math.floor(Math.random() * quotes.length)];
+                await sock.sendMessage(sender, { text: `✨ *Motivation:*\n\n"${randomQuote}"` }, { quoted: msg });
+                return;
+            }
+            
+            // ---------- RIDDLE ----------
+            if (textLower === 'riddle') {
+                global.currentRiddle = "I speak without a mouth and hear without ears. I have no body, but I come alive with wind. What am I?";
+                await sock.sendMessage(sender, { text: `🧩 *Riddle:*\n\n${global.currentRiddle}` }, { quoted: msg });
+                return;
+            }
+            if (textLower === 'answer' && global.currentRiddle) {
+                await sock.sendMessage(sender, { text: "✅ The answer is: **An Echo**! 🎉" }, { quoted: msg });
+                global.currentRiddle = null;
+                return;
+            }
+
+            // ---------- ACADEMIC WORD ----------
+            if (textLower === 'word' || textLower === 'aw word' || textLower === 'practice word' || textLower === 'vocabulary') {
+                const wordKeys = Object.keys(academicWords);
+                const randomWord = wordKeys[Math.floor(Math.random() * wordKeys.length)];
+                const wordMeaning = academicWords[randomWord];
+                await sock.sendMessage(sender, { text: `📚 *Academic Word Practice*\n\n*${randomWord}*\n📖 Meaning: ${wordMeaning}\n\nType *word* again to get another one! 🔄` }, { quoted: msg });
+                return;
+            }
+
+            // ---------- THANKS AUTO-REPLY ----------
+            if (textLower.includes('thanks') || textLower.includes('thank you') || textLower.includes('sthuthi') || textLower.includes('stuti') || textLower.includes('bohoma sthuthi')) {
+                await sock.sendMessage(sender, { text: "ඔයාව සාදරයෙන් පිළිගන්නවා! 🥰❤️ තව මොනවා හරි ඕන නම් අහන්න!" }, { quoted: msg });
+                return;
+            }
+
+            // ---------- GENERAL AI RESPONSE ----------
+            if (rawMessageText) {
+                try {
+                    const history = getRecentContext(sender);
+                    let promptToSend = fullUserPrompt;
+                    
+                    if (history) {
+                        promptToSend = `Recent conversation with this student:\n${history}\n\nNew message from student: "${fullUserPrompt}"\n\nReply naturally and helpfully. If the batch rep's memory has relevant info, use it confidently as if you already know it.`;
+                    }
+                    
+                    geminiRequestsToday++;
+                    const result = await generateContentWithRetry(model, buildPromptWithKnowledge(promptToSend));
+                    const reply = formatMathForWhatsApp(result.response.text());
+                    addToMemory(sender, 'User', fullUserPrompt);
+                    addToMemory(sender, 'Bot', reply);
+                    await sock.sendMessage(sender, { text: reply }, { quoted: msg });
+                } catch (error) {
+                    console.error('Gemini error:', error);
+                    
+                    let errorMessage = "❌ සමාවෙන්න, මට දැන් උත්තර දෙන්න බැරි වුණා. ";
+                    
+                    if (error.message.includes('503') || error.message.includes('429')) {
+                        errorMessage += "API එක busy. ටික වේලාවකින් නැවත try කරන්න. ⏳";
+                    } else if (error.message.includes('content') || error.message.includes('filter')) {
+                        errorMessage += "ඔබගේ ප්‍රශ්නයට උත්තර දෙන්න මට ඉඩ නැහැ. 🙏";
+                    } else if (error.message.includes('API key')) {
+                        errorMessage += "API Key එක invalid. Admin ට දැනුම් දෙන්න. 🛠️";
+                    } else {
+                        errorMessage += "නැවත try කරන්න. 🔄";
+                    }
+                    
+                    await sock.sendMessage(sender, { text: errorMessage }, { quoted: msg });
+                }
+            }
+        }
+
+        // ----------------------------------------------------------------
+        //  messages.upsert
+        // ----------------------------------------------------------------
+        sock.ev.on('messages.upsert', async ({ messages, type }) => {
+            if (type !== 'notify') return;
+            for (const msg of messages) {
+                if (!msg.message || msg.key.fromMe) continue;
+                if (processedMessages.has(msg.key.id)) continue;
+                markProcessed(msg.key.id);
+                messageQueue.add(
+                    () => processMessage(sock, msg),
+                    async (position) => {
+                        try {
+                            await sock.sendMessage(msg.key.remoteJid, { text: `⏳ ඉන්න! Queue: ${position}. ඉක්මනට reply කරන්නම්! 🙏` }, { quoted: msg });
+                        } catch (e) { /* ignore */ }
+                    }
+                ).catch(err => console.error('Queue error:', err));
+            }
+        });
+
+    } catch (error) {
+        console.error('Connection error:', error);
+        setTimeout(() => connectToWhatsApp(), 5000);
+    }
+}
+
+// ================================================================
+//  🚀 START
+// ================================================================
+connectToWhatsApp();
