@@ -48,7 +48,6 @@ if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 const KNOWLEDGE_FILE = path.join(DATA_DIR, 'knowledge.json');
 let knowledgeBase = [];
 
-// Load knowledge base (with backward compatibility for old string entries)
 try {
     if (fs.existsSync(KNOWLEDGE_FILE)) {
         const rawData = JSON.parse(fs.readFileSync(KNOWLEDGE_FILE, 'utf8'));
@@ -65,9 +64,7 @@ function saveKnowledgeBase() {
     try { fs.writeFileSync(KNOWLEDGE_FILE, JSON.stringify(knowledgeBase, null, 2)); } catch (e) { console.error(e); }
 }
 
-// Build prompt with STRONG knowledge base emphasis + TODAY'S DATE (JARVIS-style memory)
 function buildPromptWithKnowledge(basePrompt) {
-    // Get today's date in Sri Lanka timezone
     const utcNow = new Date();
     const today = new Date(utcNow.toLocaleString('en-US', { timeZone: 'Asia/Colombo' }));
     const todayStr = today.toLocaleDateString('en-LK', { 
@@ -204,7 +201,7 @@ const MODULE_FILE_MAP = {
 };
 
 // ================================================================
-//  📅 DEADLINES SYSTEM (Matara Centre with Time)
+//  📅 DEADLINES SYSTEM
 // ================================================================
 const DEADLINES_FILE = path.join(DATA_DIR, 'deadlines.json');
 let deadlines = [];
@@ -217,7 +214,7 @@ function saveDeadlines() {
 }
 
 // ================================================================
-//  📝 EXAMS SYSTEM (Matara Centre with Time & Exam Type)
+//  📝 EXAMS SYSTEM
 // ================================================================
 const EXAMS_FILE = path.join(DATA_DIR, 'exams.json');
 let exams = [];
@@ -591,7 +588,7 @@ function formatMathForWhatsApp(text) {
 }
 
 // ================================================================
-//  🗓️ CALCULATE ACTUAL DATE FROM RELATIVE TEXT (NEW)
+//  🗓️ CALCULATE ACTUAL DATE FROM RELATIVE TEXT
 // ================================================================
 async function calculateDateFromText(text) {
     try {
@@ -640,6 +637,19 @@ Output the date(s) only:`;
 // ================================================================
 function detectIntentFromText(text) {
     const lowerText = text.toLowerCase().trim();
+    
+    // 🎯 PRIORITY CHECK: Exam-related queries should go to AI (memory), not calendar
+    // If the message contains exam-related words AND question/date/relative time words,
+    // route to AI so that the memory-based JARVIS response can answer it.
+    const examWords = /(exam|test|විභාග|පරීක්ෂණ|mid|final|assessment|paper|in.?class|in-class)/i;
+    const dateQuestionWords = /(thiyeda|thiyenawada|thiyenawad|thiyenwada|kawadda|kawadada|when|තියෙනවද|කවදාද|තියෙද|kiyanna|kiyanawada|gana|ganna|මොකද|ගැන|කියන්න|denna|danna)/i;
+    const relativeTimeWords = /(labana|eelaga|next|this|me|ඊළඟ|ලබන|මේ)/i;
+    
+    if (examWords.test(lowerText)) {
+        if (dateQuestionWords.test(lowerText) || relativeTimeWords.test(lowerText)) {
+            return { intent: 'chat', data: text };
+        }
+    }
     
     // 1️⃣ Check for Quiz
     if (/^quiz\b/.test(lowerText) || /quiz (ekk|ek|eak|එකක්|එක)/.test(lowerText) || 
@@ -901,7 +911,7 @@ async function sendDailyTimetable(sock) {
 }
 
 // ================================================================
-//  🔔 CHECK DEADLINES & SEND REMINDERS (Matara Centre - with Time)
+//  🔔 CHECK DEADLINES & SEND REMINDERS
 // ================================================================
 async function checkDeadlines(sock) {
     if (mataraStudents.length === 0) {
@@ -964,7 +974,7 @@ async function checkDeadlines(sock) {
 }
 
 // ================================================================
-//  📝 CHECK EXAMS & SEND REMINDERS (Matara Centre - 7 Days)
+//  📝 CHECK EXAMS & SEND REMINDERS
 // ================================================================
 async function checkExams(sock) {
     if (mataraStudents.length === 0) {
@@ -1762,7 +1772,6 @@ async function connectToWhatsApp() {
                     return;
                 }
                 
-                // Calculate actual date if there's a date reference
                 await sock.sendMessage(sender, { text: "🧠 මතක තබා ගනිමින්..." }, { quoted: msg });
                 const calculatedDate = await calculateDateFromText(infoText);
                 
