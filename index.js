@@ -43,22 +43,102 @@ const DATA_DIR = process.env.DATA_DIR || '/app/data';
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 // ================================================================
-//  📚 KNOWLEDGE BASE
+//  🧠 KNOWLEDGE BASE / MEMORY SYSTEM (JARVIS-STYLE)
 // ================================================================
 const KNOWLEDGE_FILE = path.join(DATA_DIR, 'knowledge.json');
 let knowledgeBase = [];
+
+// Load knowledge base (with backward compatibility for old string entries)
 try {
-    if (fs.existsSync(KNOWLEDGE_FILE)) knowledgeBase = JSON.parse(fs.readFileSync(KNOWLEDGE_FILE, 'utf8'));
+    if (fs.existsSync(KNOWLEDGE_FILE)) {
+        const rawData = JSON.parse(fs.readFileSync(KNOWLEDGE_FILE, 'utf8'));
+        knowledgeBase = rawData.map(entry => {
+            if (typeof entry === 'string') {
+                return { text: entry, addedAt: new Date().toISOString(), addedBy: 'Monal Hansana', calculatedDate: null };
+            }
+            return entry;
+        });
+    }
 } catch (e) { console.error('Error loading knowledge.json:', e); }
 
 function saveKnowledgeBase() {
     try { fs.writeFileSync(KNOWLEDGE_FILE, JSON.stringify(knowledgeBase, null, 2)); } catch (e) { console.error(e); }
 }
 
+// Build prompt with STRONG knowledge base emphasis + TODAY'S DATE (JARVIS-style memory)
 function buildPromptWithKnowledge(basePrompt) {
-    if (knowledgeBase.length === 0) return basePrompt;
-    const knowledgeText = knowledgeBase.map((k, i) => `${i+1}. ${k}`).join('\n');
-    return `${basePrompt}\n\n[BATCH-SPECIFIC KNOWLEDGE — use if relevant:]\n${knowledgeText}`;
+    // Get today's date in Sri Lanka timezone
+    const utcNow = new Date();
+    const today = new Date(utcNow.toLocaleString('en-US', { timeZone: 'Asia/Colombo' }));
+    const todayStr = today.toLocaleDateString('en-LK', { 
+        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
+    });
+    const todayISO = today.toISOString().split('T')[0];
+    
+    const currentDateInfo = `
+╔══════════════════════════════════════════════════════════════╗
+║  📅 TODAY'S DATE (IMPORTANT!)                                 ║
+╚══════════════════════════════════════════════════════════════╝
+
+**අද දිනය: ${todayStr}** (${todayISO})
+
+When reasoning about dates:
+- "අද" (today) = ${todayISO}
+- "හෙට" (tomorrow) = ${new Date(today.getTime() + 86400000).toISOString().split('T')[0]}
+- "ලබන සතියේ" (next week) = ${new Date(today.getTime() + 7*86400000).toISOString().split('T')[0]} සිට ${new Date(today.getTime() + 13*86400000).toISOString().split('T')[0]} දක්වා
+- "මේ සතියේ" (this week) = අද සිට ${new Date(today.getTime() + (6 - today.getDay())*86400000).toISOString().split('T')[0]} දක්වා
+`;
+
+    if (knowledgeBase.length === 0) {
+        return `${currentDateInfo}\n\n${basePrompt}`;
+    }
+    
+    const knowledgeText = knowledgeBase.map((k, i) => {
+        const text = typeof k === 'string' ? k : k.text;
+        const addedAt = k.addedAt ? new Date(k.addedAt).toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' }) : '';
+        const calculatedDate = k.calculatedDate ? `\n   🗓️ *Actual Date: ${k.calculatedDate}*` : '';
+        return `${i+1}. ${text}${addedAt ? `\n   (Monal Hansana විසින් ${addedAt} දින දැනුම් දුන්නා)` : ''}${calculatedDate}`;
+    }).join('\n\n');
+    
+    return `${currentDateInfo}
+
+${basePrompt}
+
+╔══════════════════════════════════════════════════════════════╗
+║  🧠 BATCH REP (MONAL HANSANA) විසින් ලබා දුන් MEMORY         ║
+╚══════════════════════════════════════════════════════════════╝
+
+මේ තමයි Batch Rep වන Monal Hansana ඔබට (HansanaBot ට) කලින් දැනුම් දුන් තොරතුරු. ඔබ ඒවා **හොඳින් මතක තබාගෙන ඉන්නවා** - හරියට personal assistant කෙනෙක් වගේ.
+
+${knowledgeText}
+
+╔══════════════════════════════════════════════════════════════╗
+║  🎯 CRITICAL RULES — MEMORY USAGE                             ║
+╚══════════════════════════════════════════════════════════════╝
+
+1. **අද දිනය මතක තබාගන්න:** හැමවෙලාවෙම අද දිනය කියන්නේ මොකක්ද කියලා හිතන්න. "ලබන සතියේ" කිව්වම, අද දිනයට සාපේක්ෂව ගණනය කරන්න.
+
+2. **Memory එක බලන්න:** ළමයෙක් ප්‍රශ්නයක් ඇසුවොත්, උත්තර දෙන්න කලින් ඉහත Memory එකේ ඒ ගැන යමක් තියෙනවද කියලා හොඳට බලන්න.
+
+3. **Memory එකේ තියෙනවා නම්, ඒක PRIMARY SOURCE එක:** ඒ තොරතුරු මත පදනම්ව උත්තර දෙන්න.
+
+4. **Date සමඟ ප්‍රශ්න ඇසුවොත්:**
+   - ළමයෙක් "ලබන සතියේ exam තියෙනවද?" ඇසුවොත් - අද දිනයට ලබන සතිය කවදාද කියලා හිතන්න
+   - Memory එකේ "Actual Date" එකක් තියෙනවා නම්, ඒ date එක ලබන සතියට අදාළද කියලා බලන්න
+   - නැත්නම්, අද දිනයට සාපේක්ෂව "ලබන සතියේ" කියන්නේ කවදාද කියලා හිතලා උත්තර දෙන්න
+
+5. **කල් ඉකුත් වුණු තොරතුරු ගැන:** Memory එකේ තියෙන date එකක් දැනටමත් ඉකුත් වෙලා නම් (අදට කලින්), ඒ ගැන ළමයෙක් ඇසුවොත් "ඒක ඉවරයි" කියන්න. හදන්න එපා.
+
+6. **Natural විදියට කියන්න (JARVIS style):**
+   - ✅ "ඔව්, ලබන සතියේ (Sep 15-21) අතරේ exam එක තියෙනවා කියලා Monal මට කිව්වා."
+   - ✅ "මට මතකයි — ඒ deadline එක ලබන සිකුරාදා (Sep 19)."
+   - ❌ NEVER mention "database" or "knowledge base" to students
+
+7. **හැමවෙලාවෙම "මට මතකයි" / "මම දන්නවා" වගේ කියන්න.**
+
+8. **නමුත් හරියටම නොදන්නා දේවල් ගැන හිතලා හදන්න එපා.**
+
+9. **මිනිස් සහායකයෙක් වගේ කතා කරන්න:** Warm, helpful, friendly, confident. JARVIS වගේ.`;
 }
 
 // ================================================================
@@ -346,53 +426,112 @@ function getNextGenAI() {
 }
 
 const systemInstruction = `
-You are HansanaBot, the official digital assistant representing the SLIIT IT Y1S2 Batch Representative, Monal Hansana.
+You are HansanaBot — the personal AI assistant to SLIIT IT Y1S2 Batch Representative, Monal Hansana. Think of yourself as JARVIS from Iron Man: intelligent, warm, proactive, professional, and personal.
 
-YOUR PERSONALITY & TONE:
-- Your tone must ALWAYS be professional, helpful, polite, and warm.
-- Address students respectfully (e.g., "ඔබට", "ඔයාට").
-- Provide neatly formatted answers (use bullet points and bold text).
-- NEVER give random, unrelated, or excessively long raw information. Always answer the specific question asked by the student.
+╔══════════════════════════════════════════════════════════════╗
+║  🎯 YOUR CORE IDENTITY                                        ║
+╚══════════════════════════════════════════════════════════════╝
 
-RULES FOR KNOWLEDGE BASE:
-- When you have information in your Knowledge Base (add info), give exactly the requested details in a structured, clean manner.
-- If the info is about Fees, Dates, LIC, or Links, present them clearly so the student understands instantly.
+You are NOT a simple chatbot. You are a **personal memory-aware AI assistant** for SLIIT students in the Y1S2 batch (Matara Centre).
 
-BATCH REPRESENTATIVE (MONAL HANSANA) CONTACT DETAILS:
-- When students ask for Batch Rep's contact details, phone number, email, or how to contact Monal, provide these details cleanly:
-  * Name: Monal Hansana (SLIIT IT Y1S2 Batch Representative)
-  * Contact Number: +94 76 251 3957 (076 251 3957)
-  * Official SLIIT Email: it26100930@my.sliit.lk
+Your job:
+- Remember everything Monal (Batch Rep) tells you via "add info"
+- When students ask questions, respond like you already know the answer (because you do, from memory)
+- Be warm, helpful, natural — like a human who actually cares
 
-Y1S2 MODULE DETAILS & LIC INFORMATION (Use this when asked):
-1. IT1170 - DSA -> LIC: Prof. Nathali Silva (nathali.s@sliit.lk)
-2. IT1160 - Discrete Math -> LIC: Ms. Nipuni Maleesha (nipuni.m@sliit.lk)
-3. SE1020 - OOP -> LIC: Ms. Thilini Jayalath (thilini.j@sliit.lk)
-4. IT1150 - Technical Writing -> LIC: Ms. Dinushika Jayathissa (dinushika.j@sliit.lk)
-5. IE1011 - Information Systems -> LIC: Ms. Chathurangika Kahandawarachchi (chathurangika.k@sliit.lk)
+╔══════════════════════════════════════════════════════════════╗
+║  🧠 KNOWLEDGE BASE / MEMORY                                   ║
+╚══════════════════════════════════════════════════════════════╝
 
-ACADEMIC & UNIVERSITY RULES:
-- Minimum 80% attendance is strictly required to sit for final exams.
-- Grade is based on Continuous Assessments + Final Exam.
-- Lab Group Switching requires prior LIC approval.
+At the END of this prompt, you will find a section titled:
+"🧠 BATCH REP (MONAL HANSANA) විසින් ලබා දුන් MEMORY"
 
-IMPORTANT LINKS:
-1. Timetable / Calendar: https://calendar.google.com/calendar/u/0?cid=Y2EwYjM4ZDE3MjcyOTIzMTY1N2FiZmMzNGYxYzdmZGJmOGVhMzMwNTBmZTZmNDYyM2Y1ZmFiODhjMGQzNDYzM0Bncm91cC5jYWxlbmRhci5nb29nbGUuY29t
-2. Courseweb (LMS): https://courseweb.sliit.lk/
-3. Eduscope (Lecture Recordings): https://eduscope.sliit.lk/
-4. Issue Reporting Form: https://docs.google.com/forms/d/e/1FAIpQLSfOUJnkMp8Tdig0C187WDOgU5AZmtPh3ayBZ-_z9xd23K3Zgw/viewform?usp=dialog
-5. SLIIT AI ask Support : https://ask.sliit.lk/
-6. SLIIT student supportDesk/Support: https://support.sliit.lk/
-CRITICAL — NEVER CLAIM TO HAVE SENT/POSTED SOMETHING:
-- You CANNOT actually send messages, post announcements, or perform any action outside this chat reply.
-- NEVER say things like "I've sent this to the group" or "yawanawa" / "දැම්මා".
-- If a user asks you to post/send something, explain that only the Batch Rep (Monal) can trigger that.
+This is YOUR memory. It contains information Monal has shared with you.
+- READ IT CAREFULLY before every response.
+- If a student asks about anything in that memory, USE IT as your primary source.
+- Speak as if you ALREADY KNOW this info — not like you're looking it up.
 
-CRITICAL CODE & TUTORIAL ANALYSIS RULES:
-- When analyzing code snippets or tutorials:
-  1. Pay EXTREME attention to variable scope and re-initialization (e.g., whether 'j = 1' is initialized OUTSIDE or INSIDE an outer loop).
-  2. Distinguish clearly between Sequential/Consecutive loops and Nested loops.
-  3. Keep track of accurate question labeling (a, b, c, d, e) without swapping their code contents.
+Examples of how to speak:
+- ✅ "ඔව්, මට මතකයි — ලබන සතියේ exam තියෙනවා කියලා Monal මට කිව්වා."
+- ✅ "Monal මට දැනුම් දුන්නා විදියට, submission deadline එක ලබන සිකුරාදා."
+- ✅ "ඒ ගැන මම දන්නවා — [details]."
+- ❌ "According to my knowledge base..."
+- ❌ "I found the following in my database..."
+- ❌ NEVER mention "knowledge base" or "database" to students
+
+╔══════════════════════════════════════════════════════════════╗
+║  🗣️ LANGUAGE & TONE                                           ║
+╚══════════════════════════════════════════════════════════════╝
+
+- Reply in whatever language the student uses (Singlish, Sinhala, English, Tamil)
+- Use the same tone: casual with friends, respectful with unknowns
+- Be warm, encouraging, and helpful — like a senior student helping juniors
+- Use emojis naturally (📚 📅 ⚠️ ✅ 🎉) but don't overdo it
+- Keep answers concise — no excessive raw information
+
+╔══════════════════════════════════════════════════════════════╗
+║  👤 BATCH REP CONTACT                                         ║
+╚══════════════════════════════════════════════════════════════╝
+
+When students ask for the Batch Rep's contact:
+- Name: Monal Hansana (SLIIT IT Y1S2 Batch Representative)
+- Contact: +94 76 251 3957 (076 251 3957)
+- Email: it26100930@my.sliit.lk
+
+╔══════════════════════════════════════════════════════════════╗
+║  📚 Y1S2 MODULES & LICs                                       ║
+╚══════════════════════════════════════════════════════════════╝
+
+1. IT1170 - DSA → Prof. Nathali Silva (nathali.s@sliit.lk)
+2. IT1160 - Discrete Math → Ms. Nipuni Maleesha (nipuni.m@sliit.lk)
+3. SE1020 - OOP → Ms. Thilini Jayalath (thilini.j@sliit.lk)
+4. IT1150 - Technical Writing → Ms. Dinushika Jayathissa (dinushika.j@sliit.lk)
+5. IE1011 - Information Systems → Ms. Chathurangika Kahandawarachchi (chathurangika.k@sliit.lk)
+
+╔══════════════════════════════════════════════════════════════╗
+║  🎓 ACADEMIC RULES                                            ║
+╚══════════════════════════════════════════════════════════════╝
+
+- Minimum 80% attendance required for final exams
+- Grade = Continuous Assessments + Final Exam
+- Lab Group Switching needs prior LIC approval
+
+╔══════════════════════════════════════════════════════════════╗
+║  🔗 IMPORTANT LINKS                                           ║
+╚══════════════════════════════════════════════════════════════╝
+
+1. Timetable: https://calendar.google.com/calendar/u/0?cid=Y2EwYjM4ZDE3MjcyOTIzMTY1N2FiZmMzNGYxYzdmZGJmOGVhMzMwNTBmZTZmNDYyM2Y1ZmFiODhjMGQzNDYzM0Bncm91cC5jYWxlbmRhci5nb29nbGUuY29t
+2. Courseweb: https://courseweb.sliit.lk/
+3. Eduscope: https://eduscope.sliit.lk/
+4. Issue Form: https://docs.google.com/forms/d/e/1FAIpQLSfOUJnkMp8Tdig0C187WDOgU5AZmtPh3ayBZ-_z9xd23K3Zgw/viewform
+5. Ask SLIIT: https://ask.sliit.lk/
+6. Support: https://support.sliit.lk/
+
+╔══════════════════════════════════════════════════════════════╗
+║  ⚠️ CRITICAL RULES                                            ║
+╚══════════════════════════════════════════════════════════════╝
+
+1. NEVER claim to have sent messages, posted announcements, or performed any action. You only reply in this chat.
+
+2. NEVER say "I've sent this to the group" or "yawanawa" / "දැම්මා" — you can only reply, not act.
+
+3. NEVER make up information about exams, deadlines, or dates. If it's not in your memory, say: "ඒ ගැන මට දැනුම් දීලා නෑ. Monal ගෙන් අහන්න."
+
+4. NO LaTeX in responses. Use Unicode math symbols directly: ∪, ∩, ∈, ⊆, ∀, ∃, ≤, ≥, √, π, etc.
+
+5. When analyzing code or tutorials, pay EXTREME attention to:
+   - Variable scope (e.g., whether 'j = 1' is initialized OUTSIDE or INSIDE a loop)
+   - Sequential vs Nested loops
+   - Accurate question labeling (a, b, c, d, e)
+
+╔══════════════════════════════════════════════════════════════╗
+║  💡 FINAL REMINDER                                            ║
+╚══════════════════════════════════════════════════════════════╝
+
+You are a PERSONAL ASSISTANT with a MEMORY. Act like it.
+When a student asks "exam thiyenawada?" — check your memory first.
+If Monal told you "next week has exams", then you KNOW that. Say it confidently.
+Be the assistant students trust. Be JARVIS.
 `;
 
 let model = getNextGenAI().getGenerativeModel({
@@ -452,6 +591,51 @@ function formatMathForWhatsApp(text) {
 }
 
 // ================================================================
+//  🗓️ CALCULATE ACTUAL DATE FROM RELATIVE TEXT (NEW)
+// ================================================================
+async function calculateDateFromText(text) {
+    try {
+        const utcNow = new Date();
+        const today = new Date(utcNow.toLocaleString('en-US', { timeZone: 'Asia/Colombo' }));
+        const todayStr = today.toLocaleDateString('en-LK', { 
+            weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
+        });
+        const todayISO = today.toISOString().split('T')[0];
+        
+        const prompt = `You are a date calculation assistant. Today is ${todayStr} (${todayISO}).
+
+The user will provide text that may contain relative date references (like "අද", "හෙට", "ලබන සතියේ", "next Monday", "in 2 weeks", "September 20" etc.).
+
+Extract the ACTUAL DATE or DATE RANGE that the text refers to.
+
+RULES:
+- Output ONLY a short date string in this format: "YYYY-MM-DD" for single dates, or "YYYY-MM-DD to YYYY-MM-DD" for ranges
+- For "ලබන සතියේ" / "next week" → range from next Monday to next Sunday
+- For "මේ සතියේ" / "this week" → range from today to this Sunday
+- For "අද" / "today" → just today
+- For "හෙට" / "tomorrow" → just tomorrow
+- For "ලබන සඳුදා" / "next Monday" → next Monday's date
+- If no date reference found, output "N/A"
+- Do NOT add any explanation or other text
+
+User text: "${text}"
+
+Output the date(s) only:`;
+
+        const result = await generateContentWithRetry(model, prompt);
+        const dateStr = result.response.text().trim();
+        
+        if (dateStr === 'N/A' || !dateStr.match(/\d{4}-\d{2}-\d{2}/)) {
+            return null;
+        }
+        return dateStr;
+    } catch (e) {
+        console.error('Date calculation error:', e);
+        return null;
+    }
+}
+
+// ================================================================
 //  🧠 LOCAL INTENT DETECTION (No Gemini call)
 // ================================================================
 function detectIntentFromText(text) {
@@ -498,7 +682,7 @@ function detectIntentFromText(text) {
         return { intent: 'calendar', data: text };
     }
     
-    if (/^(add info|info add|save info)\b/.test(lowerText)) {
+    if (/^(add info|info add|save info|remember)\b/.test(lowerText)) {
         return { intent: 'add_info', data: text };
     }
     
@@ -1098,7 +1282,6 @@ async function connectToWhatsApp() {
                 isConnected = true;
                 console.log('✅ WhatsApp AI Bot is Ready and Online!');
                 
-                // ✅ Register all existing students as Matara students
                 for (const jid of studentRegistry) {
                     if (!mataraStudents.includes(jid)) {
                         mataraStudents.push(jid);
@@ -1109,19 +1292,16 @@ async function connectToWhatsApp() {
             }
         });
 
-        // ⏰ CRON JOB (9:00 PM - Timetable)
         cron.schedule('0 21 * * *', async () => {
             console.log('⏰ Running Tomorrow Timetable Push at 9:00 PM SL Time...');
             await sendDailyTimetable(sock);
         }, { timezone: 'Asia/Colombo' });
 
-        // 🔔 CRON JOB (8:00 AM - Deadline Reminders)
         cron.schedule('0 8 * * *', async () => {
             console.log('⏰ Running Deadline Check at 8:00 AM SL Time...');
             await checkDeadlines(sock);
         }, { timezone: 'Asia/Colombo' });
 
-        // 📝 CRON JOB (8:00 AM - Exam Reminders)
         cron.schedule('0 8 * * *', async () => {
             console.log('⏰ Running Exam Check at 8:00 AM SL Time...');
             await checkExams(sock);
@@ -1159,13 +1339,11 @@ async function connectToWhatsApp() {
                 return; 
             }
 
-            // Register student
             const isNewUser = addStudent(sender);
             if (isNewUser) {
                 await sock.sendMessage(sender, { text: "Hello! I am *HansanaBot*, your AI assistant! 👋\n\nType *help* to see what I can do for you. 🚀" }, { quoted: msg });
             }
 
-            // ✅ AUTO-REGISTER ALL STUDENTS AS MATARA STUDENTS
             const isMataraAdded = addMataraStudent(sender);
             if (isMataraAdded) {
                 await sock.sendMessage(sender, { 
@@ -1246,7 +1424,7 @@ async function connectToWhatsApp() {
                             await sock.sendMessage(sender, { text: "📭 ඔබ ඇසූ Module එක සඳහා File එකක් හම්බුනේ නැහැ." }, { quoted: msg });
                         }
                     } else {
-                        const prompt = buildPromptWithKnowledge(`User said (voice note): "${transcribedText}"\nReply accordingly.`);
+                        const prompt = buildPromptWithKnowledge(`User said (voice note): "${transcribedText}"\n\nReply naturally. If relevant, use the batch rep's memory to answer.`);
                         const result = await generateContentWithRetry(model, prompt);
                         const reply = formatMathForWhatsApp(result.response.text());
                         await sock.sendMessage(sender, { text: reply }, { quoted: msg });
@@ -1515,19 +1693,21 @@ async function connectToWhatsApp() {
                 
                 const adminHelpText = `🛠️ *Admin Control Panel* (Batch Rep Only) 🛡️
 
-📝 *add info: [text]* - අලුත් තොරතුරු save කරන්න
-📚 *list info* - Save කරලා තියෙන Info ටික බලන්න
-🗑️ *remove info [number]* - Info එකක් අයින් කරන්න
+🧠 *Memory (Bot ට මතක තබා ගන්න):*
+📝 *add info: [text]* - Bot ට අලුත් දෙයක් මතක තබා ගන්න
+📚 *list info* - Bot ට මතක තියෙන දේවල් බලන්න
+🗑️ *remove info [number]* - එකක් අයින් කරන්න
 
+📁 *File Management:*
 📤 *add file: [keyword]* - PDF/Image එකක් save කරන්න
-   (Keyword නැතුව upload කළොත් AI එකෙන් auto detect වෙයි!)
-📋 *list files* - Save කරලා තියෙන Files ටික බලන්න (Files ටිකත් එනවා!)
+📋 *list files* - Files බලන්න
 🗑️ *remove file [number]* - File එකක් අයින් කරන්න
 
-📊 *status* - Bot එකේ තත්වය බලන්න
-🆔 *getid* - Group ID එක ගන්න (Group එක ඇතුලේ type කරන්න)
+📊 *Bot Management:*
+📊 *status* - Bot Status
+🆔 *getid* - Group ID
 
-💡 *Tip:* Student ලට බලන්න දෙන්නේ *help* command එක විතරයි. Admin Menu එක බලන්න *admin* කියලා type කරන්න.`;
+💡 *Tip:* "add info" කරන හැම දෙයක්ම Bot **JARVIS වගේ මතක තබාගෙන** ළමයෙක් ඇසුවොත් ස්වභාවිකව උත්තර දෙනවා.`;
 
                 await sock.sendMessage(sender, { text: adminHelpText }, { quoted: msg });
                 return;
@@ -1565,25 +1745,42 @@ async function connectToWhatsApp() {
                     await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
                     return;
                 }
-                const statusMsg = `✅ *HansanaBot Status*\n\n👥 *Used Requests:* ${geminiRequestsToday}/500\n📁 *Total Files:* ${fileRegistry.length}\n📚 *Saved Info:* ${knowledgeBase.length}\n👥 *Registered Students:* ${studentRegistry.length}\n📍 *Matara Students:* ${mataraStudents.length}\n📅 *Deadlines:* ${deadlines.length}\n📝 *Exams:* ${exams.length}`;
+                const statusMsg = `✅ *HansanaBot Status*\n\n🧠 *Memory Entries:* ${knowledgeBase.length}\n👥 *Used Requests:* ${geminiRequestsToday}/500\n📁 *Total Files:* ${fileRegistry.length}\n👥 *Registered Students:* ${studentRegistry.length}\n📍 *Matara Students:* ${mataraStudents.length}\n📅 *Deadlines:* ${deadlines.length}\n📝 *Exams:* ${exams.length}`;
                 await sock.sendMessage(sender, { text: statusMsg }, { quoted: msg });
                 return;
             }
 
-            // ---------- ADD INFO ----------
-            if (/^(add info|info add|save info)\b/i.test(textLower)) {
+            // ---------- ADD INFO (Memory - JARVIS Style) ----------
+            if (/^(add info|info add|save info|remember)\b/i.test(textLower)) {
                 if (!isSenderAdmin(sender)) {
                     await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
                     return;
                 }
-                const infoText = rawMessageText.replace(/^(add info|info add|save info)\s*:?\s*/i, '').trim();
+                const infoText = rawMessageText.replace(/^(add info|info add|save info|remember)\s*:?\s*/i, '').trim();
                 if (!infoText) {
-                    await sock.sendMessage(sender, { text: "⚠️ Please provide info text." }, { quoted: msg });
+                    await sock.sendMessage(sender, { text: "⚠️ මතක තබා ගන්න ඕන දේ type කරන්න.\n\nඋදා: `add info: ලබන සතියේ exam තියෙනවා`" }, { quoted: msg });
                     return;
                 }
-                knowledgeBase.push(infoText);
+                
+                // Calculate actual date if there's a date reference
+                await sock.sendMessage(sender, { text: "🧠 මතක තබා ගනිමින්..." }, { quoted: msg });
+                const calculatedDate = await calculateDateFromText(infoText);
+                
+                knowledgeBase.push({
+                    text: infoText,
+                    addedAt: new Date().toISOString(),
+                    addedBy: 'Monal Hansana',
+                    calculatedDate: calculatedDate || null
+                });
                 saveKnowledgeBase();
-                await sock.sendMessage(sender, { text: `✅ Info saved! (Total: ${knowledgeBase.length})` }, { quoted: msg });
+                
+                let confirmMsg = `🧠 *මතක තබා ගත්තා!*\n\n📝 "${infoText}"`;
+                if (calculatedDate) {
+                    confirmMsg += `\n\n🗓️ *ගණනය කළ දිනය: ${calculatedDate}*`;
+                }
+                confirmMsg += `\n\nදැන් ළමයෙක් මේ ගැන ඇසුවොත්, මම JARVIS වගේ උත්තර දෙන්නම්! ✅\n\n_Total Memory: ${knowledgeBase.length}_`;
+                
+                await sock.sendMessage(sender, { text: confirmMsg }, { quoted: msg });
                 return;
             }
 
@@ -1600,7 +1797,30 @@ async function connectToWhatsApp() {
                 }
                 const removed = knowledgeBase.splice(idx, 1);
                 saveKnowledgeBase();
-                await sock.sendMessage(sender, { text: `🗑️ Removed: "${removed[0]}"` }, { quoted: msg });
+                const removedText = typeof removed[0] === 'string' ? removed[0] : removed[0].text;
+                await sock.sendMessage(sender, { text: `🗑️ අයින් කළා: "${removedText}"` }, { quoted: msg });
+                return;
+            }
+
+            // ---------- LIST INFO (Memory) ----------
+            if (textLower === 'list info' || textLower === 'show info' || textLower === 'list memory' || textLower === 'my memory') {
+                if (!isSenderAdmin(sender)) {
+                    await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
+                    return;
+                }
+                if (knowledgeBase.length === 0) {
+                    await sock.sendMessage(sender, { text: "📭 දැනට මතක මොකවත් නෑ." }, { quoted: msg });
+                } else {
+                    const list = knowledgeBase.map((k, i) => {
+                        const text = typeof k === 'string' ? k : k.text;
+                        const addedAt = k.addedAt ? new Date(k.addedAt).toLocaleDateString('en-LK', { year: 'numeric', month: 'short', day: 'numeric' }) : '';
+                        const calcDate = k.calculatedDate ? `\n   🗓️ Actual Date: ${k.calculatedDate}` : '';
+                        return `${i+1}. ${text}${addedAt ? `\n   _(Added: ${addedAt})_` : ''}${calcDate}`;
+                    }).join('\n\n');
+                    await sock.sendMessage(sender, { 
+                        text: `🧠 *Bot Memory (${knowledgeBase.length})*\n\n${list}` 
+                    }, { quoted: msg });
+                }
                 return;
             }
 
@@ -1652,20 +1872,6 @@ async function connectToWhatsApp() {
                     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
                 } catch (e) { console.error('Delete file error:', e); }
                 await sock.sendMessage(sender, { text: `🗑️ Removed: "${removed.keyword}"` }, { quoted: msg });
-                return;
-            }
-
-            // ---------- LIST INFO ----------
-            if (textLower === 'list info' || textLower === 'show info') {
-                if (!isSenderAdmin(sender)) {
-                    await sock.sendMessage(sender, { text: "❌ Batch Rep only!" }, { quoted: msg });
-                    return;
-                }
-                if (knowledgeBase.length === 0) await sock.sendMessage(sender, { text: "📭 No info saved." }, { quoted: msg });
-                else {
-                    const list = knowledgeBase.map((k, i) => `${i+1}. ${k}`).join('\n\n');
-                    await sock.sendMessage(sender, { text: `📚 *Saved Info (${knowledgeBase.length})*\n\n${list}` }, { quoted: msg });
-                }
                 return;
             }
 
@@ -1778,7 +1984,6 @@ async function connectToWhatsApp() {
             }
 
             // ---------- EXAM COMMANDS (Admin) ----------
-            // Add single exam: add exam: Description | 2026-09-20 | 10:00 | Matara | Midterm
             const examMatch = rawMessageText.match(/^add exam\s*:?\s*(.+?)\s*\|\s*(\d{4}-\d{2}-\d{2})\s*\|\s*(\d{2}:\d{2})\s*\|\s*(.+?)\s*\|\s*(.+)$/i);
             if (examMatch && isSenderAdmin(sender)) {
                 const description = examMatch[1].trim();
@@ -1960,6 +2165,7 @@ async function connectToWhatsApp() {
 👉 Need notes? Just say *"pdf"* or *"SE1020 notes"*!
 👉 Want a quiz? Just say *"quiz"* or *"quiz SE1020"*!
 👉 Got a random question? Just ask me in Sinhala or English!
+👉 And I remember what Monal tells me — like a personal assistant. 🧠
 👉 *"status"* is only for the main character (Admin) 💅
 
 Catch my drift? Slide into my DMs and let's get that GPA up! 📈🚀`;
@@ -2042,21 +2248,22 @@ Email: it26100930@my.sliit.lk`;
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 🛠️ *Admin Commands* (Batch Rep Only) 🛡️
 
-📚 *Knowledge Base:*
-📝 *add info: [text]* - අලුත් තොරතුරු save කරන්න
-📚 *list info* - Save කරලා තියෙන Info ටික බලන්න
-🗑️ *remove info [number]* - Info එකක් අයින් කරන්න
+🧠 *Memory (Bot ට මතක තබා ගන්න):*
+📝 *add info: [text]* - Bot ට අලුත් දෙයක් මතක තබා ගන්න
+   (උදා: "add info: ලබන සතියේ exam තියෙනවා")
+📚 *list info* / *list memory* - Bot ට මතක තියෙන දේවල් බලන්න
+🗑️ *remove info [number]* - එකක් අයින් කරන්න
 
 📁 *File Management:*
 📤 *add file: [keyword]* - PDF/Image එකක් save කරන්න
    (Keyword නැතුව upload කළොත් AI එකෙන් auto detect වෙයි!)
-📋 *list files* - Save කරලා තියෙන Files ටික බලන්න (Files ටිකත් එනවා!)
+📋 *list files* - Save කරලා තියෙන Files ටික බලන්න
 🗑️ *remove file [number]* - File එකක් අයින් කරන්න
 
 📊 *Bot Management:*
 📊 *status* - Bot එකේ තත්වය බලන්න
 📊 *poll Question? | Option 1 | Option 2* - WhatsApp Poll එකක් හදන්න
-🆔 *getid* - Group ID එක ගන්න (Group එක ඇතුලේ type කරන්න)
+🆔 *getid* - Group ID එක ගන්න
 
 📅 *Deadline Management (Matara Centre):*
 📝 *add deadline: Description | YYYY-MM-DD | HH:MM | Matara* - Add deadline
@@ -2067,10 +2274,8 @@ Email: it26100930@my.sliit.lk`;
 📝 *add exam: Description | YYYY-MM-DD | HH:MM | Matara | ExamType* - Add exam
 📚 *list exams* - View all exams
 🗑️ *remove exam [number]* - Remove exam
-   (ExamTypes: Midterm, Final, Quiz, Practical, Theory)
 
-💡 *Tip:* Student ලට බලන්න දෙන්නේ *help* command එක විතරයි. 
-Admin Menu එක බලන්න *admin* කියලා type කරන්න.`;
+💡 *Tip:* "add info" කරන හැම දෙයක්ම Bot **JARVIS වගේ මතක තබාගෙන** ළමයෙක් ඇසුවොත් ස්වභාවිකව උත්තර දෙනවා. 🧠✨`;
                 }
 
                 await sock.sendMessage(sender, { text: helpText }, { quoted: msg });
@@ -2133,15 +2338,16 @@ Admin Menu එක බලන්න *admin* කියලා type කරන්න.`
                 return;
             }
 
-            // GENERAL AI RESPONSE
+            // GENERAL AI RESPONSE (with memory + JARVIS-style)
             if (rawMessageText) {
                 try {
                     const history = getRecentContext(sender);
                     let promptToSend = fullUserPrompt;
                     
                     if (history) {
-                        promptToSend = `මෙන්න User ලා සමඟ ඇති වූ පෙර කතාබහ (Conversation History):\n${history}\n\n\nදැන් User ගේ අලුත් පණිවිඩය: "${fullUserPrompt}".\n\nUser දැන් යවන පණිවිඩය පෙර Bot පණිවිඩයට අදාළ විය හැකියි. කරුණාකර පෙර කතාබහ මත පදනම්ව (පෙර පණිවිඩයේ තේරුම පැහැදිලි කරමින්) සරල සිංහල උත්තරයක් දෙන්න.`;
+                        promptToSend = `Recent conversation with this student:\n${history}\n\nNew message from student: "${fullUserPrompt}"\n\nReply naturally and helpfully. If the batch rep's memory has relevant info, use it confidently as if you already know it.`;
                     }
+                    
                     geminiRequestsToday++;
                     const result = await generateContentWithRetry(model, buildPromptWithKnowledge(promptToSend));
                     const reply = formatMathForWhatsApp(result.response.text());
