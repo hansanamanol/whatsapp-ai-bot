@@ -960,12 +960,16 @@ async function checkDeadlines(sock) {
         return;
     }
 
-    const now = new Date();
+    const now = new Date(); // Current UTC time
+    // ශ්‍රී ලංකා වේලාවට convert කරගන්න
+    const nowSL = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Colombo' }));
+    
     const threeDaysLater = new Date(now);
     threeDaysLater.setDate(now.getDate() + 3);
 
     const upcomingDeadlines = deadlines.filter(d => {
-        const deadlineDateTime = new Date(`${d.date}T${d.time || '23:59'}`);
+        // ශ්‍රී ලංකා වේලාවට +05:30 offset එක එකතු කරලා parse කරන්න
+        const deadlineDateTime = new Date(`${d.date}T${d.time || '23:59'}:00+05:30`);
         return deadlineDateTime >= now && deadlineDateTime <= threeDaysLater && d.centre.toLowerCase() === 'matara';
     });
 
@@ -974,22 +978,36 @@ async function checkDeadlines(sock) {
         return;
     }
 
-    upcomingDeadlines.sort((a, b) => new Date(`${a.date}T${a.time || '23:59'}`) - new Date(`${b.date}T${b.time || '23:59'}`));
+    upcomingDeadlines.sort((a, b) => new Date(`${a.date}T${a.time || '23:59'}:00+05:30`) - new Date(`${b.date}T${b.time || '23:59'}:00+05:30`));
 
     let msgText = `📢 *Matara Centre - Upcoming Deadlines* ⚠️\n\n`;
     upcomingDeadlines.forEach((d, idx) => {
-        const deadlineDateTime = new Date(`${d.date}T${d.time || '23:59'}`);
+        const deadlineDateTime = new Date(`${d.date}T${d.time || '23:59'}:00+05:30`);
+        
+        // Calendar Days ගණනය කිරීම (Time zone එකට අනුව)
+        const deadlineDateSL = new Date(deadlineDateTime.toLocaleString('en-US', { timeZone: 'Asia/Colombo' }));
+        deadlineDateSL.setHours(0, 0, 0, 0);
+        const todaySL = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Colombo' }));
+        todaySL.setHours(0, 0, 0, 0);
+        const diffDays = Math.round((deadlineDateSL - todaySL) / (1000 * 60 * 60 * 24));
+
+        const diffMs = deadlineDateTime - now;
+        const diffHours = Math.floor(diffMs / (1000 * 60 * 60)); // උඩට round නොකර පහළට round කරන්න
+
         const formattedDate = deadlineDateTime.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' });
         const formattedTime = deadlineDateTime.toLocaleTimeString('en-LK', { hour: '2-digit', minute: '2-digit' });
-        const diffMs = deadlineDateTime - now;
-        const diffHours = Math.ceil(diffMs / (1000 * 60 * 60));
-        const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
         
         let timeRemaining = '';
-        if (diffMs <= 0) timeRemaining = 'අදම අවසන් වේ! 🚨';
-        else if (diffHours < 24) timeRemaining = `ඉතිරිව ඇත්තේ පැය ${diffHours}ක්! ⏰`;
-        else if (diffDays === 1) timeRemaining = 'හෙට අවසන් වේ! ⚠️';
-        else timeRemaining = `දින ${diffDays}කින් අවසන් වේ`;
+        if (diffMs <= 0) {
+            timeRemaining = 'අදම අවසන් වේ! 🚨';
+        } else if (diffDays === 0) {
+            if (diffHours < 1) timeRemaining = 'ඉතිරිව ඇත්තේ මිනිත්තු කිහිපයක්! ⏰';
+            else timeRemaining = `ඉතිරිව ඇත්තේ පැය ${diffHours}ක්! ⏰`;
+        } else if (diffDays === 1) {
+            timeRemaining = 'හෙට අවසන් වේ! ⚠️';
+        } else {
+            timeRemaining = `දින ${diffDays}කින් අවසන් වේ`;
+        }
         
         msgText += `${idx+1}. *${d.description}*\n   📅 ${formattedDate}\n   🕐 ${formattedTime}\n   ⏳ ${timeRemaining}\n\n`;
     });
@@ -1006,7 +1024,6 @@ async function checkDeadlines(sock) {
     }
     console.log(`✅ Matara deadline reminders sent to ${mataraStudents.length} students.`);
 }
-
 // ================================================================
 //  📝 CHECK EXAMS
 // ================================================================
@@ -1021,7 +1038,7 @@ async function checkExams(sock) {
     sevenDaysLater.setDate(now.getDate() + 7);
 
     const upcomingExams = exams.filter(e => {
-        const examDateTime = new Date(`${e.date}T${e.time || '23:59'}`);
+        const examDateTime = new Date(`${e.date}T${e.time || '23:59'}:00+05:30`);
         return examDateTime >= now && examDateTime <= sevenDaysLater && e.centre.toLowerCase() === 'matara';
     });
 
@@ -1030,22 +1047,36 @@ async function checkExams(sock) {
         return;
     }
 
-    upcomingExams.sort((a, b) => new Date(`${a.date}T${a.time || '23:59'}`) - new Date(`${b.date}T${b.time || '23:59'}`));
+    upcomingExams.sort((a, b) => new Date(`${a.date}T${a.time || '23:59'}:00+05:30`) - new Date(`${b.date}T${b.time || '23:59'}:00+05:30`));
 
     let msgText = `📝 *Matara Centre - Upcoming Exams* 📚\n\n`;
     upcomingExams.forEach((e, idx) => {
-        const examDateTime = new Date(`${e.date}T${e.time || '23:59'}`);
+        const examDateTime = new Date(`${e.date}T${e.time || '23:59'}:00+05:30`);
+        
+        // Calendar Days ගණනය කිරීම
+        const examDateSL = new Date(examDateTime.toLocaleString('en-US', { timeZone: 'Asia/Colombo' }));
+        examDateSL.setHours(0, 0, 0, 0);
+        const todaySL = new Date(now.toLocaleString('en-US', { timeZone: 'Asia/Colombo' }));
+        todaySL.setHours(0, 0, 0, 0);
+        const diffDays = Math.round((examDateSL - todaySL) / (1000 * 60 * 60 * 24));
+
+        const diffMs = examDateTime - now;
+        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+
         const formattedDate = examDateTime.toLocaleDateString('en-LK', { year: 'numeric', month: 'long', day: 'numeric' });
         const formattedTime = examDateTime.toLocaleTimeString('en-LK', { hour: '2-digit', minute: '2-digit' });
-        const diffMs = examDateTime - now;
-        const diffDays = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-        const diffHours = Math.ceil(diffMs / (1000 * 60 * 60));
         
         let timeRemaining = '';
-        if (diffMs <= 0) timeRemaining = 'අදම විභාගය! 🚨';
-        else if (diffHours < 24) timeRemaining = `ඉතිරිව ඇත්තේ පැය ${diffHours}ක්! ⏰`;
-        else if (diffDays === 1) timeRemaining = 'හෙට විභාගය! ⚠️';
-        else timeRemaining = `දින ${diffDays}කින් විභාගය`;
+        if (diffMs <= 0) {
+            timeRemaining = 'අදම විභාගය! 🚨';
+        } else if (diffDays === 0) {
+            if (diffHours < 1) timeRemaining = 'ඉතිරිව ඇත්තේ මිනිත්තු කිහිපයක්! ⏰';
+            else timeRemaining = `ඉතිරිව ඇත්තේ පැය ${diffHours}ක්! ⏰`;
+        } else if (diffDays === 1) {
+            timeRemaining = 'හෙට විභාගය! ⚠️';
+        } else {
+            timeRemaining = `දින ${diffDays}කින් විභාගය`;
+        }
         
         const typeEmoji = {
             'midterm': '📝', 'final': '🏆', 'quiz': '🧩', 'practical': '🔬', 'theory': '📖'
